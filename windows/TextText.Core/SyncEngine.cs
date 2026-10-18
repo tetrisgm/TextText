@@ -237,15 +237,17 @@ public sealed class SyncEngine
             await Drain(state,cancellation);
             if(hadPendingWrites) {remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);RememberCapabilities(state);}
             if(transport.Folders.Count>20000)throw new IOException("Too many workspace folders.");
+            store.ValidateFolderCatalog(transport.AuthoritativeFolders is {} combinedCatalog?transport.Folders.Concat(combinedCatalog).Distinct(StringComparer.Ordinal).ToArray():transport.Folders);
             if(transport.AuthoritativeFolders is {} catalog) {
                 if(catalog.Count>20000)throw new IOException("Too many workspace folders.");
-                foreach(var folder in catalog)store.ValidateManagedFolder(folder);
+                store.ValidateFolderCatalog(catalog);
                 var updated=(state.ManagedFolders??[]).Union(catalog,StringComparer.Ordinal).OrderBy(x=>x,StringComparer.Ordinal).ToList();
                 if(updated.Count>40000)throw new IOException("Too many retained workspace folders.");
                 if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
             }
             var folderError=false;
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
+            local=store.Scan().ToDictionary(x=>x.ItemId);
             foreach(var pair in state.Items.ToArray()) {
                 cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(store.ReplacementBlocked(id))continue;
                 if(!IsEditing(id) && state.BinaryOutbox.Any(x=>x.ItemId==id)) {

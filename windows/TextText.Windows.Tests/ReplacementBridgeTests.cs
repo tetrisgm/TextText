@@ -92,9 +92,65 @@ static class ReplacementBridgeTests
             _=await bridge.InvokeAsync("files.resolveMove",Json(MoveConsent(TextPackStore.Hash(moveSource))),CancellationToken.None);
             check(File.ReadAllBytes(store.Resolve(moving.Path)).SequenceEqual(moveSource)&&File.ReadAllBytes(store.Resolve("MoveTo.textpack")).SequenceEqual(moveForeign)&&
                 store.ReplacementRecoveryList().Single(entry=>entry.Id==moveId).Resolved,"native move consent preserves both foreign visible files and retained baseline");
+            if(OperatingSystem.IsWindows()) await FolderRecovery(store,bridge,root,state,workspace,check);
+            else Console.WriteLine("SKIP folder recovery bridge filesystem fixtures: actual Windows required");
             transport.Release.TrySetResult();await bridge.RetireAsync();
             var closed=false;try{await bridge.InvokeAsync("files.replacementRead",Json(Scope(root)),CancellationToken.None);}catch(Exception error)when(error is OperationCanceledException or ObjectDisposedException){closed=true;}
             check(closed,"retired native bridge refuses recovery reads from the old connection");
+            closed=false;try{await bridge.InvokeAsync("files.folderRenameList",Json(Scope(root)),CancellationToken.None);}catch(Exception error)when(error is OperationCanceledException or ObjectDisposedException){closed=true;}
+            check(closed,"retired native bridge refuses folder recovery from the old connection");
         }finally{transport.Release.TrySetResult();await bridge.RetireAsync();}
     }
+    static async Task FolderRecovery(TextPackStore store,WindowsBridge bridge,string root,string state,string workspace,Action<bool,string> check)
+    {
+        object Scope(string? id=null,string? fromPath=null,string? toPath=null,string? inspection=null,string? requestedRoot=null,string? requestedWorkspace=null,string account="account-a")=>new {
+            workspaceRoot=requestedRoot??root,workspaceId=requestedWorkspace??workspace,accountId=account,id,fromPath,toPath,inspection
+        };
+        store.EnsureFolders(["Notes"]);
+        if(!Directory.Exists(store.Resolve("notes")))throw new IOException("Actual Windows bridge fixture requires the ordinary case-insensitive volume.");
+        File.WriteAllText(store.Resolve("Notes/child.txt"),"original directory bytes");
+        var hook=typeof(TextPackStore).GetProperty("FolderCaseObservationForTesting",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!;
+        hook.SetValue(store,(Action<string>)(phase=>{if(phase=="prepared")throw new IOException("Fixture interrupts after durable folder intent, before rename.");}));
+        var interrupted=false;try{store.EnsureFolders(["notes"]);}catch(IOException){interrupted=true;}finally{hook.SetValue(store,null);}
+        check(interrupted,"folder bridge fixture retains actual interrupted native directory rename intent");
+        Directory.Move(store.Resolve("Notes"),store.Resolve("original-preserved"));Directory.CreateDirectory(store.Resolve("Notes"));File.WriteAllText(store.Resolve("Notes/foreign.txt"),"foreign current bytes");
+        var fenced=false;try{_=store.Scan();}catch(IOException){fenced=true;}check(fenced,"unresolved folder metadata fences ordinary inventory while recovery remains available");
+        var requests=(SemaphoreSlim)typeof(WindowsBridge).GetField("requests",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.GetValue(bridge)!;
+        JsonElement row;
+        await requests.WaitAsync();
+        try {
+            var clock=Stopwatch.StartNew();
+            var list=Json((await bridge.InvokeAsync("files.folderRenameList",Json(Scope()),CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)))!);
+            check(clock.Elapsed<TimeSpan.FromSeconds(2)&&list.GetArrayLength()==1,"folder recovery listing bypasses blocked mutations, sync and fenced normal inventory");row=list[0].Clone();
+            var keys=new[]{"id","fromPath","toPath","expectedIdentity","from","to","inspection","summary","resolutionBlocked","resolved"};
+            check(row.EnumerateObject().Select(p=>p.Name).Order().SequenceEqual(keys.Order())&&row.GetProperty("from").EnumerateObject().Select(p=>p.Name).Order().SequenceEqual(new[]{"identity","present"})&&row.GetProperty("to").EnumerateObject().Select(p=>p.Name).Order().SequenceEqual(new[]{"identity","present"}),"folder recovery row has exact10 camelcase fields and exact endpoint shape");
+            check(row.GetProperty("fromPath").GetString()=="Notes"&&row.GetProperty("toPath").GetString()=="notes"&&row.GetProperty("from").GetProperty("present").GetBoolean()&&!row.GetProperty("to").GetProperty("present").GetBoolean()&&row.GetProperty("to").GetProperty("identity").ValueKind==JsonValueKind.Null&&!row.GetProperty("resolved").GetBoolean(),"folder recovery reports exact physical endpoint presence without invented directory snapshots");
+            var read=Json((await bridge.InvokeAsync("files.folderRenameRead",Json(Scope(id:row.GetProperty("id").GetString())),CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)))!);
+            check(read.GetRawText()==row.GetRawText(),"folder recovery read preserves exact scoped metadata shape while mutation gate is held");
+            using var cancel=new CancellationTokenSource();var pending=bridge.InvokeAsync("files.resolveFolderRename",Json(Scope(row.GetProperty("id").GetString(),"Notes","notes",row.GetProperty("inspection").GetString())),cancel.Token);cancel.Cancel();var cancelled=false;try{await pending;}catch(OperationCanceledException){cancelled=true;}
+            check(cancelled&&!store.FolderRenameRecoveryRead(row.GetProperty("id").GetString()!).Resolved,"cancelled queued folder consent never acknowledges or mutates the retained directories");
+        } finally {requests.Release();}
+        var id=row.GetProperty("id").GetString()!;var inspection=row.GetProperty("inspection").GetString()!;
+        foreach(var method in new[]{"files.folderRenameList","files.folderRenameRead","files.resolveFolderRename"}) {
+            foreach(var invalid in new[]{Scope(id,"Notes","notes",inspection,requestedRoot:root+"-other"),Scope(id,"Notes","notes",inspection,requestedWorkspace:"other"),Scope(id,"Notes","notes",inspection,account:"account-b")}) {
+                var refused=false;try{await bridge.InvokeAsync(method,Json(invalid),CancellationToken.None);}catch(Exception error)when(error is IOException or InvalidDataException or SharedAccountMismatchException){refused=true;}
+                check(refused,"folder recovery "+method+" refuses changed root/workspace/account scope");
+            }
+            using var cancel=new CancellationTokenSource();cancel.Cancel();var cancelled=false;try{await bridge.InvokeAsync(method,Json(Scope(id,"Notes","notes",inspection)),cancel.Token);}catch(OperationCanceledException){cancelled=true;}
+            check(cancelled,"folder recovery "+method+" honors request cancellation before metadata access");
+        }
+        File.WriteAllText(store.Resolve("Notes/foreign.txt"),"foreign bytes changed after inspection");
+        var stale=false;try{await bridge.InvokeAsync("files.resolveFolderRename",Json(Scope(id,"Notes","notes",inspection)),CancellationToken.None);}catch(IOException){stale=true;}
+        check(stale&&!store.FolderRenameRecoveryRead(id).Resolved,"folder consent refuses stale inspected tree metadata and leaves durable intent unresolved");
+        var ownerPath=Path.Combine(state,AccountRootOwnership.FileName);var ownerBytes=File.ReadAllBytes(ownerPath);var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(ownerBytes)!;
+        TextPackStore.AtomicWrite(ownerPath,JsonSerializer.SerializeToUtf8Bytes(owner with{AccountId="changed-after-inspection"}));
+        var ownerRefused=false;try{await bridge.InvokeAsync("files.folderRenameRead",Json(Scope(id)),CancellationToken.None);}catch(Exception error)when(error is IOException or InvalidDataException or SharedAccountMismatchException){ownerRefused=true;}finally{TextPackStore.AtomicWrite(ownerPath,ownerBytes);}
+        check(ownerRefused&&!store.FolderRenameRecoveryRead(id).Resolved,"folder recovery refuses replaced profile ownership rather than adopting another principal");
+        var fresh=Json((await bridge.InvokeAsync("files.folderRenameRead",Json(Scope(id)),CancellationToken.None))!);
+        var result=Json((await bridge.InvokeAsync("files.resolveFolderRename",Json(Scope(id,"Notes","notes",fresh.GetProperty("inspection").GetString())),CancellationToken.None))!);
+        check(result.EnumerateObject().Count()==1&&result.GetProperty("resolved").GetBoolean()&&store.FolderRenameRecoveryRead(id).Resolved,"fresh scoped folder consent returns explicit acknowledgement and retains inspectable history");
+        check(File.ReadAllText(store.Resolve("original-preserved/child.txt"))=="original directory bytes"&&File.ReadAllText(store.Resolve("Notes/foreign.txt"))=="foreign bytes changed after inspection","folder acknowledgement preserves both current directory trees byte for byte");
+        _=store.Scan();
+    }
+
 }

@@ -219,7 +219,14 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
-        or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+        or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+
+    static object FolderRenameRow(TextPackStore.FolderRenameRecoveryEntry entry) => new {
+        id=entry.Id,fromPath=entry.FromPath,toPath=entry.ToPath,expectedIdentity=entry.ExpectedIdentity,
+        from=new {present=entry.From.Present,identity=entry.From.Identity},
+        to=new {present=entry.To.Present,identity=entry.To.Identity},
+        inspection=entry.Inspection,summary=entry.Summary,resolutionBlocked=entry.ResolutionBlocked,resolved=entry.Resolved
+    };
 
     void RequireReplacementScope(JsonElement parameters,CancellationToken ct)
     {
@@ -249,6 +256,12 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 return Result(restored);
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.folderRenameList": return ReplacementScope(p,ct,()=>files.FolderRenameRecoveryList().Select(FolderRenameRow).ToArray());
+            case "files.folderRenameRead": return ReplacementScope(p,ct,()=>FolderRenameRow(files.FolderRenameRecoveryRead(Required(p,"id"))));
+            case "files.resolveFolderRename": return ReplacementScope(p,ct,()=>{
+                files.ResolveFolderRename(Required(p,"id"),Required(p,"fromPath"),Required(p,"toPath"),Required(p,"inspection"),()=>RequireReplacementScope(p,ct));
+                Changed();return new {resolved=true};
+            });
             case "files.replacementList": return ReplacementScope(p,ct,()=>files.ReplacementRecoveryList().Select(entry=>new {
                 id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved,kind=entry.Kind,currentPresent=entry.CurrentPresent,captured=entry.Captured,resolutionBlocked=entry.ResolutionBlocked,sourcePath=entry.SourcePath,sourcePresent=entry.SourcePresent,sourceHash=entry.SourceHash }).ToArray());
             case "files.replacementRead": return ReplacementScope(p,ct,()=>{

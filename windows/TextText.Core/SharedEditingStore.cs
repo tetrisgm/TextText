@@ -41,7 +41,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var bytes=RetainedFileReplacement.Read(path,90*1024*1024);
         RetainedFileReplacement.JsonFields(bytes,["Version","SourcePath","Checkpoint","AdoptsExternalChange","CaseOnly"],["Version","SourcePath","Checkpoint"]);
         var intent=JsonSerializer.Deserialize<MoveIntent>(bytes)??throw new InvalidDataException("Invalid shared move intent.");
-        if(intent.Version!=1||string.IsNullOrEmpty(intent.SourcePath)||intent.Checkpoint is null||intent.SourcePath==intent.Checkpoint.Path||intent.CaseOnly is not null&&(intent.CaseOnly!=true||!RetainedFileMove.CaseOnlyPaths(intent.SourcePath,intent.Checkpoint.Path)))throw new InvalidDataException("Unsupported shared move intent.");
+        if(intent.Version!=1||string.IsNullOrEmpty(intent.SourcePath)||intent.Checkpoint is null||intent.SourcePath==intent.Checkpoint.Path||intent.CaseOnly is not null&&(intent.CaseOnly!=true||!(intent.SourcePath!=intent.Checkpoint.Path&&string.Equals(intent.SourcePath,intent.Checkpoint.Path,StringComparison.OrdinalIgnoreCase))))throw new InvalidDataException("Unsupported shared move intent.");
         return intent;
     }
     sealed record Intent(int Version,string BeforeHash,string Payload,SharedCheckpoint Checkpoint);
@@ -126,7 +126,7 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var cp=Read<SharedCheckpoint>(System.IO.Path.Combine(directory,"checkpoint.json"));
         if(cp==null)return null;
         Validate(store,cp);if(cp.ItemId!=itemId)throw new InvalidDataException("Shared identity mismatch.");
-        if(cp.RetiredReason!=null||RetainedFileMove.ExactLeafExists(store.Resolve(cp.Path)))return cp;
+        if(cp.RetiredReason!=null||FolderCaseRename.ExactPathExists(store.Root,store.Resolve(cp.Path)))return cp;
         var target=UniqueProjection(store,itemId);
         return RebaseProjection(store,itemId,target.Path,adoptingExternalChange:true);
     });
@@ -174,8 +174,10 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         Validate(store,cp);if(cp.ItemId!=itemId||cp.RetiredReason!=null)throw new InvalidDataException("Shared identity mismatch.");
         if(cp.Path==newPath)return cp;
         var sourcePath=store.Resolve(cp.Path);var destinationPath=store.Resolve(newPath);
-        var caseOnly=RetainedFileMove.IsCaseOnlyAlias(sourcePath,destinationPath)||adoptingExternalChange&&RetainedFileMove.IsCaseOnlyAlias(destinationPath,sourcePath);
-        if(caseOnly?RetainedFileMove.ExactLeafExists(sourcePath):File.Exists(sourcePath)) {
+        var parentAlreadyMoved=FolderCaseRename.AlreadyMovedAlias(store.Root,sourcePath,destinationPath);
+        if(parentAlreadyMoved)RetainedReplacementProfile.PrepareFolderCase(store);
+        var caseOnly=RetainedFileMove.IsCaseOnlyAlias(sourcePath,destinationPath)||adoptingExternalChange&&RetainedFileMove.IsCaseOnlyAlias(destinationPath,sourcePath)||parentAlreadyMoved;
+        if(caseOnly?FolderCaseRename.ExactPathExists(store.Root,sourcePath):File.Exists(sourcePath)) {
             var source=store.Describe(cp.Path);
             if(source.ItemId!=itemId||source.Hash!=cp.ProjectedHash||!caseOnly&&File.Exists(destinationPath))throw new FileChangedException();
         } else {
@@ -195,12 +197,12 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
     static SharedCheckpoint FinishMove(TextPackStore store,string directory,MoveIntent intent,bool interruptAfterMove=false) {
         var cp=intent.Checkpoint;Validate(store,cp);
         if(intent.Version!=1||intent.SourcePath==cp.Path)throw new InvalidDataException("Invalid shared move.");
-        if(intent.CaseOnly==true?RetainedFileMove.ExactLeafExists(store.Resolve(intent.SourcePath)):File.Exists(store.Resolve(intent.SourcePath))) {
+        if(intent.CaseOnly==true?FolderCaseRename.ExactPathExists(store.Root,store.Resolve(intent.SourcePath)):File.Exists(store.Resolve(intent.SourcePath))) {
             var current=store.Describe(intent.SourcePath);if(current.ItemId!=cp.ItemId||current.Hash!=cp.ProjectedHash)throw new FileChangedException();
             store.Rename(intent.SourcePath,cp.Path,current.Hash);
             if(interruptAfterMove)throw new IOException("Interrupted after shared move.");
         }
-        if(intent.CaseOnly==true&&!RetainedFileMove.ExactLeafExists(store.Resolve(cp.Path)))throw new FileChangedException();
+        if(intent.CaseOnly==true&&!FolderCaseRename.ExactPathExists(store.Root,store.Resolve(cp.Path)))throw new FileChangedException();
         var moved=intent.AdoptsExternalChange?UniqueProjection(store,cp.ItemId):store.Describe(cp.Path);
         if(moved.Path!=cp.Path||moved.ItemId!=cp.ItemId||(!intent.AdoptsExternalChange&&moved.Hash!=cp.ProjectedHash))throw new FileChangedException();
         Save(System.IO.Path.Combine(directory,"checkpoint.json"),cp);File.Delete(System.IO.Path.Combine(directory,"move-intent.json"));return cp;

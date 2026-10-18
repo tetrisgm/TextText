@@ -44,15 +44,20 @@ public sealed partial class TextPackStore
     // Manifest directories are additive; omitted directories and their contents remain.
     public void EnsureFolders(IReadOnlyList<string> folders) {
         if(folders.Count>20000)throw new IOException("Too many workspace folders.");
-        lock(gate)foreach(var path in folders) {
+        lock(gate){FolderCases.VerifyExistingProfile();AssertFolderRenameReadable();FolderCaseRename.ValidateCatalog(this,folders);foreach(var path in folders) {
             if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
             _=Resolve(path);var current=Root;
             foreach(var part in path.Split('/')) {
                 current=System.IO.Path.Combine(current,part);CheckLinks(current);
                 if(File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(current)!,"."+part+".icloud")))throw new IOException("Folder is awaiting download.");
-                Directory.CreateDirectory(current);CheckLinks(current);
+                if(Directory.Exists(current)&&!FolderCaseRename.ExactPathExists(Root,current)) {
+                    var aliases=Directory.EnumerateDirectories(System.IO.Path.GetDirectoryName(current)!).Where(entry=>string.Equals(System.IO.Path.GetFileName(entry),part,StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+                    if(aliases.Length!=1||FolderCaseRename.Identity(aliases[0])!=FolderCaseRename.Identity(current))throw new IOException("Folder spelling alias is ambiguous.");
+                    FolderCases.RenameAlias(aliases[0],current,FolderCaseObservationForTesting);
+                } else Directory.CreateDirectory(current);
+                CheckLinks(current);
             }
-        }
+        }}
     }
     public void ValidateManagedFolder(string path) {
         if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
@@ -62,7 +67,7 @@ public sealed partial class TextPackStore
     public bool RemoveEmptyManagedFolder(string path) {
         if(path.Length>1024||path.Split('/').Any(p=>p.StartsWith('.')||p.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)))throw new IOException("Invalid workspace folder.");
         lock(gate) {
-            var full=Resolve(path);var current=Root;
+            FolderCases.VerifyExistingProfile();AssertFolderRenameReadable();var full=Resolve(path);if(!FolderCaseRename.ExactPathExists(Root,full))return true;var current=Root;
             foreach(var part in path.Split('/')) {
                 current=System.IO.Path.Combine(current,part);CheckLinks(current);
                 if(Directory.Exists(current)&&(File.GetAttributes(current)&FileAttributes.Offline)!=0)throw new IOException("Folder is awaiting download.");
@@ -87,7 +92,7 @@ public sealed partial class TextPackStore
         if (stream.ReadByte() != -1) throw new FileChangedException();
         return bytes;
     }
-    public byte[] Read(string path) { lock(gate) { Replacements.AssertPathReadable(path);var bytes=ReadProjection(Resolve(path)); string? id;try{id=Identity(bytes);}catch{AssertReplacementReadable(null);throw;}AssertReplacementReadable(id);return bytes; } }
+    public byte[] Read(string path) { lock(gate) { AssertFolderRenameReadable();Replacements.AssertPathReadable(path);var bytes=ReadProjection(Resolve(path)); string? id;try{id=Identity(bytes);}catch{AssertReplacementReadable(null);throw;}AssertReplacementReadable(id);return bytes; } }
     public PackFile Describe(string path) { var bytes = Read(path); return new(path, Hash(bytes), Identity(bytes)); }
     public static string Identity(byte[] bytes)
     {
@@ -214,7 +219,7 @@ public sealed partial class TextPackStore
                 }catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or DecoderFallbackException){Error(path,"File is invalid or temporarily unavailable. Its contents have been preserved.");}
             }
         }
-        lock(gate){CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
+        lock(gate){FolderCases.VerifyExistingProfile();AssertFolderRenameReadable();CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
     }
 
     public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)
@@ -227,7 +232,7 @@ public sealed partial class TextPackStore
         finally { if(File.Exists(temp)) File.Delete(temp); }
     }
     void Match(string full, string? expected) {
-        Replacements.AssertPathReadable(System.IO.Path.GetRelativePath(Root,full).Replace('\\','/'));
+        AssertFolderRenameReadable();Replacements.AssertPathReadable(System.IO.Path.GetRelativePath(Root,full).Replace('\\','/'));
         if(File.Exists(full)) {var bytes=ReadProjection(full);AssertReplacementReadable(Identity(bytes));if(expected is null||Hash(bytes)!=expected)throw new FileChangedException();}
         else if(expected is not null)throw new FileChangedException();
     }
@@ -368,6 +373,12 @@ public sealed partial class TextPackStore
     {
         lock(gate) {
             var source=Resolve(from);var target=Resolve(to);Match(source,expectedHash);Replacements.AssertPathReadable(to);
+            if(FolderCaseRename.AlreadyMovedAlias(Root,source,target)) {
+                RetainedReplacementProfile.PrepareFolderCase(this,FolderCaseObservationForTesting);
+                var actual=ReadProjection(target);var id=Identity(actual);
+                if(Hash(actual)!=expectedHash||Scan().Count(file=>file.ItemId==id)!=1)throw new FileChangedException();
+                RecordIntent(new FileIntent("rename",id,from,expectedHash,to));
+            } else {
             var caseOnly=RetainedFileMove.IsCaseOnlyAlias(source,target);
             if(!caseOnly&&RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists.");
             var before=ReadProjection(source);if(Hash(before)!=expectedHash)throw new FileChangedException();var identity=Identity(before);
@@ -378,6 +389,7 @@ public sealed partial class TextPackStore
                 MoveObservationForTesting?.Invoke(point);
             },caseOnly:caseOnly);
             AssertReplacementReadable(identity);RecordIntent(new FileIntent("rename",identity,from,expectedHash,to));
+            }
         }
         Changed?.Invoke();
     }

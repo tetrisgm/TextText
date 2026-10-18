@@ -3,11 +3,11 @@ namespace TextText.Core;
 public sealed partial class TextPackStore
 {
     ReplacementRecoveryRegistry Replacements => new(Root, StateDirectory,RemovalObservationForTesting);
-    public void AssertReplacementReadable(string? itemId) { lock(gate) Replacements.AssertReadable(itemId); }
+    public void AssertReplacementReadable(string? itemId) { lock(gate) {AssertFolderRenameReadable();Replacements.AssertReadable(itemId);} }
     public void ValidateReplacementRegistry() { lock(gate) _=Replacements.Entries(); }
     public bool ReplacementBlocked(string itemId)
     {
-        try {AssertReplacementReadable(itemId);return false;}catch(RetainedFileReplacement.RequiredException){return true;}
+        try {AssertReplacementReadable(itemId);return false;}catch(RetainedFileReplacement.RequiredException){return true;}catch(FolderCaseRename.RequiredException){return true;}
     }
     public IReadOnlyDictionary<string,Guid> ReplacementBlockedItems()
     {
