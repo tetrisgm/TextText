@@ -35,6 +35,14 @@ Final gate: `/private/tmp/texttext-cli-root-routing-core-final-20261018.log`, **
 
 Exact eleven-source/artifact hashes: `/private/tmp/texttext-cli-root-routing-core-final-20261018-source.json`. The tested build artifact is `mac/.build/out/Products/Debug/texttext`, SHA256 `6f4e6e4dd1306472e3183ce0c27f49ae59f65e331943610004e1902a35571a7e`. `Package.resolved` was restored byte-for-byte (SHA256 `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`). The installed shim remains unchanged.
 
-## Pending acceptance
+## Authenticated candidate acceptance
 
-The initial separate private candidate remains diagnostic. No real-root acceptance item has been created. A final current candidate must verify authenticated `do` commands with dedicated new unlisted content, stable keys, read/hash-guarded edit, append and idempotent retry. Local file behavior and authenticated account audit must be reported separately; no public release or installed-CLI acceptance is claimed.
+After source checkpoint `93aa90ae`, the exact tested executable was copied into the separate retained candidate directory `/var/folders/tq/_6yt1vp555qcj2jwgxmz060w0000gn/T/texttext-cli-verified-20261018-9seshxy5`. Its full relevant source inventory and artifact hash are retained in `source-artifact.json`. Its actual `commands` entrypoint verified the existing selected account and printed the explicit authenticated transport notice. Command names and arguments were taken from that response, not guessed.
+
+A new dedicated draft Note was created through `do create_item` with a stable key: item `2a48bf3b-1d6c-4346-8152-618acc563664`, path `Notes/CLI acceptance 2026-10-18 b25376c4-2a48bf3b.textpack`. Actual separate invocations read it, applied a hash-guarded edit, read the new hash, appended with a stable key, retried the exact append request with its original hash, retried the original create, and read the result. Both append responses returned the same revision, the append occurs once, creation returned the same item, and the guarded edit survived. A separate edit with the old hash refused and left the final hash unchanged: `6fb27f2dc79704ea168d83b7a3988555726f410eb291ebd992f00fcee8614d1c`.
+
+Every invocation supplied `--as codex` and a concrete `--message`; `acceptance-receipt.json` hashes all retained request/response files. This proves the authenticated command route and request attribution, not a separately queried live audit row or observed editor presence. The item remains a draft Note in Notes. No existing content, account, credentials, or selected local file was changed by these commands. The installed shim remains on `source-ffbc83ee`; no installed-CLI, public release, or final app acceptance is claimed.
+
+## Local CLI delivery proposal
+
+The current `install` command safely refuses to replace a symlink to a different helper. Preserve that guard. The established standalone delivery mechanism creates a new versioned private executable, retains the previous binary and exact source/artifact/install receipt, verifies the current command is the expected TextText symlink, then atomically swaps only that symlink. A final release candidate must be built after native source freezes and verified before this authorized local update. No update was performed in this slice.
