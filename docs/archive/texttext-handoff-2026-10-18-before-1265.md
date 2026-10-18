@@ -1,6 +1,6 @@
 # Archived handoff before corrected build 1265
 
-Historical snapshot; current status is in [HANDOFF](../HANDOFF.md). Relative references were adjusted for this archive directory.
+> ARCHIVED historical snapshot. Replaced by the current [HANDOFF](../HANDOFF.md). Relative references were adjusted for this archive directory.
 
 # TextText handoff
 
