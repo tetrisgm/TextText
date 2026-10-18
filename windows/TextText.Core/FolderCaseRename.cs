@@ -61,7 +61,7 @@ internal sealed class FolderCaseRename(TextPackStore store)
         if(owner.Version!=2||owner.RootHash!=RootHash)throw new InvalidDataException("Folder account binding changed.");
         RetainedReplacementProfile.Verify(store.StateDirectory,owner,RootHash);
         var marker=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json"),8192))!;
-        if(marker.Version!=2)throw new InvalidDataException("Folder compatibility profile is unavailable.");return RetainedReplacementProfile.PrincipalHash(owner);
+        if(marker.Version is not (2 or 3))throw new InvalidDataException("Folder compatibility profile is unavailable.");return RetainedReplacementProfile.PrincipalHash(owner);
     }
     IDisposable Lease()=>RetainedFileReplacement.AcquireLease(Path.Combine(store.StateDirectory,"folder-case.lock"));
     void Validate(Intent intent,string owner)

@@ -10,6 +10,9 @@ public interface ISyncTransport
     IReadOnlyList<string> Folders => [];
     IReadOnlyList<string>? AuthoritativeFolders => null;
     WorkspaceCapabilities? Capabilities => null;
+    string? ManifestRevision => null;
+    bool SupportsFolderCaseMoves => false;
+    Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken cancellation=default)=>throw new NotSupportedException();
     Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default);
     Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default);
     Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default);
@@ -21,13 +24,13 @@ public interface ISyncTransport
 }
 public sealed class SyncConflictException() : IOException("The remote file changed; both copies are preserved.");
 public sealed record SyncStatus(bool Running,string? Error,int Pending);
-public sealed class SyncEngine
+public sealed partial class SyncEngine
 {
     public sealed record Baseline(string Path,string Hash,string Revision,bool Refresh=false,string? Lifecycle=null);
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null,string? SourcePath=null);
-    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
+    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public FolderSyncBaseline? FolderBaseline {get;set;} public FolderSyncCommand? FolderCommand {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly WorkspaceWriterOwnership workspaceOwnership;
     readonly MirrorPolicy? mirrorPolicy;
@@ -54,7 +57,7 @@ public sealed class SyncEngine
         var retained=false;
         try {
         documentLease=new DocumentLease(store.StateDirectory,itemId);
-        await gate.WaitAsync(ct);try {workspaceLease=workspaceOwnership.Acquire();var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
+        await gate.WaitAsync(ct);try {workspaceLease=workspaceOwnership.Acquire();var state=Load();if(FolderSpellingChanged(state))throw new IOException("A folder move must finish before joining shared editing.");if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)throw new IOException("Pending file sync must finish before joining shared editing.");
             if(!state.BinaryBaselines.ContainsKey(itemId) && state.Items.TryGetValue(itemId,out var baseline)) {
                 try {
                     var file=store.Describe(baseline.Path);
@@ -88,6 +91,7 @@ public sealed class SyncEngine
             if(!collaborating.Contains(itemId))throw new InvalidOperationException("An active collaboration fence is required.");
             store.AssertReplacementReadable(itemId);
             var state=Load();
+            if(FolderSpellingChanged(state))throw new IOException("A folder spelling move must receive its server receipt before checkpoint acknowledgement.");
             var candidates=new[]{state.Items.GetValueOrDefault(itemId)?.Path,path}.Where(value=>value!=null).Distinct().ToArray();
             PackFile? current=null;
             foreach(var candidate in candidates) {
@@ -104,13 +108,13 @@ public sealed class SyncEngine
     }
     public async Task ReconcileRestoredAsync(string itemId,string path,string lifecycle,CancellationToken ct=default) {
         await SyncAsync(ct);await gate.WaitAsync(ct);try {
-            var state=Load();var baseline=state.Items.GetValueOrDefault(itemId);
+            var state=Load();if(FolderSpellingChanged(state))throw new IOException("A folder move must finish before restoring a path baseline.");var baseline=state.Items.GetValueOrDefault(itemId);
             if(baseline==null||baseline.Path!=path||baseline.Lifecycle!=lifecycle||state.Outbox.Any(x=>x.ItemId==itemId)||IsEditing(itemId))throw new FileChangedException();
             var file=store.Describe(path);if(file.ItemId!=itemId||file.Hash!=baseline.Hash)throw new FileChangedException();
         }finally{gate.Release();}
     }
     public async Task<bool> IsReadyAsync(string itemId,CancellationToken ct=default) {
-        await gate.WaitAsync(ct);try {var state=Load();if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)return false;if(SharedEditingStore.HasReadyCheckpoint(store,itemId))return true;if(SharedEditingStore.HasProtectedState(store.StateDirectory,itemId))return false;
+        await gate.WaitAsync(ct);try {var state=Load();if(FolderSpellingChanged(state))return false;if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)return false;if(SharedEditingStore.HasReadyCheckpoint(store,itemId))return true;if(SharedEditingStore.HasProtectedState(store.StateDirectory,itemId))return false;
             if(!state.Items.TryGetValue(itemId,out var baseline))return false;try{var file=store.Describe(baseline.Path);return file.ItemId==itemId&&file.Hash==baseline.Hash&&!baseline.Refresh;}catch(IOException){return false;}
         }finally{gate.Release();}
     }
@@ -124,6 +128,7 @@ public sealed class SyncEngine
                !System.Text.RegularExpressions.Regex.IsMatch(op.Hash,@"^[0-9a-f]{64}$")||!System.Text.RegularExpressions.Regex.IsMatch(op.Revision,@"^[0-9a-f]{64}$"))throw new InvalidDataException("Invalid saved file move.");
             _=store.Resolve(op.Path);_=store.Resolve(op.Destination);
         }
+        ValidateFolderState(result);
         return result; }
     void Save(State state) {
         // A late replacement conflict may arise while an RPC is in flight.
@@ -219,11 +224,14 @@ public sealed class SyncEngine
             if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable. Reopen the workspace to retry.");
             await mirrorPolicy.ReadyAsync(cancellation);
             HasEligiblePending=false;remainingQueueBudget=128;
-            state=Load();var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
+            state=Load();
+            if(!FolderSpellingChanged(state)){var earlyAcknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(earlyAcknowledged.Count>0){Save(state);foreach(var file in earlyAcknowledged)File.Delete(file);}}
             Report(true,null,state.Outbox.Count);
             var local=store.Scan().ToDictionary(x=>x.ItemId);
-            if(localChangesOnly&&state.PendingPull==null&&!HasLocalWork(state,local)) {Report(false,StateError(state),state.Outbox.Count);return;}
+            if(localChangesOnly&&state.PendingPull==null&&state.FolderCommand==null&&!FolderSpellingChanged(state)&&!HasLocalWork(state,local)) {Report(false,StateError(state),state.Outbox.Count);return;}
             var remote=(await transport.ManifestAsync(cancellation)).ToDictionary(x=>x.ItemId);
+            remote=await ReconcileFolderCase(state,local,remote,cancellation);
+            var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             if(state.PendingPull is {} incoming && !store.ReplacementBlocked(incoming.ItemId) && remote.TryGetValue(incoming.ItemId,out var incomingRemote) && incomingRemote.Lifecycle!=null && incomingRemote.Lifecycle!=incoming.Lifecycle) {store.Preserve(Convert.FromBase64String(incoming.Payload),"previous-lifecycle");state.PendingPull=null;Save(state);}
             if(state.PendingPull!=null && !store.ReplacementBlocked(state.PendingPull.ItemId)) {if(IsEditing(state.PendingPull.ItemId)){Report(false,null,state.Outbox.Count);return;}ApplyPull(state);}
             local=store.Scan().ToDictionary(x=>x.ItemId);
@@ -361,6 +369,7 @@ public sealed class SyncEngine
                 var updated=retained.OrderBy(x=>x,StringComparer.Ordinal).ToList();
                 if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
             }
+            CaptureFolderBaseline(state,remote);
             Report(false,StateError(state)??(folderError?"A workspace folder could not be opened. Other files continue syncing.":null),state.Outbox.Count);
         } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {gate.Release();}
     }

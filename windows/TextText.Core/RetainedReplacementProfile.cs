@@ -46,14 +46,20 @@ public static class RetainedReplacementProfile
         var marker = JsonSerializer.Deserialize<Marker>(bytes) ?? throw new InvalidDataException("Invalid replacement profile.");
         var original = RetainedFileReplacement.Read(Path.Combine(directory, "owner-v1.json"), 8192);
         var before = JsonSerializer.Deserialize<AccountRootOwnership.Owner>(original) ?? throw new InvalidDataException("Invalid original owner.");
-        if (marker.Version is not (1 or 2) || marker.OwnerVersion != 2 || before.Version != 1 || owner.RootHash != rootHash || before.RootHash != rootHash ||
+        if (marker.Version is not (1 or 2 or 3) || marker.OwnerVersion != 2 || before.Version != 1 || owner.RootHash != rootHash || before.RootHash != rootHash ||
             marker.OriginalOwnerHash != TextPackStore.Hash(original) || marker.PrincipalHash != PrincipalHash(owner) || marker.PrincipalHash != PrincipalHash(before))
             throw new InvalidDataException("Replacement profile scope cannot be verified.");
-        if(marker.Version==2) {
+        if(marker.Version>=2) {
             var prior=RetainedFileReplacement.Read(Path.Combine(directory,"profile-v1.json"),8192);
             RetainedFileReplacement.JsonFields(prior,["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"],["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"]);
             var old=JsonSerializer.Deserialize<Marker>(prior)??throw new InvalidDataException("Invalid prior replacement profile.");
             if(old.Version!=1||old!=(marker with{Version=1})||!RetainedFileReplacement.Read(Path.Combine(directory,"profile-v1-displaced.json"),8192).SequenceEqual(prior))throw new InvalidDataException("Folder compatibility publication requires review. Both profiles remain retained.");
+        }
+        if(marker.Version==3) {
+            var prior=RetainedFileReplacement.Read(Path.Combine(directory,"profile-v2.json"),8192);
+            RetainedFileReplacement.JsonFields(prior,["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"],["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"]);
+            var old=JsonSerializer.Deserialize<Marker>(prior)??throw new InvalidDataException("Invalid prior folder sync profile.");
+            if(old.Version!=2||old!=(marker with{Version=2})||!RetainedFileReplacement.Read(Path.Combine(directory,"profile-v2-displaced.json"),8192).SequenceEqual(prior))throw new InvalidDataException("Folder sync compatibility publication requires review. Both profiles remain retained.");
         }
         if(owner.Version==2 && !RetainedFileReplacement.Read(Path.Combine(directory,"owner-displaced.json"),8192).SequenceEqual(original))
             throw new InvalidDataException("Ownership changed during replacement profile publication. Both ownership versions are retained for review.");
@@ -111,12 +117,26 @@ public static class RetainedReplacementProfile
         var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(ownerPath,8192))??throw new InvalidDataException("Invalid folder account owner.");
         var rootHash=TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root));VerifyUnlocked(store.StateDirectory,owner,rootHash);
         var directory=DirectoryFor(store.StateDirectory);var path=Path.Combine(directory,"profile.json");var original=RetainedFileReplacement.Read(path,8192);
-        var marker=JsonSerializer.Deserialize<Marker>(original)!;if(marker.Version==2)return;
+        var marker=JsonSerializer.Deserialize<Marker>(original)!;if(marker.Version>=2)return;
         Publish(Path.Combine(directory,"profile-v1.json"),original);observe?.Invoke("folderProfilePreserved");
         var staged=Path.Combine(directory,".profile-v2-"+Guid.NewGuid().ToString("N"));RetainedFileReplacement.Create(staged,JsonSerializer.SerializeToUtf8Bytes(marker with{Version=2}));observe?.Invoke("folderProfileStaged");
         if(!RetainedFileReplacement.Read(path,8192).SequenceEqual(original))throw new FileChangedException();
         var displaced=Path.Combine(directory,"profile-v1-displaced.json");if(File.Exists(displaced))throw new InvalidDataException("A prior folder profile publication requires review.");
         observe?.Invoke("beforeFolderProfilePublication");File.Replace(staged,path,displaced,ignoreMetadataErrors:false);observe?.Invoke("folderProfilePublished");VerifyUnlocked(store.StateDirectory,owner,rootHash);
+    }
+    internal static void PrepareFolderSync(TextPackStore store,Action<string>? observe=null)
+    {
+        PrepareFolderCase(store);
+        using var migration=MigrationLease(store.StateDirectory);
+        var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,AccountRootOwnership.FileName),8192))??throw new InvalidDataException("Invalid folder sync owner.");
+        var rootHash=TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root));VerifyUnlocked(store.StateDirectory,owner,rootHash);
+        var directory=DirectoryFor(store.StateDirectory);var path=Path.Combine(directory,"profile.json");var original=RetainedFileReplacement.Read(path,8192);var marker=JsonSerializer.Deserialize<Marker>(original)!;
+        if(marker.Version==3)return;
+        Publish(Path.Combine(directory,"profile-v2.json"),original);observe?.Invoke("folderSyncProfilePreserved");
+        var staged=Path.Combine(directory,".profile-v3-"+Guid.NewGuid().ToString("N"));RetainedFileReplacement.Create(staged,JsonSerializer.SerializeToUtf8Bytes(marker with{Version=3}));observe?.Invoke("folderSyncProfileStaged");
+        if(!RetainedFileReplacement.Read(path,8192).SequenceEqual(original))throw new FileChangedException();
+        var displaced=Path.Combine(directory,"profile-v2-displaced.json");if(File.Exists(displaced))throw new InvalidDataException("A prior folder sync profile publication requires review.");
+        observe?.Invoke("beforeFolderSyncProfilePublication");File.Replace(staged,path,displaced,ignoreMetadataErrors:false);observe?.Invoke("folderSyncProfilePublished");VerifyUnlocked(store.StateDirectory,owner,rootHash);
     }
 
 }

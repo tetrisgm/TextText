@@ -9,6 +9,8 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--folder-propagation-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-propagation-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCasePropagationTests.Run(folder,Assert);return;}
+ if(args.Length==2&&args[0]=="--folder-propagation-baseline-audit") {var propagation=Path.Combine(Path.GetTempPath(),"texttext-folder-propagation-native-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(propagation);await FolderPropagationTests.Run(propagation,args[1],Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-case-fixtures"})) {var folderBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&folderBase.StartsWith("/var/"))folderBase="/private"+folderBase;var folder=Path.Combine(folderBase,"texttext-folder-case-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCaseTests.Run(folder,Assert);Console.WriteLine("All folder case fixtures passed. Receipt: "+folder);return;}
  if(args.SequenceEqual(new[]{"--mirror-queue-fixtures"})) {var queueBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&queueBase.StartsWith("/var/"))queueBase="/private"+queueBase;var queue=Path.Combine(queueBase,"texttext-queue-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(queue);await MirrorQueueIntegrationTests.Run(queue,Assert);Console.WriteLine("All mirror queue fixtures passed. Receipt: "+queue);return;}
  if(args.SequenceEqual(new[]{"--alias-mutation-fixtures"})) {var aliasBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&aliasBase.StartsWith("/var/"))aliasBase="/private"+aliasBase;var alias=Path.Combine(aliasBase,"texttext-alias-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(alias);AliasMutationTests.Run(alias,Assert);Console.WriteLine("All alias mutation fixtures passed. Receipt: "+alias);return;}
@@ -35,7 +37,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
+ await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);
@@ -678,6 +680,10 @@ static class Test
  }
  internal sealed class Fake:ISyncTransport{
   public WorkspaceCapabilities? Capabilities {get;set;}
+  public string? ManifestRevision {get;set;}
+  public bool SupportsFolderCaseMoves {get;set;}
+  public Func<FolderCaseMoveRequest,Task<FolderCaseMoveReceipt>>? FolderMove;
+  public Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken cancellation=default)=>FolderMove?.Invoke(request)??throw new NotSupportedException();
   public IReadOnlyList<string> Folders {get;set;}=[];
   public IReadOnlyList<string>? AuthoritativeFolders {get;set;}
   public System.Net.HttpStatusCode? DownloadFailure;public RemoteItem? Item;public byte[] Data=[];public int UploadCount,DeleteCount,ManifestCount,BinaryPatchCount;public bool FailAfterCommit,FailBeforeCommit,FailBinaryAfterCommit;public Action? BeforeDownload,BeforeBinaryPatch;public List<string> Operations=[];readonly Dictionary<string,string> receipts=[];
