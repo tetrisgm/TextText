@@ -5,7 +5,7 @@ export const MULTI_FIELD_KEYS = ['body', 'subtitle'];
 export function validateMultiFieldEdit(edit) {
   return edit && typeof edit.id === 'string' && edit.id.length <= 64
     && ['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'].includes(edit.role)
-    && MULTI_FIELD_KEYS.includes(edit.field) && new RegExp(`^r[0-9]{1,5}-${edit.role}(?:-${edit.field}${edit.field === 'body' ? '|-write[1-8]' : ''})?$`).test(edit.id) && edit.op === 'append'
+    && MULTI_FIELD_KEYS.includes(edit.field) && new RegExp(`^r[0-9]{1,5}-${edit.role}(?:-${edit.field}${edit.field === 'body' ? '|-write[1-8]|-input(?:[1-9]|1[0-6])' : ''})?$`).test(edit.id) && edit.op === 'append'
     && typeof edit.text === 'string' && edit.text.length > 0 && edit.text.length <= 1024;
 }
 export function documentObservation(snapshot) {

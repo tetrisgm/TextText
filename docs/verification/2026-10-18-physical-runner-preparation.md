@@ -41,7 +41,7 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | App/browser crash/restart | `restart` for either app or browser; browser owned SIGKILL/profile proof | Fresh candidate and physical rotation across every supported role |
 | Invalid intermediate pack repaired atomically | `transientInvalid` for either file actor | Fresh physical evidence; bounded truncated-ZIP/invalid-canonical-JSON malformedRepair source now supports held provider probes and guarded repair |
 | Same-write attachment update | `assetReplacement`, paired `assetReplacements` | Same-entry race remains diagnostic, without retained losing-byte attestation |
-| Normal close / close during traffic | `closeProbe` checks PC normal close after converged rounds | Actual concurrent peer input during close and guarded reopen are still missing for every role |
+| Normal close / close during traffic | `closeProbe` checks PC normal close after converged rounds | Bounded pc-app closeDuringTraffic source now checks observed browser input overlap + graceful guarded reopen; fresh physical evidence and other close roles remain open |
 | Independent durable reopen | `rounds: 0`, `expectedBaselineHash`, `expectedAssetHashes` | Fresh processes and fixture identity from preceding physical receipt |
 | Sustained typing | Implemented in 684406ad with bounded real chunks and ordinal evidence | Current private candidates and physical runs still required |
 | Undo/redo | 414c13bf implements real keyboard history protocol and adversarial accounting | Current private candidates and physical history journey still required |

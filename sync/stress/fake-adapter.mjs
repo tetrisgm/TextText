@@ -32,7 +32,7 @@ const document = () => {
   return { documentSnapshot: fieldSnapshot, text: (fault === 'different-baseline' ? 'Different fixture text.\n' : baseline) + (fault === 'lie-content' ? '' : edits.map((e) => e.text).join('')), editIds: edits.map((e) => e.id) };
 };
 
-createInterface({ input: process.stdin }).on('line', (line) => {
+createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   switch (m.type) {
     case 'hello': {
@@ -85,6 +85,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         if (fault === 'input-skip') inputProgress.chunks[1].ordinal = 3;
         if (fault === 'input-wrong-role') inputProgress.editId = 'r1-mac-cli';
         if (fault === 'input-clock') inputProgress.chunks[1].elapsedMs = 0;
+        if(m.edit.reportTraffic===true){
+          for(let index=0;index<inputProgress.chunks.length;index++){const p={editId:m.edit.id,chunks:inputProgress.chunks.slice(0,index+1),acceptedPrefix:chunks.slice(0,index+1).join('')};if(fault!=='close-no-progress' && !(fault==='close-missing-last'&&index===inputProgress.chunks.length-1))out({type:'traffic-progress',round:m.round,progress:fault==='close-wrong-progress'?{...p,editId:'r1-pc-app'}:p});await new Promise(resolve=>setTimeout(resolve,m.edit.inputSequence.intervalMs));}
+        }
         if (fault === 'input-prefix-fail') {
           publish({ ...m.edit, text: inputProgress.acceptedPrefix });
           return out({ type: 'error', round: m.round, message: 'injected partial input failure', inputProgress });
@@ -95,6 +98,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       else if (fault !== 'drop-edit') { if (online) publish(m.edit); else pendingEdits.push(m.edit); }
       return out({ type: 'applied', round: m.round, editId: m.edit.id, ...(writeProgress ? { writeProgress } : {}), ...(fieldEditIds ? { fieldEditIds, ...(fieldProgress ? { fieldProgress } : {}) } : {}), ...(historyProgress ? { historyProgress } : {}), ...(inputProgress ? { inputProgress } : {}) });
     }
+    case 'close-probe':
+      return setTimeout(()=>out({type:'close-probe',round:m.round,closed:fault!=='close-refuse',keepEditingDialog:fault==='close-refuse',flushed:fault!=='close-refuse'}),fault==='close-fast'?0:250);
     case 'transport':
       online = m.online;
       if (online) while (pendingEdits.length) publish(pendingEdits.shift());
@@ -106,7 +111,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       reloads = 0;
       const browserRestart = role.endsWith('-web'); const wasOffline = !online;
       if (browserRestart) { online = true; for (const edit of pendingEdits.splice(0)) publish(edit); }
-      return out({ type: 'restart', round: m.round, generation, ...(browserRestart ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
+      return out({ type: 'restart', round: m.round, generation, ...(m.graceful && fault!=='close-reopen-wrong-lifecycle'?{lifecycle:'normal-close-reopen'}:{}), ...(browserRestart ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
     }
     case 'installMalformed':
       malformed={role,round:m.round,kind:m.kind,sourcePresent:true,fsynced:true,acceptedEdits:0,originalSha256:'a'.repeat(64),faultSha256:'b'.repeat(64),fileIdentity:'c'.repeat(64),started:performance.now()};

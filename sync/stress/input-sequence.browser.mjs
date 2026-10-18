@@ -16,12 +16,16 @@ try {
   const chunks = ['⟦mac-web:1:1:café🧑‍💻⟧', '⟦mac-web:1:2:東京🌿⟧', '[mac-web r1 alpha123]'];
   const edit = {id:'r1-mac-web',op:'append',text:chunks.join(''),inputSequence:{chunks,intervalMs:25}};
   const progress = {editId:edit.id,chunks:[],acceptedPrefix:''};
+  const notifications=[];
   await typeInputSequence(edit, {
     insert: async text => { assert.equal(await page.evaluate(() => window.fixtureEditor.isConnected), true); await page.keyboard.insertText(text); },
     visible: async text => (await page.locator('[contenteditable]').textContent()).split(text).length === 2,
-    now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress,
+    now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress, onProgress: p => notifications.push(p),
   });
   assert.ok(checkInputProgress(edit,progress));
+  assert.deepEqual(notifications.map(p=>p.chunks.length),[1,2,3]);
+  assert.deepEqual(notifications.at(-1),progress);
+  assert.ok(notifications.every(p=>checkInputProgress(edit,p,false)));
   assert.equal(await page.locator('[contenteditable]').textContent(), 'Existing fixture text.' + chunks.join(''));
   const events = await page.evaluate(() => window.events);
   assert.deepEqual(events.filter(event => event.type === 'input').map(event => event.data), chunks);

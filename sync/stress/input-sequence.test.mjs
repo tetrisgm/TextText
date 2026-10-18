@@ -47,3 +47,5 @@ test('visibility timeout stops a sequence and retains the attempted chunk', asyn
   assert.equal(progress.chunks.length, 0);
   assert.ok(checkInputProgress(value, progress, false));
 });
+
+test('streamed progress is detached exact prefix and callback failure stops further input',async()=>{const value=edit();let clock=0,inputs=0;const progress={editId:value.id,chunks:[],acceptedPrefix:''},seen=[];await assert.rejects(typeInputSequence(value,{insert:async()=>{inputs++;clock++;},visible:async()=>true,now:()=>clock,sleep:async ms=>{clock+=ms;},progress,onProgress:p=>{seen.push(p);if(seen.length===2)throw new Error('delivery failed');p.chunks[0].text='detached mutation';}}),/delivery failed/);assert.equal(inputs,2);assert.ok(checkInputProgress(value,progress,false));assert.equal(progress.chunks.length,2);assert.equal(seen[0].chunks.length,1);});

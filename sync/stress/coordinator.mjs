@@ -42,7 +42,7 @@ const assetPathsOf = (config) => [...new Set([...Object.keys(config.expectedAsse
 const replacementDigest = a => createHash('sha256').update(Buffer.from(a.bytesBase64, 'base64')).digest('hex');
 
 // Deterministic per-round edit plan from the seed.
-export function planRounds(seed, rounds, pattern = 'append', sustainedTyping, undoRedo, multiField, fileWrites) {
+export function planRounds(seed, rounds, pattern = 'append', sustainedTyping, undoRedo, multiField, fileWrites, closeDuringTraffic) {
   const rand = mulberry32(seed);
   const plan = [];
   for (let round = 1; round <= rounds; round += 1) {
@@ -56,9 +56,10 @@ export function planRounds(seed, rounds, pattern = 'append', sustainedTyping, un
         : pattern === 'same-position' && EDITOR_ROLES.includes(role) ? 'insert-start' : 'append';
       const text = pattern === 'unicode' ? `🌿 café 東京 ${marker} 🧪` : marker;
       const fileChunks = fileWrites?.role === role ? [...Array.from({ length: fileWrites.writes - 1 }, (_, i) => `⟦${role}:r${round}:write${i + 1}⟧`), marker] : null;
-      const chunks = sustainedTyping && EDITOR_ROLES.includes(role) ? [...Array.from({ length: sustainedTyping.chunks - 1 }, (_, i) => `⟦${role}:${round}:${i + 1}:café🌿⟧`), marker] : null;
+      const typing = closeDuringTraffic?.trafficRole === role ? closeDuringTraffic : sustainedTyping && EDITOR_ROLES.includes(role) ? sustainedTyping : null;
+      const chunks = typing ? [...Array.from({ length: typing.chunks - 1 }, (_, i) => `⟦${role}:${round}:${i + 1}:café🌿⟧`), marker] : null;
       const fieldEdits = multiField ? ['body','subtitle'].map(field => ({ role, id: `r${round}-${role}-${field}`, op: 'append', field, text: field === 'body' ? text : `⟦${role}:r${round}:subtitle:${word}${n}⟧` })) : null;
-      return { role, ...(fileChunks ? { fileWriteSequence: { mode: fileWrites.mode, chunks: fileChunks, intervalMs: fileWrites.intervalMs } } : {}), ...(fieldEdits ? { fieldEdits } : {}), ...(undoRedo && EDITOR_ROLES.includes(role) ? { undoRedo: true } : {}), ...(chunks ? { inputSequence: { chunks, intervalMs: sustainedTyping.intervalMs } } : {}), id: `r${round}-${role}`, op, text: fileChunks ? fileChunks.join('') : chunks ? chunks.join('') : text };
+      return { role, ...(fileChunks ? { fileWriteSequence: { mode: fileWrites.mode, chunks: fileChunks, intervalMs: fileWrites.intervalMs } } : {}), ...(fieldEdits ? { fieldEdits } : {}), ...(undoRedo && EDITOR_ROLES.includes(role) ? { undoRedo: true } : {}), ...(chunks ? { inputSequence: { chunks, intervalMs: typing.intervalMs } } : {}), id: `r${round}-${role}`, op, text: fileChunks ? fileChunks.join('') : chunks ? chunks.join('') : text };
     });
     plan.push({ round, edits });
   }
@@ -73,6 +74,12 @@ export function validateConfig(config) {
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
   if (config.pattern !== undefined && !['append', 'same-position', 'unicode', 'overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern)) fail('unknown pattern');
   if (['overlap-replace', 'file-overlap', 'partial-overlap'].includes(config.pattern) && config.rounds > 1) fail('overlap patterns allow one round or a zero-round reopen');
+  if (config.closeDuringTraffic !== undefined) {
+    const c = config.closeDuringTraffic;
+    if (!c || Object.keys(c).some(key=>!['role','trafficRole','chunks','intervalMs'].includes(key)) || c.role !== 'pc-app' || !['mac-web','pc-web'].includes(c.trafficRole) || !Number.isInteger(c.chunks) || c.chunks < 4 || c.chunks > 16 || !Number.isInteger(c.intervalMs) || c.intervalMs < 100 || c.intervalMs > 250 || config.rounds > 1 || config.fileWrites || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || config.malformedRepair || config.offline || config.restart || config.closeProbe || (config.pattern ?? 'append') !== 'append') fail('closeDuringTraffic requires pc-app, one browser peer, chunks4..16, intervalMs100..250 and one isolated append round or reopen');
+    config.closeDuringTraffic = {role:c.role,trafficRole:c.trafficRole,chunks:c.chunks,intervalMs:c.intervalMs};
+    if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedDocumentHash ?? '')) fail('closeDuringTraffic reopen requires expectedDocumentHash');
+  }
   if (config.malformedRepair !== undefined) {
     const f = config.malformedRepair;
     if (!f || Object.keys(f).some(key => !['role','kind','holdMs'].includes(key)) || !['mac-cli','pc-cli'].includes(f.role) || !['truncated-zip','invalid-document-json'].includes(f.kind) || !Number.isInteger(f.holdMs) || f.holdMs < 100 || f.holdMs > 1000 || config.rounds > 20 || config.fileWrites || config.multiField || config.sustainedTyping || config.undoRedo || config.assetReplacement || config.assetReplacements || config.transientInvalid || config.offline || config.restart || config.closeProbe || (config.pattern ?? 'append') !== 'append') fail('malformedRepair requires one CLI, bounded kind/holdMs100..1000, at most20rounds and isolated plain append');
@@ -218,13 +225,13 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
       role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) }));
     if (this.config.diagnosticSameEntryRace) scenario.diagnosticSameEntryRace = true;
-    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, ...(this.config.mode === 'real' ? { expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, { expected: true })])) } : {}), rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites)}, null, 2));
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, ...(this.config.mode === 'real' ? { expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, { expected: true })])) } : {}), rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
   }
@@ -242,7 +249,7 @@ export class Coordinator {
     try {
       await this.startAdapters();
       const initial = this.collect(0, 'state');
-      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? { documentSnapshot: true } : {}) });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
       const evidence = {};
@@ -254,14 +261,14 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
-      if (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) {
+      if (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) {
         const documents = this.documentStates(baseline);
         this.documentBaseline = documentObservation(documents.get('mac-app')).snapshot;
         this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, []);
         if (this.config.expectedDocumentHash && this.finalDocumentHash !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', {});
       }
       if (this.config.mode === 'real') {
-        if (this.config.malformedRepair && canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('malformed-all-assets-required', {});
+        if ((this.config.malformedRepair || this.config.closeDuringTraffic) && canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('scenario-all-assets-required', {});
         const files = ['mac-cli', 'pc-cli'].map(role => ({ role, ...this.attestations[role].initialPack }));
         if (files.some(file => file.bodySha256 !== hashText(this.baseline)) || files[0].documentSha256 !== files[1].documentSha256
           || JSON.stringify(files[0].assetHashes) !== JSON.stringify(files[1].assetHashes))
@@ -280,7 +287,7 @@ export class Coordinator {
         for (let sample = 2; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
           await new Promise(resolve => setTimeout(resolve, 500));
           const pending = this.collect(0, 'state');
-          this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
+          this.broadcast({ type: 'observe', round: 0, expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? { documentSnapshot: true } : {}) });
           const states = await pending;
           for (const role of ROLES) {
             const state = states.get(role);
@@ -288,13 +295,13 @@ export class Coordinator {
               || hashText(state.text) !== this.config.expectedBaselineHash)
               throw new StressFailure('reopen-hash-mismatch', { role, sample, expected: this.config.expectedBaselineHash });
           }
-          if ((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) && checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
+          if ((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) && checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), []) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
           this.checkAssets(states, 0);
           for (const role of EDITOR_ROLES) this.checkEditor(0, role, states.get(role).editor);
           this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
         }
       }
-      for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites)) await this.runRound(plan);
+      for (const plan of planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic)) await this.runRound(plan);
       if (this.config.closeProbe) await this.closeProbe();
     } catch (error) {
       status = 'failed';
@@ -312,12 +319,12 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode, fixture: { workspaceId: this.config.fixture.workspaceId, itemId: this.config.fixture.itemId },
       finalHash: this.roundResults.at(-1)?.hash ?? (status === 'passed' ? this.config.expectedBaselineHash ?? (this.baseline ? hashText(this.baseline) : null) : null),
-      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
+      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
-        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+        ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
+      scenario: { ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
@@ -389,8 +396,9 @@ export class Coordinator {
         const l = {
           err: () => done(() => reject(new StressFailure('adapter-error', { round, role }))),
           m: (message) => {
+            if (type === 'applied' && message.type === 'traffic-progress' && this.config.closeDuringTraffic?.trafficRole === role) return;
             if (message.type === 'error') {
-              const edit = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites).at(-1)?.edits.find(edit => edit.role === role);
+              const edit = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).at(-1)?.edits.find(edit => edit.role === role);
               const progress = message.inputProgress;
               const writes = message.writeProgress;
               const writesValid = writes === undefined || (edit && checkWriteProgress(edit, role, writes, false));
@@ -442,6 +450,52 @@ export class Coordinator {
       }
     }
     return true;
+  }
+
+  sendEdit(round, edit, reportTraffic = false) {
+    this.adapters.get(edit.role).send({ type: 'edit', round, edit: { ...(reportTraffic ? {reportTraffic:true} : {}), id: edit.id, op: edit.op, text: edit.text, ...(edit.fileWriteSequence ? { fileWriteSequence: edit.fileWriteSequence } : {}), ...(edit.fieldEdits ? { fieldEdits: edit.fieldEdits } : {}), ...(edit.undoRedo ? { undoRedo: true } : {}), ...(edit.inputSequence ? { inputSequence: edit.inputSequence } : {}),
+      target: edit.op === 'replace-target' ? this.config.pattern === 'partial-overlap' ? PARTIAL_REPLACE_TARGET : REPLACE_TARGET : undefined,
+      assetReplacement: assetReplacementsOf(this.config).filter(a => a.role === edit.role && a.round === round)
+        .map(a => ({ path: a.path, bytesBase64: a.bytesBase64 }))[0] } }); // concurrent dispatch
+  }
+
+  async applyCloseTraffic(round, edits) {
+    const {role,trafficRole} = this.config.closeDuringTraffic;
+    const own = edits.find(edit=>edit.role===role), traffic = edits.find(edit=>edit.role===trafficRole);
+    const ownPending = this.collect(round,'applied',[role]); this.sendEdit(round,own);
+    const applied = await ownPending;
+    if(applied.get(role).editId!==own.id) throw new StressFailure('close-own-edit-mismatch',{round,role});
+    const adapter = this.adapters.get(trafficRole), start = performance.now();
+    let previous=0, lastProgress, during=0, closing=false, completed=false, closePromise, closeError, closeRequestedMs, closeCompletedMs;
+    const onProgress = message => {
+      if(message.type!=='traffic-progress')return;
+      const progress=message.progress;
+      if(message.round!==round || !checkInputProgress(traffic,progress,false) || progress.chunks.length!==previous+1) { closeError=new StressFailure('close-traffic-progress-invalid',{round,role:trafficRole});return; }
+      previous=progress.chunks.length;lastProgress=progress;
+      const elapsedMs=performance.now()-start;
+      this.record('close-traffic-progress',{round,role:trafficRole,elapsedMs,progress});
+      if(closing&&!completed)during++;
+      if(!closing){
+        closing=true;closeRequestedMs=elapsedMs;
+        const pending=this.collect(round,'close-probe',[role]);this.adapters.get(role).send({type:'close-probe',round});
+        closePromise=pending.then(results=>{completed=true;closeCompletedMs=performance.now()-start;const result=results.get(role);if(result.closed!==true||result.keepEditingDialog!==false||result.flushed!==true)throw new StressFailure('close-traffic-normal-close-failed',{round,role,result});return result;});
+        closePromise.catch(error=>{closeError=error;});
+      }
+    };
+    adapter.on('message',onProgress);
+    try {
+      const peers=ROLES.filter(peer=>peer!==role),pending=this.collect(round,'applied',peers);
+      for(const edit of edits.filter(edit=>edit.role!==role))this.sendEdit(round,edit,edit.role===trafficRole);
+      for(const [peer,result]of await pending)applied.set(peer,result);
+      if(!closePromise)throw closeError??new StressFailure('close-traffic-progress-missing',{round,role:trafficRole});
+      await closePromise;
+      if (previous!==traffic.inputSequence.chunks.length || canonicalJSON(lastProgress)!==canonicalJSON(applied.get(trafficRole).inputProgress)) throw new StressFailure('close-traffic-final-prefix-mismatch',{round,role:trafficRole});
+      if(closeError)throw closeError;
+      if(during<1)throw new StressFailure('close-traffic-insufficient-overlap',{round,role,trafficRole,during,closeRequestedMs,closeCompletedMs});
+      this.record('close-during-traffic',{round,role,trafficRole,ownEditId:own.id,observedChunksDuringClose:during,closeRequestedMs,closeCompletedMs,closed:true,flushed:true});
+      await this.restartActor(round,role,true);
+      return applied;
+    } finally { adapter.off('message',onProgress); }
   }
 
   async runMalformed(round) {
@@ -500,12 +554,9 @@ export class Coordinator {
     }
     const offlineRole = this.config.offline?.round === round ? this.config.offline.role : null;
     if (offlineRole) await this.setTransport(round, offlineRole, false);
-    const pending = this.collect(round, 'applied');                       // all-ready barrier
-    for (const edit of edits) this.adapters.get(edit.role).send({ type: 'edit', round, edit: { id: edit.id, op: edit.op, text: edit.text, ...(edit.fileWriteSequence ? { fileWriteSequence: edit.fileWriteSequence } : {}), ...(edit.fieldEdits ? { fieldEdits: edit.fieldEdits } : {}), ...(edit.undoRedo ? { undoRedo: true } : {}), ...(edit.inputSequence ? { inputSequence: edit.inputSequence } : {}),
-      target: edit.op === 'replace-target' ? this.config.pattern === 'partial-overlap' ? PARTIAL_REPLACE_TARGET : REPLACE_TARGET : undefined,
-      assetReplacement: assetReplacementsOf(this.config).filter(a => a.role === edit.role && a.round === round)
-        .map(a => ({ path: a.path, bytesBase64: a.bytesBase64 }))[0] } }); // concurrent dispatch
-    const applied = await pending;
+    let applied;
+    if (this.config.closeDuringTraffic) applied = await this.applyCloseTraffic(round, edits);
+    else { const pending = this.collect(round, 'applied'); for (const edit of edits) this.sendEdit(round, edit); applied = await pending; }
     for (const edit of edits) if (applied.get(edit.role).editId !== edit.id) throw new StressFailure('applied-mismatch', { round, role: edit.role, expected: edit.id, actual: applied.get(edit.role).editId });
     for (const edit of edits) {
       const writeProgress = applied.get(edit.role).writeProgress;
@@ -531,7 +582,7 @@ export class Coordinator {
     const restartRole = this.config.restart?.round === round ? this.config.restart.role : null;
     if (restartRole) await this.restartActor(round, restartRole);
     if (offlineRole) await this.setTransport(round, offlineRole, true);
-    const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites).flatMap((p) => p.edits.map((e) => e.id)).sort();
+    const expectedEditIds = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).flatMap((p) => p.edits.map((e) => e.id)).sort();
     // A client can report a locally stable state before another replica's save reaches it.
     // Keep all six actors open while checking convergence; a premature failure shuts down
     // the very sync processes we are measuring. The deadline still makes stalls visible.
@@ -540,7 +591,7 @@ export class Coordinator {
     let samples = 0, stableSamples = 0, stableHash = null;
     do {
       const observing = this.collect(round, 'state');
-      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? { documentSnapshot: true } : {}) });
       states = await observing;
       observed = {};
       for (const role of ROLES) {
@@ -554,15 +605,15 @@ export class Coordinator {
       // Adapter-local settling is insufficient: require three separate all-six
       // observations with the same semantic hash and complete operation evidence.
       for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? this.documentStates(states) : null;
+      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? this.documentStates(states) : null;
       const documentHashes = documents ? new Set([...documents.values()].map(snapshot => documentObservation(snapshot).hash)) : null;
       if (hashes.size === 1 && (!documentHashes || documentHashes.size === 1) && this.checkAssets(states, round)) {
         this.checkRoundContent(states, round, expectedEditIds);
         if (documents) {
-          const fieldEdits = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites).flatMap(plan => plan.edits.flatMap(edit => edit.fieldEdits ?? (edit.fileWriteSequence ? edit.fileWriteSequence.chunks.map((text,index) => ({ role: edit.role, id: edit.id + '-write' + (index + 1), op: 'append', field: 'body', text })) : [{ role: edit.role, id: edit.id, op: 'append', field: 'body', text: edit.text }])));
+          const fieldEdits = planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).flatMap(plan => plan.edits.flatMap(edit => edit.fieldEdits ?? (edit.inputSequence ? edit.inputSequence.chunks.map((text,index)=>({role:edit.role,id:edit.id+'-input'+(index+1),op:'append',field:'body',text})) : edit.fileWriteSequence ? edit.fileWriteSequence.chunks.map((text,index) => ({ role: edit.role, id: edit.id + '-write' + (index + 1), op: 'append', field: 'body', text })) : [{ role: edit.role, id: edit.id, op: 'append', field: 'body', text: edit.text }])));
           this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, fieldEdits);
         }
-        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? this.finalDocumentHash : [...hashes][0];
+        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? this.finalDocumentHash : [...hashes][0];
         stableSamples = hash === stableHash ? stableSamples + 1 : 1;
         stableHash = hash;
         this.record('convergence-sample', { round, sample: samples, stableSamples, hash,
@@ -577,7 +628,7 @@ export class Coordinator {
     if (!this.checkAssets(states, round)) throw new StressFailure('asset-mismatch', { round, expected: this.config.expectedAssetHashes,
       actual: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) });
     if (stableSamples < REQUIRED_CONVERGENCE_SAMPLES) throw new StressFailure('convergence-unstable', { round, samples, stableSamples, required: REQUIRED_CONVERGENCE_SAMPLES });
-    const result = { round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : { faultCount: round }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
+    const result = { round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : this.config.malformedRepair ? { faultCount: round } : { closeTrafficCount: 1 }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
       ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
     this.roundResults.push(result);
     this.record('round', result);
@@ -608,7 +659,7 @@ export class Coordinator {
     }
     for (const role of ROLES) {
       let remaining = normalizeText(states.get(role).text);
-      for (const edit of planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites).flatMap(p => p.edits)) {
+      for (const edit of planRounds(this.config.seed, round, this.config.pattern, this.config.sustainedTyping, this.config.undoRedo, this.config.multiField, this.config.fileWrites, this.config.closeDuringTraffic).flatMap(p => p.edits)) {
         for (const text of edit.fileWriteSequence?.chunks ?? edit.inputSequence?.chunks ?? [edit.text]) {
           if (remaining.split(text).length !== 2) throw new StressFailure('content-mismatch', { round, role, editId: edit.id, text });
           remaining = remaining.replace(text, '');
@@ -637,10 +688,11 @@ export class Coordinator {
     this.record('close-probe', { role, round: this.config.rounds, ...result });
   }
 
-  async restartActor(round, role) {
+  async restartActor(round, role, graceful = false) {
     const pending = this.collect(round, 'restart', [role]);
-    this.adapters.get(role).send({ type: 'restart', round });
+    this.adapters.get(role).send({ type: 'restart', round, ...(graceful ? {graceful:true} : {}) });
     const reply = (await pending).get(role);
+    if (graceful && reply.lifecycle !== 'normal-close-reopen') throw new StressFailure('close-reopen-lifecycle-invalid',{round,role});
     if (reply.generation !== 2) {
       throw new StressFailure('restart-mismatch', { round, role, generation: reply.generation });
     }
@@ -653,7 +705,7 @@ export class Coordinator {
       catch (error) { throw new StressFailure('restart-identity-mismatch', { round, role, reason: String(error.message).slice(0, 240) }); }
     }
     if (role.endsWith('-web') && (!reply.crash || reply.crash.method !== 'SIGKILL' || reply.crash.exited !== true || !/^[a-f0-9]{64}$/.test(reply.crash.profileScopeHash ?? '') || !Number.isSafeInteger(reply.crash.pid) || reply.crash.pid <= 1 || reply.online !== true || reply.reconnectByRestart !== (this.config.offline?.role === role && this.config.offline?.round === round))) throw new StressFailure('restart-crash-evidence-invalid', { round, role });
-    const evidence = { round, ...(role.endsWith('-web') ? { crash: { pid: reply.crash.pid, profileScopeHash: reply.crash.profileScopeHash, method: 'SIGKILL', exited: true }, reconnectByRestart: reply.reconnectByRestart, online: true } : {}), generation: reply.generation, sessionId: null,
+    const evidence = { round, ...(graceful ? {lifecycle:'normal-close-reopen'} : {}), ...(role.endsWith('-web') ? { crash: { pid: reply.crash.pid, profileScopeHash: reply.crash.profileScopeHash, method: 'SIGKILL', exited: true }, reconnectByRestart: reply.reconnectByRestart, online: true } : {}), generation: reply.generation, sessionId: null,
       ...(attested ? { attestedSessionId: attested.sessionId, identity: attested.identity } : {}) };
     this.restartEvidence[role] = evidence;
     this.record('restart', { round, role, ...evidence });

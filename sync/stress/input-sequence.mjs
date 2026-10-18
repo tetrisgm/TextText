@@ -25,7 +25,7 @@ export function checkInputProgress(edit, progress, complete = true) {
     || progress.attemptedChunk.text !== s.chunks[progress.chunks.length])) return false;
   return progress.acceptedPrefix === s.chunks.slice(0, progress.chunks.length).join('');
 }
-export async function typeInputSequence(edit, { insert, visible, now, sleep, progress }) {
+export async function typeInputSequence(edit, { insert, visible, now, sleep, progress, onProgress = () => {} }) {
   if (!validateInputSequence(edit)) throw new Error('invalid bounded input sequence');
   const start = now();
   for (const [index, text] of edit.inputSequence.chunks.entries()) {
@@ -41,6 +41,7 @@ export async function typeInputSequence(edit, { insert, visible, now, sleep, pro
     progress.chunks.push({ ordinal: index + 1, text, visible: true, elapsedMs });
     progress.acceptedPrefix += text;
     delete progress.attemptedChunk;
+    await onProgress(structuredClone(progress));
     if (index + 1 < edit.inputSequence.chunks.length) await sleep(edit.inputSequence.intervalMs);
   }
 }

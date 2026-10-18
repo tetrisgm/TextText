@@ -336,7 +336,7 @@ async function main() {
       } else if (m.edit.inputSequence) {
         await typeInputSequence(m.edit, { insert: async text => { await assertOnItem(); await page.keyboard.insertText(text); },
           visible: async text => { await assertOnItem(); return (await bodyText()).split(text).length === 2; },
-          now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress: inputProgress });
+          now: () => performance.now(), sleep: ms => page.waitForTimeout(ms), progress: inputProgress, onProgress: progress => { if (m.edit.reportTraffic === true) out({type:"traffic-progress",round:m.round,progress}); } });
       } else {
         await page.keyboard.insertText(m.edit.text);
         const after = await bodyText();

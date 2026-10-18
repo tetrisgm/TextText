@@ -6,7 +6,8 @@ import { readFileSync, mkdirSync, existsSync, writeFileSync, renameSync, statSyn
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { isAbsolute, join, basename, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isAbsolute, join, basename, extname, resolve } from 'node:path';
 
 const [assembly, configPath, session] = process.argv.slice(2);
 const script = new URL('./stress-native-task.ps1', import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:\/)/, '');
@@ -54,6 +55,12 @@ async function request(seq, line, type) {
   renameSync(tmp, file);
   return reply(seq, type === 'hello' ? 120000 : 100000);
 }
+export async function finishNormalClosedActor({normalClosed,generation,shutdown,finish}) {
+  if (!normalClosed || generation !== 1) throw new Error('Native actor has no successful normal close.');
+  const ack = await shutdown();
+  if (ack?.ok !== true) throw new Error('Native actor normal-close shutdown failed.');
+  await finish();
+}
 async function main() {
   if (![assembly, configPath, session].every(p => typeof p === 'string' && isAbsolute(p))) throw new Error('Absolute test paths are required.');
   if (!existsSync(assembly) || !existsSync(configPath) || existsSync(session)) throw new Error('Test input is missing or the session already exists.');
@@ -66,7 +73,7 @@ async function main() {
   actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
   mkdirSync(actorSession);
   task();
-  let seq = 0, actorSeq = 0, stopped = false, failed = false, helloLine, attestation;
+  let seq = 0, actorSeq = 0, stopped = false, failed = false, helloLine, attestation, normalClosed = false;
   try {
     for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
       if (!line.trim()) continue;
@@ -77,8 +84,11 @@ async function main() {
       let answer;
       try {
         if (message.type === 'restart') {
+          if (message.graceful !== undefined && message.graceful !== true) throw new Error('Native actor restart lifecycle is unsupported.');
           if (!helloLine || !attestation?.sessionId) throw new Error('Native actor has not attested yet.');
-          task('crash');
+          if (message.graceful === true) {
+            await finishNormalClosedActor({normalClosed,generation,shutdown:()=>request(++actorSeq,JSON.stringify({type:'shutdown'}),'shutdown'),finish:finishTask});
+          } else { if (normalClosed) throw new Error('Native actor already closed; crash restart refused.'); task('crash'); }
           generation++;
           actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
           mkdirSync(actorSession);
@@ -87,10 +97,12 @@ async function main() {
           const next = await request(++actorSeq, helloLine, 'hello');
           if (next?.type !== 'attest' || next.generation !== generation || typeof next.sessionId !== 'string' || !next.sessionId)
             throw new Error('Restarted native actor did not attest.');
-          answer = { type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId, attestation: next };
+          normalClosed = false;
+          answer = { ...(message.graceful === true ? {lifecycle:'normal-close-reopen'} : {}), type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId, attestation: next };
           attestation = next;
         } else {
           answer = await request(++actorSeq, line, message.type);
+          if (message.type === 'close-probe') normalClosed = answer?.type === 'close-probe' && answer.closed === true && answer.keepEditingDialog === false && answer.flushed === true;
           if (message.type === 'hello') { helloLine = line; attestation = answer; }
         }
       }
@@ -113,4 +125,5 @@ async function main() {
     return 1;
   }
 }
-main().then(code => process.exit(code)).catch(error => { process.stderr.write(String(error?.message ?? error) + '\n'); process.exit(1); });
+const directPath = path => process.platform === 'win32' ? path.toLowerCase() : path;
+if (process.argv[1] && directPath(resolve(process.argv[1])) === directPath(fileURLToPath(import.meta.url))) main().then(code => process.exit(code)).catch(error => { process.stderr.write(String(error?.message ?? error) + '\n'); process.exit(1); });

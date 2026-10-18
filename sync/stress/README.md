@@ -389,3 +389,32 @@ normal artifact/principal pins. Independent zero-round reopen requires the same
 fault configuration, prior passing physical receipt, final body/full-document
 hashes and asset pins. Simulated protocol tests and local filesystem fixtures
 are preparation evidence, never six-client physical acceptance.
+
+### PC normal close with observed peer typing overlap
+
+`closeDuringTraffic: { role: "pc-app", trafficRole: "mac-web", chunks: 8, intervalMs: 250 }`
+selects PC native normal close with either browser peer as the traffic source.
+Only one plain-append round or an independent zero-round reopen is supported;
+other scenario combinations and unknown fields are refused. Use an existing
+article fixture with Subtitle and complete asset hash pins.
+
+The PC actor accepts its own ordinary edit first. The other five roles then edit,
+with the selected browser inserting actual keyboard chunks and streaming each
+visible, monotonic accepted prefix. After its first visible chunk the coordinator
+requests the existing production PC close path. At least one later visible chunk
+acknowledgment must arrive while the close request is pending. If close returns
+too quickly, this scenario fails as insufficient observed overlap; the runner
+adds no product delay. This evidence is coordinator-observed overlap, not a
+synchronized native/input event trace. Every streamed prefix must match the exact
+final browser operation, and uncertain/partial input remains failure evidence.
+
+Successful normal close must report closed, flushed, and no Keep editing dialog.
+The relay then requests idempotent shutdown/flush, verifies actual process finish,
+and starts generation2 from the same fixture configuration. It never crash-kills
+the already normally closed actor. Fresh source/principal/session attestation is
+required before all-six full-document convergence can accept the run. Own and
+peer markers must each occur exactly once. Independent reopen requires the prior
+passing physical receipt, exact scenario, body/full-document hashes, assets and
+artifact pins. Other-role close-under-traffic, forced dirty-journal timing, and
+physical campaigns remain separate work. The legacy closeProbe still means
+normal PC close after convergence only.
