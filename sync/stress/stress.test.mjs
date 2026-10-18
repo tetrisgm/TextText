@@ -73,7 +73,8 @@ test('missing roles are rejected before any process starts', () => {
   assert.doesNotThrow(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-app', round: 1 } }));
   assert.throws(() => validateConfig({ ...makeConfig(), offline: { role: 'pc-cli', round: 1 } }), /offline/);
   assert.doesNotThrow(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-app', round: 1 } }));
-  assert.throws(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-web', round: 1 } }), /restart/);
+  assert.doesNotThrow(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-web', round: 1 } }));
+  assert.throws(() => validateConfig({ ...makeConfig(), restart: { role: 'pc-cli', round: 1 } }), /restart/);
   assert.throws(() => validateConfig({ ...makeConfig(), transientInvalid: { role: 'pc-web', round: 1 } }), /transientInvalid/);
   const hash = 'a'.repeat(64);
   assert.doesNotThrow(() => validateConfig({ ...makeConfig(), expectedAssetHashes: { 'assets/photo.png': hash } }));
@@ -518,4 +519,21 @@ test('multi-field refuses absent full snapshot, UI snapshot mismatch and wrong o
 test('multi-field failure retains first field prefix and second uncertain field action',async()=>{
  const config=makeConfig({rounds:1,faults:{'mac-app':'field-prefix-fail'}});config.multiField=true;
  const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'actor-failed');assert.equal(summary.failure.detail.fieldProgress.fields.length,1);assert.equal(summary.failure.detail.fieldProgress.attemptedField,'r1-mac-app-subtitle');
+});
+
+test('browser crash restart reattests fresh generation and explicitly reconnects held offline input',async()=>{
+ const config=makeConfig({rounds:2});config.restart={role:'mac-web',round:1};config.offline={role:'mac-web',round:1};
+ const summary=await new Coordinator(config).run();assert.equal(summary.status,'passed');assert.equal(summary.acceptance,'none');
+ const lines=readFileSync(join(summary.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);const restart=lines.find(line=>line.type==='restart');assert.equal(restart.role,'mac-web');assert.equal(restart.crash.method,'SIGKILL');assert.equal(restart.reconnectByRestart,true);
+});
+test('browser restart refuses graceful close and false offline continuity evidence',async()=>{
+ for(const fault of ['browser-graceful','browser-offline-lie']){const config=makeConfig({rounds:1,faults:{'pc-web':fault}});config.restart={role:'pc-web',round:1};const summary=await new Coordinator(config).run();assert.equal(summary.failure.code,'restart-crash-evidence-invalid',fault);assert.equal(summary.roundsCompleted,0);}
+});
+test('browser restart rechecks actual source principal assets and fresh attested session',async()=>{
+ const config=makeConfig({mode:'real',rounds:1}),coordinator=new Coordinator(config);coordinator.openOutput();const role='mac-web';config.restart={role,round:1};
+ const identity=structuredClone(config.expectedIdentities[role]);delete identity.sourceCommit;
+ coordinator.editorBaseline[role]={sessionId:'old-browser-session',reloads:0};coordinator.attestations[role]={machineId:'actual-mac'};coordinator.adapters.set(role,{send(){}});
+ const reply={type:'restart',round:1,generation:2,online:true,reconnectByRestart:false,crash:{pid:345678,method:'SIGKILL',exited:true,profileScopeHash:'a'.repeat(64),unapprovedField:'never-retain'},attestation:{type:'attest',round:0,mode:'real',adapter:'browser-source-unit',machineId:'actual-mac',workspaceId:config.fixture.workspaceId,itemId:config.fixture.itemId,generation:2,sessionId:'new-browser-session',identity}};
+ coordinator.collect=async()=>new Map([[role,reply]]);await coordinator.restartActor(1,role);assert.equal(JSON.stringify(coordinator.restartEvidence[role]).includes('never-retain'),false);assert.throws(()=>coordinator.checkEditor(1,role,{sessionId:'wrong-browser-session',reloads:0}),error=>error.code==='editor-discontinuity');
+ for(const change of [{principalScopeHash:'c'.repeat(64)},{driverSourceCommit:'d'.repeat(40)},{artifacts:{driver:'e'.repeat(64)}},{browserVersion:'unexpected-version'},{deploymentId:'unexpected-build'}]){reply.attestation.identity={...identity,...change};await assert.rejects(coordinator.restartActor(1,role),error=>error.code==='restart-identity-mismatch');}
 });

@@ -1,3 +1,4 @@
+import { crashOwnedBrowser } from './browser-lifecycle.mjs';
 import { readLiveFieldDocument } from './multi-field-page.mjs';
 import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
 import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
@@ -18,7 +19,7 @@ import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // production acceptance script uses; a missing profile directory is then created empty.
 //
 // Protocol: see sync/stress/README.md. Requests are handled one at a time, in order.
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -179,13 +180,14 @@ async function main() {
   const config = validateConfig(JSON.parse(readFileSync(configPath, 'utf8').replace(/^﻿/, '')));
   const role = platform.role;
   const profile = prepareProfile(config.profile, config.auth);
+  const ownedProfile = realpathSync(config.profile);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const { sharedEditorReady } = await import(pathToFileURL(join(here, '..', '..', 'windows', 'scripts', 'live-browser-ready.mjs')).href);
   const { chromium } = await import('playwright');
 
   const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
-  const sessionId = randomUUID();
+  let sessionId = randomUUID(), generation = 1, helloRequest, restarting = false, online = true;
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
   let inputProgress, historyProgress, fieldProgress, observeAssets;
@@ -213,18 +215,13 @@ async function main() {
     if (!snapshot || snapshot.content?.title !== config.title || snapshot.presentation?.template?.id !== 'texttext.article') throw new StageError('observe', 'live article snapshot or existing subtitle unavailable');
     return snapshot;
   }
-  const handlers = {
-    async hello(m) {
-      if (started) throw new StageError('hello', 'duplicate hello');
-      const v = validateHello(m, config, process.platform);
-      if (!v.ok) throw new StageError('hello', v.reason);
-      started = true;
+  async function openBrowser(m, isRestart) {
       let stage = 'launch';
       try {
-        context = await chromium.launchPersistentContext(config.profile, { channel: platform.channel, headless: false, viewport: { width: 1280, height: 900 } });
+        context = await chromium.launchPersistentContext(ownedProfile, { channel: platform.channel, args: ['--enable-automation'], headless: false, viewport: { width: 1280, height: 900 } });
         page = context.pages()[0] ?? await context.newPage();
         if (m.identitySchema === 1) observeAssets = createWebAssetObserver(page, ORIGIN);
-        if (config.auth === 'saved-app') {
+        if (config.auth === 'saved-app' && !isRestart) {
           stage = 'sign-in';
           // Fixed-message errors only; the loaded account never reaches this scope.
           await establishSavedAppSession({ context, platform: process.platform, workspaceId: config.workspaceId, itemId: config.itemId });
@@ -252,8 +249,9 @@ async function main() {
           .catch(() => { throw new Error('editor did not join the shared document'); });
         stage = 'continuity';
         if (!await page.evaluate(installContinuity, EDITOR)) throw new Error('editor node missing');
-        page.on('load', () => { reloads += 1; });
-        page.on('close', () => { if (!stopping) fail(0, 'page-closed', 'browser page closed'); });
+        const ownedPage = page;
+        page.on('load', () => { if (page === ownedPage) reloads += 1; });
+        page.on('close', () => { if (page === ownedPage && !stopping && !restarting) fail(0, 'page-closed', 'browser page closed'); });
       } catch (error) {
         throw new StageError(error.stage ?? stage, safeMessage(error));
       }
@@ -274,7 +272,28 @@ async function main() {
           deploymentId: build.buildId, driverSourceCommit: source.sourceCommit, sourceReceiptSha256: source.sourceReceiptSha256,
           artifacts: { ...source.artifacts, ...await observeAssets() } };
       }
-      out({ type: 'attest', round: 0, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: profile.created, ...(identity ? { identity } : {}) });
+      return { type: 'attest', round: 0, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: !isRestart && profile.created, generation, ...(identity ? { identity } : {}) };
+  }
+  const handlers = {
+    async hello(m) {
+      if (started) throw new StageError('hello', 'duplicate hello');
+      const v = validateHello(m, config, process.platform);
+      if (!v.ok) throw new StageError('hello', v.reason);
+      started = true; helloRequest = m;
+      out(await openBrowser(m, false));
+    },
+    async restart(m) {
+      await assertOnItem();
+      if (generation !== 1 || !helloRequest) throw new StageError('restart', 'only one attested browser restart supported');
+      restarting = true;
+      const wasOffline = !online;
+      try {
+        const killed = await crashOwnedBrowser(context, ownedProfile);
+        generation += 1; sessionId = randomUUID(); reloads = 0; online = true;
+        const attestation = await openBrowser(helloRequest, true);
+        out({ type: 'restart', round: m.round, generation, attestation,
+          crash: killed, reconnectByRestart: wasOffline, online: true });
+      } finally { restarting = false; }
     },
     async prepare(m) {
       await assertOnItem();
@@ -285,7 +304,7 @@ async function main() {
     async transport(m) {
       if (typeof m.online !== 'boolean') throw new StageError('transport', 'online must be boolean');
       await assertOnItem();
-      await context.setOffline(!m.online);
+      await context.setOffline(!m.online); online = m.online;
       out({ type: 'transport', round: m.round, online: m.online });
     },
     async edit(m) {

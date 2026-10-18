@@ -93,7 +93,9 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       generation += 1;
       sessionId = `editor-${process.pid}-${generation}`;
       reloads = 0;
-      return out({ type: 'restart', round: m.round, generation });
+      const browserRestart = role.endsWith('-web'); const wasOffline = !online;
+      if (browserRestart) { online = true; for (const edit of pendingEdits.splice(0)) publish(edit); }
+      return out({ type: 'restart', round: m.round, generation, ...(browserRestart ? { crash: { pid: 345678, profileScopeHash: 'a'.repeat(64), method: fault === 'browser-graceful' ? 'close' : 'SIGKILL', exited: true }, reconnectByRestart: fault === 'browser-offline-lie' ? !wasOffline : wasOffline, online: true } : {}) });
     }
     case 'perturb':
       return out({ type: 'perturb', round: m.round, repaired: true });

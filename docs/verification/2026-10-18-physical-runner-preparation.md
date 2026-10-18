@@ -38,7 +38,7 @@ and an editor reload after first equality. Simulated runs retain acceptance
 | Same-position insertion, Unicode | `same-position`, `unicode` | Fresh current source receipts |
 | Overlapping replacements | `overlap-replace`, `file-overlap`, `partial-overlap` | Explicit deletion without inserted marker is not supported |
 | Offline and reconnect | `offline` for an app/browser | Rotate every supported role; direct-file offline state is not defined |
-| Pending native crash/restart | `restart` for either app | Fresh candidate and every supported role; browser restart is missing |
+| App/browser crash/restart | `restart` for either app or browser; browser owned SIGKILL/profile proof | Fresh candidate and physical rotation across every supported role |
 | Invalid intermediate pack repaired atomically | `transientInvalid` for either file actor | Fresh physical evidence; malformed metadata variants need scenario design |
 | Same-write attachment update | `assetReplacement`, paired `assetReplacements` | Same-entry race remains diagnostic, without retained losing-byte attestation |
 | Close under traffic | `closeProbe` for PC app | Other editor roles need guarded close/reopen protocol |

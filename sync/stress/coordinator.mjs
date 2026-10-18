@@ -118,9 +118,9 @@ export function validateConfig(config) {
     }
   }
   if (config.restart !== undefined) {
-    if (!config.restart || !['mac-app', 'pc-app'].includes(config.restart.role)
+    if (!config.restart || !EDITOR_ROLES.includes(config.restart.role)
       || !Number.isInteger(config.restart.round) || config.restart.round < 1 || config.restart.round > config.rounds) {
-      fail('restart must name mac-app or pc-app and an existing round');
+      fail('restart must name an app or browser editor and an existing round');
     }
   }
   if (config.transientInvalid !== undefined) {
@@ -585,7 +585,8 @@ export class Coordinator {
         { fixture: this.config.fixture, machineId: this.attestations[role].machineId, sessionId: baseline.sessionId, generation: reply.generation }); }
       catch (error) { throw new StressFailure('restart-identity-mismatch', { round, role, reason: String(error.message).slice(0, 240) }); }
     }
-    const evidence = { round, generation: reply.generation, sessionId: null,
+    if (role.endsWith('-web') && (!reply.crash || reply.crash.method !== 'SIGKILL' || reply.crash.exited !== true || !/^[a-f0-9]{64}$/.test(reply.crash.profileScopeHash ?? '') || !Number.isSafeInteger(reply.crash.pid) || reply.crash.pid <= 1 || reply.online !== true || reply.reconnectByRestart !== (this.config.offline?.role === role && this.config.offline?.round === round))) throw new StressFailure('restart-crash-evidence-invalid', { round, role });
+    const evidence = { round, ...(role.endsWith('-web') ? { crash: { pid: reply.crash.pid, profileScopeHash: reply.crash.profileScopeHash, method: 'SIGKILL', exited: true }, reconnectByRestart: reply.reconnectByRestart, online: true } : {}), generation: reply.generation, sessionId: null,
       ...(attested ? { attestedSessionId: attested.sessionId, identity: attested.identity } : {}) };
     this.restartEvidence[role] = evidence;
     this.record('restart', { round, role, ...evidence });

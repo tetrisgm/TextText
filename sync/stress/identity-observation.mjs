@@ -24,7 +24,7 @@ export function fixedDriverFiles(role) {
     fields: join(here, 'multi-field.mjs'), fieldInput: join(here, 'multi-field-input.mjs'), history: join(here, 'undo-redo.mjs'), identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
     node: realpathSync(process.execPath) };
   if (role.endsWith('-cli')) { files.fieldPack = join(here, 'multi-field-pack.mjs'); files.fflate = fileURLToPath(import.meta.resolve('fflate')); }
-  else Object.assign(files, { fieldPage: join(here, 'multi-field-page.mjs'), session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
+  else Object.assign(files, { lifecycle: join(here, 'browser-lifecycle.mjs'), fieldPage: join(here, 'multi-field-page.mjs'), session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
     readiness: resolve(here, '../../windows/scripts/live-browser-ready.mjs') });
   return files;
 }

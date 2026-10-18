@@ -304,3 +304,28 @@ physical receipt and unchanged artifact/asset pins. Body-only reopen cannot
 stand in for a multi-field receipt. CLI owner binding is rechecked on each
 operation and immediately before replacement; it remains an ordinary file
 writer rather than an authenticated account actor.
+
+## Owned browser crash/restart
+
+`restart` may name any app or browser editor. A browser restart happens after
+the all-six applied barrier. The driver proves the browser PID and exact
+configured persistent profile through CDP immediately before SIGKILL, then waits
+for both disconnection and actual process disappearance before relaunch. Missing
+CDP proof, a changed PID/profile, graceful close evidence or unverified exit fails.
+The owned acceptance launch explicitly enables Chromium automation so its command
+line can be inspected. No process-name matching or profile deletion is used.
+
+The replacement browser uses the same profile/channel, a new generation/session,
+and fresh observed browser version, deployment/assets, source receipt and account
+principal. Expected identity pins must still match before restart is accepted.
+Saved-app login exchange is performed only on the initial launch. The other five
+actors must retain their mounted editor sessions throughout convergence.
+
+For held offline browser input, set `offline` and `restart` to the same browser
+role/round. Process death ends its network emulation; the new browser loads online
+and reconnects its persisted local journal. Evidence explicitly records
+`reconnectByRestart: true`, rather than claiming an offline page reload. The
+coordinator's following online=true command is idempotent. Plain browser restart
+without that offline case does not prove an upload was pending at the kill.
+The isolated browser crash/journal fixture proves driver/profile mechanics and
+browser storage recovery, not TextText or six-client physical acceptance.
