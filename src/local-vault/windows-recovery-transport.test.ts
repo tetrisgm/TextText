@@ -106,3 +106,17 @@ it("binds four-version move consent to the original native root", async () => {
     expect(await transport.request("resolveMove", { ...move, workspaceRoot: "untrusted" })).toEqual({ resolved: true });
   } finally { transport.destroy(); }
 });
+
+
+it("preserves an absent original move path without fabricating a TextPack", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const absent = { absent: true, path: "Original.textpack", hash: null, data: null };
+  const view = native(method => {
+    if (method === "native.status") return status;
+    if (method === "files.replacementRead") return absent;
+    throw new Error(method);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try { expect(await transport.request("replacementRead", { id: "operation", version: "source" })).toEqual(absent); }
+  finally { transport.destroy(); }
+});
