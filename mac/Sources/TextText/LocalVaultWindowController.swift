@@ -750,7 +750,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let page = try store.recoveryList(path: params["path"] as? String)
                     let assets = try store.recoveryAssets()
                     return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
-                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "identityMode": $0.identityMode, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
                         "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
                 case "recoveryAssetRead":
                     let hash = try Self.string(params, "hash")
@@ -781,13 +781,16 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     return ["resolved": true]
                 case "resolveReplacement":
                     let kind = params["kind"] as? String ?? "replacement"
+                    let identityMode = params["identityMode"] as? String ?? "document"
                     let present = params["currentPresent"] as? Bool ?? true
                     guard (params["kind"] == nil || params["kind"] is String),
                           (params["currentPresent"] == nil || params["currentPresent"] is Bool),
+                          (params["identityMode"] == nil || params["identityMode"] is String),
+                          identityMode == "document" || (identityMode == "path" && kind == "replacement"),
                           kind == "replacement" || kind == "removal",
-                          present || (kind == "removal" && params["currentHash"] is NSNull) else { throw VaultBridgeError("The inspected file changed. Reopen Recovery before continuing.") }
+                          present || ((kind == "removal" || identityMode == "path") && params["currentHash"] is NSNull) else { throw VaultBridgeError("The inspected file changed. Reopen Recovery before continuing.") }
                     try store.resolveReplacement(id: Self.string(params, "id"), path: Self.string(params, "path"), itemId: Self.string(params, "itemId"),
-                        currentHash: present ? Self.string(params, "currentHash") : nil, preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"), kind: kind, currentPresent: present, beforeAcknowledge: requireRecoveryScope)
+                        currentHash: present ? Self.string(params, "currentHash") : nil, preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"), kind: kind, currentPresent: present, identityMode: identityMode, beforeAcknowledge: requireRecoveryScope)
                     return ["resolved": true]
                 case "cancelUncapturedDeletion":
                     let present = params["currentPresent"] as? Bool ?? true

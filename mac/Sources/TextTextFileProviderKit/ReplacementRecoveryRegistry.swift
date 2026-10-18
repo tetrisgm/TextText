@@ -13,7 +13,7 @@ struct ReplacementRecoveryRegistry {
     private static let cache = EntryCache()
     private static func requireKnownFields(_ bytes: Data) throws {
         guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy", "destinationPath", "moveResolution", "caseOnly"])) else { throw Failure.invalidRegistry }
+              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy", "destinationPath", "moveResolution", "caseOnly", "identityMode"])) else { throw Failure.invalidRegistry }
         if let value = fields["moveResolution"], !(value is NSNull) {
             guard let receipt = value as? [String: Any], Set(receipt.keys).isSubset(of: Set(["preparedHash", "displacedHash", "captured", "currentHash", "currentPresent", "sourceHash", "sourcePresent"])) else { throw Failure.invalidRegistry }
         }
@@ -42,6 +42,7 @@ struct ReplacementRecoveryRegistry {
         var deletionIntentCancelled: Bool? = nil
         var explicitCancellation: ExplicitCancellation? = nil
         var supersededBy: UUID? = nil
+        var identityMode: String? = nil
         var caseOnly: Bool? = nil
         var destinationPath: String? = nil
         var moveResolution: MoveResolution? = nil
@@ -96,6 +97,12 @@ struct ReplacementRecoveryRegistry {
     }
     private var directory: URL { LocalVaultDeviceState.directory(root: root).appendingPathComponent("replacement-index", isDirectory: true) }
     private func digest(_ data: Data) -> String { TextTextStableDigest.sha256Hex(data) }
+    private func validIdentity(_ entry: Entry) -> Bool {
+        if entry.identityMode == "path" {
+            return entry.itemId.isEmpty && entry.kind == nil && entry.userDeletion != true && entry.caseOnly != true
+        }
+        return entry.identityMode == nil && !entry.itemId.isEmpty && entry.itemId.utf8.count <= 256
+    }
     private func validHash(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
@@ -122,7 +129,7 @@ struct ReplacementRecoveryRegistry {
         let registry = ReplacementRecoveryRegistry(root: root)
         let principal = try RetainedReplacementProfile.principalHash(owner)
         guard entry.version == 1, (entry.kind == nil || entry.kind == "removal" || entry.kind == "move"), entry.workspaceRootHash == registry.digest(Data(registry.root.path.utf8)),
-              owner.rootHash == entry.workspaceRootHash, !entry.itemId.isEmpty, entry.itemId.utf8.count <= 256,
+              owner.rootHash == entry.workspaceRootHash, registry.validIdentity(entry),
               entry.operation.uuidString + ".json" == (path as NSString).lastPathComponent,
               registry.validHash(entry.expectedHash), registry.validHash(entry.preparedHash) else { throw Failure.invalidRegistry }
         guard entry.userDeletion != true || entry.kind == "removal",
@@ -255,8 +262,11 @@ struct ReplacementRecoveryRegistry {
     }
     private func indexedPaths(itemId: String?, path: String?) throws -> [URL] {
         func selected(_ index: [String: [URL]]) -> [URL] {
-            guard let itemId else { return index.filter { $0.key.hasPrefix("id:") }.values.flatMap { $0 } }
+            guard let itemId else { return index.filter { $0.key.hasPrefix("id:") || $0.key == "path-mode" }.values.flatMap { $0 } }
             var selected = index["id:" + itemId] ?? []
+            // An ID-only ACK cannot prove it is unrelated to an unidentified
+            // file. Verify retained path-mode history before allowing it.
+            if path == nil { selected += index["path-mode"] ?? [] }
             if let path { selected += index["path:" + path] ?? [] }
             var seen = Set<String>()
             return selected.filter { seen.insert($0.path).inserted }
@@ -277,8 +287,13 @@ struct ReplacementRecoveryRegistry {
                 // exact fingerprint/schema/principal checks below.
                 let bytes = try StableFileSnapshot.read(file, maximumBytes: 8192)
                 guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-                      let identity = fields["itemId"] as? String, !identity.isEmpty, identity.utf8.count <= 256 else { throw Failure.invalidRegistry }
-                index["id:" + identity, default: []].append(file)
+                      let identity = fields["itemId"] as? String, identity.utf8.count <= 256,
+                      !identity.isEmpty || fields["identityMode"] as? String == "path" else { throw Failure.invalidRegistry }
+                if fields["identityMode"] as? String == "path" {
+                    guard let originalPath = fields["path"] as? String else { throw Failure.invalidRegistry }
+                    index["path-mode", default: []].append(file)
+                    index["path:" + originalPath, default: []].append(file)
+                } else { index["id:" + identity, default: []].append(file) }
                 if fields["kind"] as? String == "move", let source = fields["path"] as? String, let destination = fields["destinationPath"] as? String {
                     index["path:" + source, default: []].append(file)
                     index["path:" + destination, default: []].append(file)
@@ -324,10 +339,10 @@ struct ReplacementRecoveryRegistry {
                 Self.cache.values[file.path] = (stamp, entry)
                 Self.cache.lock.unlock()
             }
-            guard (itemId == nil || entry.itemId == itemId || (entry.kind == "move" && (entry.path == path || entry.destinationPath == path))), entry.version == 1, (entry.kind == nil || entry.kind == "removal" || entry.kind == "move"), entry.operation.uuidString + ".json" == file.lastPathComponent,
+            guard (itemId == nil || entry.itemId == itemId || (entry.identityMode == "path" && path == nil) || ((entry.kind == "move" || entry.identityMode == "path") && (entry.path == path || entry.destinationPath == path))), entry.version == 1, (entry.kind == nil || entry.kind == "removal" || entry.kind == "move"), entry.operation.uuidString + ".json" == file.lastPathComponent,
                   entry.workspaceRootHash == rootHash,
                   entry.ownerHash == principalHash,
-                  !entry.itemId.isEmpty, entry.itemId.utf8.count <= 256,
+                  validIdentity(entry),
                   validHash(entry.expectedHash), validHash(entry.preparedHash) else { throw Failure.invalidRegistry }
             guard entry.userDeletion != true || entry.kind == "removal",
                   entry.deletionMarkerPublished != true || (entry.kind == "removal" && entry.userDeletion == true),
@@ -342,17 +357,18 @@ struct ReplacementRecoveryRegistry {
                       (receipt.currentPresent ? receipt.currentHash.map(validHash) == true : receipt.currentHash == nil) else { throw Failure.invalidRegistry }
             }
             if let resolution = entry.resolution {
-                guard (resolution.currentPresent != false || entry.kind == "removal"), ((resolution.currentPresent ?? true) ? resolution.visibleHash.map(validHash) == true : resolution.visibleHash == nil), validHash(resolution.preparedHash), validHash(resolution.displacedHash) else { throw Failure.invalidRegistry }
+                guard (resolution.currentPresent != false || entry.kind == "removal" || entry.identityMode == "path"), ((resolution.currentPresent ?? true) ? resolution.visibleHash.map(validHash) == true : resolution.visibleHash == nil), validHash(resolution.preparedHash), validHash(resolution.displacedHash) else { throw Failure.invalidRegistry }
             }
             return entry
         }
     }
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.
-    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil, caseOnly: Bool = false, storageFilename: String? = nil) throws {
+    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil, caseOnly: Bool = false, storageFilename: String? = nil, identityMode: String? = nil) throws {
         var entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
                           expectedHash: expectedHash, preparedHash: preparedHash, resolution: nil)
         entry.kind = kind
+        entry.identityMode = identityMode
         entry.destinationPath = destinationPath
         entry.caseOnly = caseOnly ? true : nil
         try validateMove(entry)
@@ -362,7 +378,7 @@ struct ReplacementRecoveryRegistry {
             entry.recoveryPath = ".texttext/retained-replacements/" + digest(Data(path.utf8)) + "/" + (storageFilename ?? (path as NSString).lastPathComponent)
             guard usesWorkspaceStaging(entry) else { throw Failure.invalidRegistry }
         }
-        guard !itemId.isEmpty, itemId.utf8.count <= 256, validHash(expectedHash), validHash(preparedHash) else { throw Failure.invalidRegistry }
+        guard validIdentity(entry), validHash(expectedHash), validHash(preparedHash) else { throw Failure.invalidRegistry }
         _ = try target(entry)
         try save(entry, creating: true)
     }
@@ -777,6 +793,16 @@ struct ReplacementRecoveryRegistry {
         guard first.preparedHash == observed.preparedHash, first.displacedHash == observed.displacedHash,
               try visibleMatches(visible, hash: observed.visibleHash, present: observed.currentPresent ?? true) else { throw Failure.observedVersionChanged }
         _ = try export(first)
+        if entry.identityMode == "path", observed.currentPresent != false {
+            let bytes = try StableFileSnapshot.read(visible)
+            guard digest(bytes) == observed.visibleHash else { throw Failure.observedVersionChanged }
+            let destination = root.appendingPathComponent(".texttext/conflicts/" + operation.uuidString)
+            let copy = destination.appendingPathComponent(digest(bytes) + ".textpack")
+            if FileManager.default.fileExists(atPath: copy.path) {
+                guard try StableFileSnapshot.read(copy) == bytes else { throw Failure.observedVersionChanged }
+            } else { try RetainedFileReplacement.create(bytes, at: copy) }
+            try RetainedFileReplacement.flushDirectory(destination)
+        }
         let preparedStamp = try RetainedFileReplacement.fingerprint(first.recovery.prepared)
         let displacedStamp = try RetainedFileReplacement.fingerprint(first.recovery.displaced)
         let latest = try inspect(entry)

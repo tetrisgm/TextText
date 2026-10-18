@@ -591,7 +591,7 @@ public struct LocalVaultDocumentStore: Sendable {
 
     /// Retain the inode actually displaced by the OS exchange. A matching
     /// visible candidate never acknowledges an unresolved competing version.
-    private func publishRetainedReplacement(path: String, target: URL, expectedHash: String, bytes: Data, itemId: String) throws {
+    private func publishRetainedReplacement(path: String, target: URL, expectedHash: String, bytes: Data, itemId: String?) throws {
         let state = LocalVaultDeviceState.directory(root: root)
         if FileManager.default.fileExists(atPath: state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path) {
             try RetainedReplacementProfile.prepare(root: root)
@@ -601,8 +601,9 @@ public struct LocalVaultDocumentStore: Sendable {
         _ = try RetainedFileReplacement.replace(target, expectedHash: expectedHash, prepared: bytes, operation: operation,
             recoveryRoot: registry.recoveryRoot(path: path)) { stage in
             if stage == "prepared" {
-                try registry.register(operation: operation, itemId: itemId, path: path, expectedHash: expectedHash,
-                    preparedHash: TextTextStableDigest.sha256Hex(bytes), workspaceStaging: true, storageFilename: target.lastPathComponent)
+                try registry.register(operation: operation, itemId: itemId ?? "", path: path, expectedHash: expectedHash,
+                    preparedHash: TextTextStableDigest.sha256Hex(bytes), workspaceStaging: true, storageFilename: target.lastPathComponent,
+                    identityMode: itemId == nil ? "path" : nil)
             }
             try writeObservationForTesting?(stage == "prepared" ? "retainedPrepared" : stage)
         }
@@ -624,8 +625,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 defer { try? FileManager.default.removeItem(at: packed) }
                 try bytes.write(to: packed, options: .atomic)
                 let replacement = try readUncoordinated(path: path, url: packed)
-                guard let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId,
-                      identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
+                let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId
+                guard identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
                 try writeObservationForTesting?("prepared")
                 let latest = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latest) == expectedHash else { throw Failure.changed }
@@ -789,8 +790,8 @@ public struct LocalVaultDocumentStore: Sendable {
                 let latestBytes = try StableFileSnapshot.read(coordinated)
                 guard TextTextStableDigest.sha256Hex(latestBytes) == expectedHash else { throw Failure.changed }
                 try preserve(latestBytes, hash: expectedHash)
-                guard let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId,
-                      identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
+                let identity = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId
+                guard identity == MarkdownIdentityCodec.extract(from: replacement.contents.markdown)?.itemId else { throw Failure.changed }
                 try publishRetainedReplacement(path: path, target: coordinated, expectedHash: expectedHash,
                     bytes: StableFileSnapshot.read(packed), itemId: identity)
                 try writeObservationForTesting?("replaced")

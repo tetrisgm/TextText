@@ -99,7 +99,8 @@ extension LocalVaultDocumentStore {
         var identity: String?
         if let path {
             _ = try url(for: path)
-            if let retainedIdentity = try replacementRecoveryItemId(path: path) { identity = retainedIdentity }
+            if try hasPathBoundReplacementRecovery(path: path) { identity = nil }
+            else if let retainedIdentity = try replacementRecoveryItemId(path: path) { identity = retainedIdentity }
             else { identity = MarkdownIdentityCodec.extract(from: try readMetadata(path: path).contents.markdown)?.itemId }
         }
         let kinds = path == nil ? ["trash", "conflicts"] : ["history"]

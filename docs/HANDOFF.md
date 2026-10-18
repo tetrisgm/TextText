@@ -6,9 +6,10 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 
 ## Active work, October 18
 
-- Native retained saves, removals and normal moves pass source gates on Mac and actual PC. Leaf filename case-only moves are in their final native gates. Active/shared checkpoint case-only paths and authoritative folder-casing reconciliation remain separate gaps; both native workers are coordinating bounded fixes. Do not count ordinary Store.rename tests as active-editor coverage.
-- The physical runner now supports source/artifact/principal pins, restart re-attestation, keyboard undo/redo, multi-field full-document observations, owned browser crash/relaunch, and ordinary in-place/rapid atomic writes. Malformed-then-repaired file protocol integration is active. Normal closeProbe does not prove close during peer traffic.
-- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner in both engines. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation. Remaining queue/budget parity audit and installed acceptance are still open.
+- Native retained saves, removals and moves, including leaf case-only changes through active/pending shared editors, pass relevant Mac and actual-PC source gates. Mac old-case alias writes/removals/moves also pass. Windows alias mutation and authoritative folder-casing reconciliation remain open.
+- A broader Mac suite exposed an actual compatibility regression: identityless legacy TextPack writes fail. Restore byte-preserving writes through explicit path-bound retained recovery; do not change those CLI fixtures to insert IDs. The separate offline-window fixture now passes with verified account ownership and a fresh complete bundle; set `TEXTTEXT_VAULT_WINDOW_TEST_BUNDLE` to current assets when running it.
+- The physical runner supports malformed/repair holds and observed typing during normal Windows close, in addition to source/artifact/principal pins, restart re-attestation, keyboard undo/redo, multi-field observations, browser crash and ordinary file writes. These are source/driver fixtures, not the pending physical campaign; other close roles and scenario combinations remain open.
+- Shared retry and lifecycle classifiers already run through the packaged TypeScript owner. Shared queue eligibility/budget selection and native consumers are being verified now. Consult the [lifecycle receipt](verification/2026-10-17-mirror-lifecycle-policy.md) before repeating that implementation.
 
 ## Verified source references
 
@@ -16,6 +17,8 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 - [Mac retained moves](verification/2026-10-18-retained-move.md), [Windows retained moves and case-only leaf names](verification/2026-10-18-windows-retained-move.md), [shared move recovery UI](verification/2026-10-18-move-recovery-ui.md).
 - [Retained replacement](verification/2026-10-18-retained-replacement-native.md), [Mac removal](verification/2026-10-18-retained-removal.md), [Windows removal](verification/2026-10-18-windows-retained-removal.md), [profile reads and parent-path guards](verification/2026-10-18-parent-path-and-profile-reads.md).
 - [Process crash/receipt replay](verification/2026-10-18-file-write-process-crash.md), [account-scoped routing](verification/2026-10-18-web-workspace-routing.md).
+- [Legacy path-bound replacement work](verification/2026-10-18-legacy-path-replacement.md).
+- [Shared Mac case changes and alias recovery](verification/2026-10-18-shared-leaf-case-and-alias.md), [malformed repair runner](verification/2026-10-18-malformed-repair-runner.md), [close with observed traffic](verification/2026-10-18-close-traffic-runner.md).
 - [Live editor inspection](verification/2026-10-18-live-document-inspection.md), [multi-field runner](verification/2026-10-18-multi-field-runner-preparation.md), [browser crash runner](verification/2026-10-18-browser-crash-runner.md), [ordinary file writes](verification/2026-10-18-ordinary-file-write-runner.md).
 
 ## Installed and hosted state

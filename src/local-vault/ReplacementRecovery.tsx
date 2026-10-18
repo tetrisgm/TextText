@@ -5,6 +5,7 @@ import { packIdentity } from "./pack";
 
 export type ReplacementRecoveryEntry = {
   id: string; path: string; itemId: string; currentHash: string | null;
+  identityMode?: "document" | "path";
   kind?: "replacement" | "removal" | "move"; sourcePath?: string; sourcePresent?: boolean; sourceHash?: string | null; currentPresent?: boolean; captured?: boolean;
   resolutionBlocked?: string | null;
   preparedHash: string; displacedHash: string | null; savedAt: string; resolved?: boolean;
@@ -41,8 +42,11 @@ export function ReplacementRecovery({ entries, workspaceRoot, disabled, onRestor
     const captured = ++generation.current;
     setChosen(entry); setSnapshots({}); setVersion("current"); setBusy(true); setError("");
     try {
+      const pathBound = entry.identityMode === "path";
+      if ((entry.identityMode !== undefined && entry.identityMode !== "document" && !pathBound) ||
+          (pathBound ? entry.kind !== "replacement" || entry.itemId !== "" || typeof entry.currentPresent !== "boolean" : !entry.itemId)) throw new Error("This recovery record needs a newer TextText version.");
       if ((entry.kind !== undefined && entry.kind !== "replacement" && entry.kind !== "removal" && entry.kind !== "move") ||
-        ((entry.currentPresent === false || entry.currentHash === null) && !((entry.kind === "removal" || entry.kind === "move") && entry.currentPresent === false && entry.currentHash === null)) ||
+        ((entry.currentPresent === false || entry.currentHash === null) && !((entry.kind === "removal" || entry.kind === "move" || pathBound) && entry.currentPresent === false && entry.currentHash === null)) ||
         ((entry.captured === false || entry.displacedHash === null) && !((entry.kind === "removal" || entry.kind === "move") && entry.captured === false && entry.displacedHash === null))) throw new Error("This recovery record needs a newer TextText version.");
       if (entry.kind === "move" && (typeof entry.sourcePath !== "string" || !entry.sourcePath || entry.sourcePath === entry.path || typeof entry.sourcePresent !== "boolean" || (entry.sourcePresent ? typeof entry.sourceHash !== "string" || !entry.sourceHash : entry.sourceHash !== null))) throw new Error("This move recovery record is incomplete. Reopen recovery to continue.");
       const values = await Promise.all(entryVersions(entry).map(async version => {
@@ -52,10 +56,10 @@ export function ReplacementRecovery({ entries, workspaceRoot, disabled, onRestor
         if (file.absent) {
           const absentCurrent = version === "current" && entry.currentPresent === false;
           const absentCapture = version === "displaced" && entry.captured === false;
-          if ((entry.kind !== "removal" && entry.kind !== "move") || !(absentCurrent || absentCapture || (version === "source" && entry.kind === "move" && entry.sourcePresent === false)) || file.path !== expectedPath || file.hash !== null || file.data !== null || expected !== null) throw new Error("The deleted file changed. Close and reopen recovery to inspect it again.");
+          if ((entry.kind !== "removal" && entry.kind !== "move" && !pathBound) || !(absentCurrent || absentCapture || (version === "source" && entry.kind === "move" && entry.sourcePresent === false)) || file.path !== expectedPath || file.hash !== null || file.data !== null || expected !== null) throw new Error("The deleted file changed. Close and reopen recovery to inspect it again.");
           return [version, file] as const;
         }
-        if (file.path !== expectedPath || file.hash !== expected || !file.data || (file.opaque && version !== "displaced" && !((entry.kind === "removal" || entry.kind === "move") && version === "current") && !(entry.kind === "move" && version === "source"))) throw new Error("These recovery versions changed. Close and reopen recovery to inspect them again.");
+        if (file.path !== expectedPath || file.hash !== expected || !file.data || (pathBound && !file.opaque) || (!pathBound && file.opaque && version !== "displaced" && !((entry.kind === "removal" || entry.kind === "move") && version === "current") && !(entry.kind === "move" && version === "source"))) throw new Error("These recovery versions changed. Close and reopen recovery to inspect them again.");
         if (file.opaque) return [version, file] as const;
         if (version !== "displaced" && !((entry.kind === "removal" || entry.kind === "move") && version === "current") && !(entry.kind === "move" && version === "source") && packIdentity(file.markdown) !== entry.itemId) throw new Error("This retained version belongs to another document. Reopen recovery to continue.");
         packIdentity(file.markdown);
@@ -100,11 +104,12 @@ export function ReplacementRecovery({ entries, workspaceRoot, disabled, onRestor
     finally { if (generation.current === captured) setBusy(false); }
   };
   const snapshot = snapshots[version]; const document = snapshot && !snapshot.absent && !snapshot.opaque ? readDocument(snapshot) : null;
+  const pathBound = chosen?.identityMode === "path";
   const removal = chosen?.kind === "removal";
   const move = chosen?.kind === "move";
   const versions = chosen ? entryVersions(chosen) : standardVersions;
   const uncaptured = removal && chosen.captured === false;
-  const keepLabel = move ? (chosen.captured === false ? "Cancel move" : "Keep current files") : uncaptured ? "Cancel deletion" : removal && chosen.currentPresent === false ? "Keep file deleted" : "Keep current file";
+  const keepLabel = pathBound && chosen?.currentPresent === false ? "Keep path empty" : move ? (chosen.captured === false ? "Cancel move" : "Keep current files") : uncaptured ? "Cancel deletion" : removal && chosen.currentPresent === false ? "Keep file deleted" : "Keep current file";
   const remaining = entries;
   const chosenResolved = Boolean(chosen && (chosen.resolved || resolved.includes(chosen.id)));
   return <section aria-label="Interrupted file changes" className="vault-replacement-recovery">
@@ -121,13 +126,13 @@ export function ReplacementRecovery({ entries, workspaceRoot, disabled, onRestor
       {snapshot?.absent && <p role="status">{version === "displaced" ? move ? "The move has no captured file. Inspect both paths and the before-move version before cancelling it." : "The deletion has no captured file. Inspect the before-deletion and current versions before cancelling it." : "There is no file at this path. Retained versions remain available to inspect and download."}</p>}
       {(removal || move) && version === "current" && snapshot && !snapshot.absent && (snapshot.opaque || packIdentity(snapshot.markdown) !== chosen.itemId) && <p role="status">A different file now occupies this path. Keeping it will not overwrite or delete it.</p>}
       {version === "displaced" && snapshot && !snapshot.absent && !snapshot.opaque && packIdentity(snapshot.markdown) !== chosen.itemId && <p role="status">This retained version belongs to another document. Keeping the current file preserves this complete copy in recovery.</p>}
-      {snapshot && !snapshot.absent && snapshot.opaque && <><p role="status">This retained file cannot be opened as a TextPack. Its complete bytes are retained and can be downloaded.</p><p><code>SHA-256: {snapshot.hash}</code></p><button disabled={busy} onClick={() => download(snapshot)}>Download retained file</button></>}
+      {snapshot && !snapshot.absent && snapshot.opaque && <><p role="status">{pathBound ? "This version is retained as a complete file. Its bytes can be downloaded." : "This retained file cannot be opened as a TextPack. Its complete bytes are retained and can be downloaded."}</p><p><code>SHA-256: {snapshot.hash}</code></p><button disabled={busy} onClick={() => download(snapshot)}>Download retained file</button></>}
       {document && snapshot && !snapshot.absent && !snapshot.opaque && <><h4>{document.content.title || "Untitled"}</h4><pre className="vault-recovery-text">{document.content.body.slice(0, 50_000) || "No body text in this version."}</pre><p>{snapshot.assets?.length ?? 0} {snapshot.assets?.length === 1 ? "attachment" : "attachments"} retained. {document.content.body.length > 50_000 ? "Preview limited to 50,000 characters. The complete file is retained." : ""}</p>
         <details><summary>File and attachment details</summary><p>TextPack SHA-256: <code>{snapshot.hash}</code></p><ul>{snapshot.assetDetails?.map(asset => <li key={asset.filename}><strong>{asset.filename}</strong> · {asset.contentType} · {asset.length.toLocaleString()} bytes<br /><code>SHA-256: {asset.digest}</code></li>)}</ul></details>
         <button disabled={busy} onClick={() => download(snapshot)}>Download TextPack</button>
         {onRestore && <button disabled={busy || disabled} onClick={() => void restoreCopy(snapshot)}>Restore this version as a new file</button>}
       </>}
-      {!chosenResolved && <><p>{move ? "Keep both paths exactly as inspected." : uncaptured ? "Cancel this unfinished deletion. The current path will stay as shown." : removal && chosen.currentPresent === false ? "Keep this path without a file." : `Keep the current file at ${chosen.path}.`} The inspected versions will stay available in recovery. This does not save or discard your editor draft.</p>
+      {!chosenResolved && <><p>{move ? "Keep both paths exactly as inspected." : uncaptured ? "Cancel this unfinished deletion. The current path will stay as shown." : (removal || pathBound) && chosen.currentPresent === false ? "Keep this path without a file." : `Keep the current file at ${chosen.path}.`} The inspected versions will stay available in recovery. This does not save or discard your editor draft.</p>
       <button disabled={busy || disabled || Boolean(chosen.resolutionBlocked) || versions.some(value => !snapshots[value])} onClick={() => void keepCurrent()}>{keepLabel}</button></>}
     </div>}
   </section>;

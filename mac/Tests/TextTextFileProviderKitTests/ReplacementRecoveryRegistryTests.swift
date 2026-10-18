@@ -28,6 +28,120 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
             documentJSON: document.documentJSON, templateJSON: document.templateJSON, assets: [], sourceURL: nil, in: scratch)
         return try Data(contentsOf: TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: scratch))
     }
+    private func legacyPack(_ body: String) throws -> Data {
+        let scratch = root.appendingPathComponent("." + UUID().uuidString)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: body, documentJSON: nil, assets: [], sourceURL: nil, in: scratch)
+        return try Data(contentsOf: TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: scratch))
+    }
+    private func legacyConflict() throws -> (Data, Data, Data) {
+        let original = try legacyPack("Original plain markdown"), prepared = try legacyPack("Prepared plain markdown"), external = try legacyPack("External plain markdown")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeSwap" { try external.write(to: self.target, options: .atomic) } }
+        XCTAssertThrowsError(try writer.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: prepared))
+        return (original, prepared, external)
+    }
+    private func acceptLegacy(_ row: LocalVaultDocumentStore.ReplacementRecoveryEntry, before: (() throws -> Void)? = nil) throws {
+        try store.resolveReplacement(id: row.id, path: row.path, itemId: "", currentHash: row.currentHash,
+            preparedHash: row.preparedHash, displacedHash: row.displacedHash, currentPresent: row.currentPresent,
+            identityMode: "path", beforeAcknowledge: before)
+    }
+    func testLegacyWritePreservesPlainMarkdownWithoutInventingIdentity() throws {
+        let original = try legacyPack("# One")
+        try original.write(to: target)
+        let written = try store.write(path: "Original.textpack", expectedHash: hash(original), markdown: "# Two",
+            documentJSON: nil, templateJSON: nil, templateAuthoringSourceJSON: nil)
+        XCTAssertEqual(written.contents.markdown, "# Two")
+        XCTAssertNil(MarkdownIdentityCodec.extract(from: written.contents.markdown))
+        XCTAssertEqual(try store.read(path: "Original.textpack").contents.markdown, "# Two")
+        let entry = try XCTUnwrap(registry.entries().first)
+        XCTAssertEqual(entry.identityMode, "path"); XCTAssertEqual(entry.itemId, "")
+        XCTAssertTrue(try store.replacementRecoveryList().isEmpty)
+    }
+    func testLegacyRecoveryKeepsExactOpaqueVersionsAndRequiresModeAndScope() throws {
+        let (_, prepared, external) = try legacyConflict()
+        let foreign = try pack("Current foreign document", itemId: "other-item")
+        try foreign.write(to: target, options: .atomic)
+        XCTAssertThrowsError(try store.read(path: "Original.textpack"))
+        XCTAssertThrowsError(try store.replaceExact(path: "Original.textpack", expectedHash: hash(foreign), bytes: foreign))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(row.identityMode, "path"); XCTAssertEqual(row.itemId, "")
+        for (version, bytes) in [("prepared", prepared), ("displaced", external), ("current", foreign)] {
+            let snapshot = try store.replacementRecoveryRead(id: row.id, version: version)
+            XCTAssertNil(snapshot.document); XCTAssertNotNil(snapshot.parseError)
+            XCTAssertEqual(snapshot.data, bytes); XCTAssertEqual(snapshot.hash, hash(bytes))
+        }
+        XCTAssertNoThrow(try store.recoveryList(path: "Original.textpack"))
+        XCTAssertThrowsError(try store.resolveReplacement(id: row.id, path: row.path, itemId: "", currentHash: row.currentHash,
+            preparedHash: row.preparedHash, displacedHash: row.displacedHash))
+        XCTAssertThrowsError(try acceptLegacy(row, before: { throw Interrupted.stopped }))
+        XCTAssertNil(try registry.entries().first?.resolution)
+        let copies = root.appendingPathComponent(".texttext/conflicts/" + row.id)
+        for bytes in [prepared, external, foreign] { XCTAssertEqual(try Data(contentsOf: copies.appendingPathComponent(hash(bytes) + ".textpack")), bytes) }
+        try acceptLegacy(row)
+        XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(foreign))
+        XCTAssertTrue(try XCTUnwrap(store.replacementRecoveryList().first).resolved)
+    }
+    func testLegacyRawRenameStillFencesAndAbsentOriginalCanBeExplicitlyKept() throws {
+        let (_, prepared, external) = try legacyConflict()
+        let moved = root.appendingPathComponent("Moved.textpack")
+        try FileManager.default.moveItem(at: target, to: moved)
+        XCTAssertThrowsError(try store.read(path: "Moved.textpack"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(row.path, "Original.textpack"); XCTAssertFalse(row.currentPresent); XCTAssertNil(row.currentHash)
+        XCTAssertTrue(try store.replacementRecoveryRead(id: row.id, version: "current").absent)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, external)
+        XCTAssertNoThrow(try store.recoveryList(path: row.path))
+        try acceptLegacy(row)
+        XCTAssertEqual(try store.read(path: "Moved.textpack").hash, hash(prepared))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+    func testLegacyConflictFencesIdOnlyAcknowledgementButNotIdentifiedOtherPath() throws {
+        _ = try legacyConflict()
+        let identified = try pack("Independent identified document", itemId: "other-item")
+        try identified.write(to: root.appendingPathComponent("Other.textpack"))
+        XCTAssertThrowsError(try registry.assertReadable(itemId: "other-item"), "Without a path the caller cannot rule out the legacy conflict.")
+        XCTAssertEqual(try store.read(path: "Other.textpack").hash, hash(identified))
+        XCTAssertNoThrow(try store.readMetadata(path: "Other.textpack"))
+        try acceptLegacy(try XCTUnwrap(store.replacementRecoveryList().first))
+        XCTAssertNoThrow(try registry.assertReadable(itemId: "other-item"))
+    }
+    func testLegacyLostReplyResumesWithoutIgnoringLaterRetainedWriter() throws {
+        let original = try legacyPack("Original"), prepared = try legacyPack("Prepared"), late = try legacyPack("Later old descriptor")
+        try original.write(to: target)
+        let descriptor = try FileHandle(forWritingTo: target)
+        defer { try? descriptor.close() }
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "swapped" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: prepared))
+        XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(prepared))
+        try descriptor.truncate(atOffset: 0); try descriptor.write(contentsOf: late); try descriptor.synchronize()
+        XCTAssertThrowsError(try store.read(path: "Original.textpack"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, late)
+        try acceptLegacy(row)
+        XCTAssertEqual(try store.read(path: "Original.textpack").hash, hash(prepared))
+    }
+    func testLegacyIdentityAdoptionAndFutureModeAreRefusedWithoutMutation() throws {
+        let original = try legacyPack("Legacy"), identified = try pack("Identified")
+        try original.write(to: target)
+        XCTAssertThrowsError(try store.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: identified))
+        XCTAssertEqual(try Data(contentsOf: target), original)
+        _ = try store.replaceExact(path: "Original.textpack", expectedHash: hash(original), bytes: try legacyPack("Later legacy"))
+        let entry = try XCTUnwrap(registry.entries().first)
+        let record = LocalVaultDeviceState.directory(root: root).appendingPathComponent("replacement-index/" + entry.operation.uuidString + ".json")
+        let before = try Data(contentsOf: record)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String: Any])
+        object["identityMode"] = "future"
+        let future = try JSONSerialization.data(withJSONObject: object)
+        try future.write(to: record, options: .atomic)
+        XCTAssertThrowsError(try store.read(path: "Original.textpack"))
+        XCTAssertEqual(try Data(contentsOf: record), future)
+        try before.write(to: record, options: .atomic)
+        XCTAssertNoThrow(try store.read(path: "Original.textpack"))
+    }
     private func stagedConflict() throws -> (UUID, Data, Data) {
         let original = try pack("original"), prepared = try pack("prepared"), external = try pack("external")
         try original.write(to: target)

@@ -7,6 +7,7 @@ extension LocalVaultDocumentStore {
         public let id: String
         public let path: String
         public let itemId: String
+        public let identityMode: String
         public let currentHash: String?
         public let currentPresent: Bool
         public let kind: String
@@ -71,7 +72,7 @@ extension LocalVaultDocumentStore {
     }
 
     private func recoveryCurrent(_ entry: ReplacementRecoveryRegistry.Entry, inspectOnly: Bool = false, source: Bool = false) throws -> (document: Document?, data: Data?, path: String, resolutionBlocked: String?) {
-        if entry.kind != "removal" && entry.kind != "move" {
+        if entry.kind != "removal" && entry.kind != "move" && entry.identityMode != "path" {
             let (document, bytes) = try replacementVisible(entry)
             return (document, bytes, document.path, nil)
         }
@@ -92,6 +93,11 @@ extension LocalVaultDocumentStore {
                 missing = true; continue
             }
             guard info.st_mode & S_IFMT == (index == parts.count - 1 ? S_IFREG : S_IFDIR) else { throw Failure.invalidPath }
+        }
+        if entry.identityMode == "path" {
+            if missing { return (nil, nil, entry.path, nil) }
+            let bytes = try StableFileSnapshot.read(location)
+            return (nil, bytes, entry.path, nil)
         }
         let paths = try list()
         guard paths.count < 20_000 else { throw Failure.tooLarge }
@@ -126,8 +132,12 @@ extension LocalVaultDocumentStore {
         return (document, bytes, observedPath, blocked)
     }
 
+    func hasPathBoundReplacementRecovery(path: String) throws -> Bool {
+        try replacements.entries().contains { $0.identityMode == "path" && $0.path == path }
+    }
     func replacementRecoveryItemId(path: String) throws -> String? {
         for entry in try replacements.entries() {
+            if entry.identityMode == "path" { continue }
             if try recoveryCurrent(entry, inspectOnly: true).path == path { return entry.itemId }
         }
         return nil
@@ -158,7 +168,7 @@ extension LocalVaultDocumentStore {
             let current = try recoveryCurrent(entry, inspectOnly: true)
             let source = entry.kind == "move" ? try recoveryCurrent(entry, inspectOnly: true, source: true) : nil
             let values = try directory.resourceValues(forKeys: [.creationDateKey])
-            result.append(ReplacementRecoveryEntry(id: entry.operation.uuidString, path: current.path, itemId: entry.itemId,
+            result.append(ReplacementRecoveryEntry(id: entry.operation.uuidString, path: current.path, itemId: entry.itemId, identityMode: entry.identityMode ?? "document",
                 currentHash: current.data.map(TextTextStableDigest.sha256Hex), currentPresent: current.data != nil, kind: entry.kind ?? "replacement", preparedHash: preparedHash, displacedHash: displacedHash,
                 captured: captured, resolutionBlocked: current.resolutionBlocked,
                 savedAt: ISO8601DateFormatter().string(from: values.creationDate ?? .distantPast), resolved: resolved,
@@ -173,7 +183,7 @@ extension LocalVaultDocumentStore {
         let path: String
         if let current { path = current.path }
         else if entry.kind == "move" { path = entry.destinationPath! }
-        else if entry.kind == "removal" { path = entry.path }
+        else if entry.kind == "removal" || entry.identityMode == "path" { path = entry.path }
         else { path = try replacementVisible(entry).0.path }
         let bytes: Data
         switch version {
@@ -193,6 +203,9 @@ extension LocalVaultDocumentStore {
         default: throw Failure.invalidPath
         }
         let hash = TextTextStableDigest.sha256Hex(bytes)
+        if entry.identityMode == "path" {
+            return (nil, path, hash, bytes, "This recovery is bound to its original path. Inspect or download the exact archive bytes.", false)
+        }
         do {
             let document = try parseDocument(path: path, bytes: bytes, preserveHistory: false)
             let identity = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId
@@ -245,8 +258,9 @@ extension LocalVaultDocumentStore {
             current: current.data, source: original.data, validateCurrent: validate, beforeAcknowledge: beforeAcknowledge)
     }
 
-    public func resolveReplacement(id: String, path: String, itemId: String, currentHash: String?, preparedHash: String, displacedHash: String?, kind: String = "replacement", currentPresent: Bool = true, beforeAcknowledge: (() throws -> Void)? = nil) throws {
-        guard let displacedHash, let operation = UUID(uuidString: id), let entry = try replacements.entries().first(where: { $0.operation == operation }), entry.itemId == itemId else { throw Failure.invalidPath }
+    public func resolveReplacement(id: String, path: String, itemId: String, currentHash: String?, preparedHash: String, displacedHash: String?, kind: String = "replacement", currentPresent: Bool = true, identityMode: String = "document", beforeAcknowledge: (() throws -> Void)? = nil) throws {
+        guard let displacedHash, let operation = UUID(uuidString: id), let entry = try replacements.entries().first(where: { $0.operation == operation }), entry.itemId == itemId,
+              (entry.identityMode ?? "document") == identityMode else { throw Failure.invalidPath }
         let current = try recoveryCurrent(entry)
         guard (entry.kind ?? "replacement") == kind, current.path == path, (current.data != nil) == currentPresent, current.data.map(TextTextStableDigest.sha256Hex) == currentHash else { throw Failure.changed }
         try replacements.resolve(operation: operation, visible: root.appendingPathComponent(path), itemId: itemId,
