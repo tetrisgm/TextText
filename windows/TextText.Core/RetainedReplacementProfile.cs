@@ -20,7 +20,24 @@ public static class RetainedReplacementProfile
         if (owner.Version is not (1 or 2)) throw new InvalidDataException("Unsupported replacement owner.");
         return TextPackStore.Hash(JsonSerializer.SerializeToUtf8Bytes(owner with { Version = 1 }));
     }
+    static IDisposable MigrationLease(string state,bool shared=false)
+    {
+        if(!Directory.Exists(state))throw new InvalidDataException("Workspace account state is missing.");
+        try{return RetainedFileReplacement.AcquireLease(Path.Combine(state,"retained-replacement-profile.lock"),shared);}
+        catch(IOException error){throw new IOException("This workspace's account setup could not be locked. Try again.",error);}
+    }
     public static void Verify(string state, AccountRootOwnership.Owner owner, string rootHash)
+    {
+        VerifyObserved(state,owner,rootHash,null);
+    }
+    // Read-only attestation may overlap other readers; publication remains exclusive.
+    static void VerifyObserved(string state,AccountRootOwnership.Owner owner,string rootHash,Action? observed)
+    {
+        using var migration=MigrationLease(state,shared:true);
+        VerifyUnlocked(state,owner,rootHash);
+        observed?.Invoke();
+    }
+    static void VerifyUnlocked(string state, AccountRootOwnership.Owner owner, string rootHash)
     {
         var directory = DirectoryFor(state); RetainedFileReplacement.CheckPath(directory);
         var bytes = RetainedFileReplacement.Read(Path.Combine(directory, "profile.json"), 8192);
@@ -43,6 +60,11 @@ public static class RetainedReplacementProfile
     }
     public static void Prepare(TextPackStore store, Action<string>? observe = null)
     {
+        using var migration=MigrationLease(store.StateDirectory);
+        PrepareUnlocked(store,observe);
+    }
+    static void PrepareUnlocked(TextPackStore store,Action<string>? observe)
+    {
         AccountRootOwnership.RequireNoAdoption(store.StateDirectory);
         var path = Path.Combine(store.StateDirectory, AccountRootOwnership.FileName);
         if (!File.Exists(path)) {
@@ -53,7 +75,7 @@ public static class RetainedReplacementProfile
         var owner = JsonSerializer.Deserialize<AccountRootOwnership.Owner>(original) ?? throw new InvalidDataException("Invalid replacement owner.");
         var rootHash = TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root));
         if (owner.RootHash != rootHash) throw new InvalidDataException("Replacement owner root changed.");
-        if (owner.Version == 2) { Verify(store.StateDirectory, owner, rootHash); return; }
+        if (owner.Version == 2) { VerifyUnlocked(store.StateDirectory, owner, rootHash); return; }
         if (owner.Version != 1) throw new InvalidDataException("Update TextText to save this workspace.");
         var directory = DirectoryFor(store.StateDirectory); RetainedFileReplacement.CheckPath(directory); Directory.CreateDirectory(directory); RetainedFileReplacement.CheckPath(directory);
         Publish(Path.Combine(directory, "owner-v1.json"), original); observe?.Invoke("ownerPreserved");
@@ -72,6 +94,6 @@ public static class RetainedReplacementProfile
         catch(Exception error)when(error is IOException or UnauthorizedAccessException) {
             throw new IOException("Ownership publication was interrupted. Its staged and displaced records remain available for review.",error);
         }
-        observe?.Invoke("ownerPublished"); Verify(store.StateDirectory, owner with { Version = 2 }, rootHash);
+        observe?.Invoke("ownerPublished"); VerifyUnlocked(store.StateDirectory, owner with { Version = 2 }, rootHash);
     }
 }

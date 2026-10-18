@@ -193,11 +193,11 @@ public static class RetainedFileReplacement
         if(persist)SaveJson(Path.Combine(recovery.Directory, "manifest.json"), record);
         return recovery with { Record = record };
     }
-    internal static IDisposable AcquireLease(string path)
+    internal static IDisposable AcquireLease(string path,bool shared=false)
     {
         CheckPath(path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);CheckPath(Path.GetDirectoryName(path)!);
-        if(!OperatingSystem.IsWindows())return new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
-        var handle=CreateFileW(NativePath(path),0xC0000000,0,IntPtr.Zero,4,0x00200000,IntPtr.Zero);
+        if(!OperatingSystem.IsWindows())return new FileStream(path,FileMode.OpenOrCreate,shared?FileAccess.Read:FileAccess.ReadWrite,shared?FileShare.Read:FileShare.None);
+        var handle=CreateFileW(NativePath(path),shared?0x80000000u:0xC0000000u,shared?1u:0u,IntPtr.Zero,4,0x00200000,IntPtr.Zero);
         if(handle.IsInvalid||!GetFileInformationByHandle(handle,out var info)) {handle.Dispose();throw new IOException("Removal operation is currently active or unavailable.");}
         if((info.Attributes&(uint)(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0){handle.Dispose();throw new IOException("Invalid removal operation lease.");}
         return handle;
