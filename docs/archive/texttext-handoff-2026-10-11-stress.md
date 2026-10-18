@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff retained for reference. Replaced by the current [docs/HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work (October 11)
@@ -42,7 +44,7 @@ fresh-process six-client reopen with identical hash
 Receipts: `/private/tmp/texttext-six-20261011/results/stress-2026-10-11T15-08-47-106Z-81`
 and `stress-2026-10-11T15-09-21-179Z-81` alongside it. Earlier Mac and
 Windows transport-loss/reconnect plus reopen receipts are listed in
-[the acceptance contract](verification/six-client-sync-acceptance.md).
+[the acceptance contract](../verification/six-client-sync-acceptance.md).
 
 The reciprocal PC-app pending-edit crash passed on fresh fixture
 `Notes/Six-client acceptance PC crash 1285.textpack` with zero rejected edits,
@@ -80,7 +82,7 @@ can project a live asset-only pack edit without resetting its Yjs epoch
 (`src/lib/vault/collaboration.test.ts`), but native upload and remote materialization
 while open need a durable, fenced path. Do not replay seed 89 as a pass.
 The required protocol and regression matrix are in
-[live binary sync](verification/live-binary-sync.md).
+[live binary sync](../verification/live-binary-sync.md).
 Commit `60ef2040` adds an authenticated binary-entry GET/PATCH surface and an
 atomic per-entry hash/lifecycle compare-and-swap writer that advances the live
 Yjs sequence without replacing text. Store and route tests passed, including
@@ -118,10 +120,10 @@ other work; preserve them.
 
 ## Earlier records
 
-[Archived October 9–11 handoffs](archive/texttext-handoff-through-2026-10-11.md).
+[Archived October 9–11 handoffs](texttext-handoff-through-2026-10-11.md).
 
 ## References
 
-- [Sync design](file-vault-collaboration-2026-09-30.md) and [agent interoperability](agent-interoperability.md)
-- [Oracle operations](../release/oracle/README.md)
-- [Archived earlier handoff](archive/HANDOFF-2026-10-09-pre-final19.md)
+- [Sync design](../file-vault-collaboration-2026-09-30.md) and [agent interoperability](../agent-interoperability.md)
+- [Oracle operations](../../release/oracle/README.md)
+- [Archived earlier handoff](HANDOFF-2026-10-09-pre-final19.md)

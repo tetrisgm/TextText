@@ -46,7 +46,7 @@ Complete the supported current six-client correctness/reopen matrix, active nati
 
 The second acceptance account already exists and is authenticated; preserve its pending revoked work. T02 has clean launch and overnight observations but still needs a coordinated post-mitigation PC reboot; [receipt](verification/2026-10-11-windows-account-lockout.md). Do not surprise-reboot active work.
 
-Preserve unrelated dirty `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts`. Preserve Package.resolved bytes around Swift commands. Run one heavy Mac gate at a time; actual-PC gates can run independently.
+Preserve unrelated dirty `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, and the untracked `.probe-editor.ts` in `scripts/`. Preserve Package.resolved bytes around Swift commands. Run one heavy Mac gate at a time; actual-PC gates can run independently.
 
 ## Earlier evidence
 

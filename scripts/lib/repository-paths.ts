@@ -3,6 +3,10 @@
 const PATH_RE =
   /(?<![\w$./-])((?:src|mac|scripts|release|plugins|docs)\/[A-Za-z0-9._/[\]-]*\.[A-Za-z0-9]{1,5})\b/g;
 
+// The release gate runs before this canonical app bundle is generated. Its
+// executable, signature and health are verified by the later app build gates.
+const GENERATED_APP_BUNDLE = "mac/build/TextText.app";
+
 export function repositoryPathsInText(text: string): string[] {
-  return [...text.matchAll(PATH_RE)].map(([, path]) => path.replace(/\.$/, ""));
+  return [...text.matchAll(PATH_RE)].map(([, path]) => path.replace(/\.$/, "")).filter(path => path !== GENERATED_APP_BUNDLE);
 }

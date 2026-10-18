@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff retained for reference. Replaced by the current [docs/HANDOFF.md](../HANDOFF.md).
+
 # TextText earlier handoff notes
 
 ## Earlier October 11 work
@@ -64,7 +66,7 @@ replacement (`7e780c26`). Both have focused regressions. Fresh seed 70 then
 passed reciprocal PC CLI same-span replacement with all six editors/files
 converged and a durable six-client reopen. Fresh seed 71 passed the Mac CLI
 direction and its reopen. Exact receipts and prior failures are in
-[the acceptance contract](verification/six-client-sync-acceptance.md).
+[the acceptance contract](../verification/six-client-sync-acceptance.md).
 
 Partial overlapping replacement/deletion now has focused merge, Yjs undo, and
 runner tests (`dc561876`, `ef3d2907`). A fresh seed-72 fixture and six-client
@@ -94,7 +96,7 @@ cannot be run directly from an unsandboxed shell; build used the working
 Codex CLI as input. Neither public release nor Oracle web deployment changed.
 
 Physical six-client receipts through Unicode seed 59 are recorded in
-[the acceptance contract](verification/six-client-sync-acceptance.md).
+[the acceptance contract](../verification/six-client-sync-acceptance.md).
 Remaining sync acceptance: overlapping replacements/deletions, native offline
 and pending-edit crash, whole TextPack and attachment changes, folder moves,
 permission changes, and sustained latency/resource checks. Do not call the
@@ -103,7 +105,7 @@ for receipt lookup; its installed-build statements predate this section.
 
 ## Current work (October 10)
 
-The seeded [six-client stress runner](../sync/stress/README.md) now uses the
+The seeded [six-client stress runner](../../sync/stress/README.md) now uses the
 real Mac and Windows app editors, browsers, and direct TextPack files. The
 private Mac actor and isolated Windows acceptance project compiled and were
 smoke-tested; neither was installed. All 44 harness tests and 377 sync client
@@ -208,13 +210,13 @@ and the signed-in production browser found that note with the saved body.
   build, but six-client acceptance is not complete and the installed Windows
   app has not been updated.
 
-- Automatic six-client [runner/protocol](../sync/stress/README.md) has real
+- Automatic six-client [runner/protocol](../../sync/stress/README.md) has real
   Mac and Windows app, browser, and direct-file actors with bounded rounds,
   retained receipts, restart checks, and browser offline / invalid-file fault
   options. It passed 47 harness tests. Its simulated example is only a harness
   check. Physical acceptance remains limited to the slices recorded above;
   implement and exercise the remaining fault matrix in the
-  [acceptance contract](verification/six-client-sync-acceptance.md).
+  [acceptance contract](../verification/six-client-sync-acceptance.md).
 - Source `0f224adb` addresses two failures exposed by the local two-account browser
   collaboration run: undo silently stopped after React StrictMode effect
   replay, and a reload could start a fresh journal while the old page still
@@ -237,25 +239,25 @@ and the signed-in production browser found that note with the saved body.
   and Windows-installed source above; physical fault acceptance remains open.
 - The simultaneous Mac/PC app, browser and direct-file small-text round passed
   with all 13 edits visible and identical saved `text.md` hashes. See the
-  [physical six-client receipt](verification/2026-10-09-six-client-live-edit.md).
+  [physical six-client receipt](../verification/2026-10-09-six-client-live-edit.md).
   A brief invalid TextPack write with both Mac editors open also recovered and
-  converged to Windows; its [receipt and native regression](verification/2026-10-09-invalid-intermediate-textpack.md)
+  converged to Windows; its [receipt and native regression](../verification/2026-10-09-invalid-intermediate-textpack.md)
   are in `8616ce61`.
   The remaining fault and two-account rounds in the
-  [acceptance contract](verification/six-client-sync-acceptance.md) are open.
-- A fresh [browser edit with the Mac reader open](verification/2026-10-09-browser-mac-windows-live-note.md)
+  [acceptance contract](../verification/six-client-sync-acceptance.md) are open.
+- A fresh [browser edit with the Mac reader open](../verification/2026-10-09-browser-mac-windows-live-note.md)
   appeared before Finish and reached both Mac and Windows TextPacks with the
   same extracted Markdown hash. The Windows app was open on a different note,
   so its visible editor is not covered by this receipt.
-- The [Windows save/restart receipt](verification/2026-10-09-windows-save-restart.md)
+- The [Windows save/restart receipt](../verification/2026-10-09-windows-save-restart.md)
   covers a fresh physical PC app edit, durable flush, separate-process reader
   reopen without a recovery notice, and Mac file catch-up. The installed PC app
   was relaunched afterward. Pending-edit restart and concurrent fault rounds
   remain open.
-- An [agent-created built-in note](verification/2026-10-09-agent-template-cross-client.md)
+- An [agent-created built-in note](../verification/2026-10-09-agent-template-cross-client.md)
   kept one ID under idempotent retry, retained its template version, and
   appeared in the Mac app, production browser, and Windows files. A
-  [custom agent-authored type](verification/2026-10-09-agent-custom-type-cross-client.md)
+  [custom agent-authored type](../verification/2026-10-09-agent-custom-type-cross-client.md)
   also passed idempotent creation, item creation, signed-in browser rendering,
   and Windows file propagation. Type update/remix/retire and the wider agent
   permission/proposal matrix remain unverified.

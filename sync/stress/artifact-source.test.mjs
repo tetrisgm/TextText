@@ -53,7 +53,7 @@ test('artifact mapping is fixed per role and receipts are create-only',()=>{
 
 test('untracked compilation source cannot hide outside tracked source proof',()=>{
   const {dir,repo}=sourceFixture(),prepared=preparePristineSource(repo,'HEAD',join(dir,'fresh'));
-  mkdirSync(join(prepared.sourceRoot,'mac/Sources'),{recursive:true});writeFileSync(join(prepared.sourceRoot,'mac/Sources/Unexpected.swift'),'extra compilation input');
+  mkdirSync(join(prepared.sourceRoot,'mac/Sources'),{recursive:true});writeFileSync(join(prepared.sourceRoot,'mac','Sources','Unexpected.swift'),'extra compilation input');
   assert.throws(()=>verifySourceTree(repo,prepared.proof.sourceCommit,prepared.sourceRoot),/Untracked source/);
 });
 test('build receipts require exact ordered steps with no omissions, duplicates or unknown commands',()=>{

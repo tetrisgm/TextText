@@ -7,7 +7,8 @@
 //
 // Checks, all mechanical, no judgement:
 //
-//   1. Every repo path named in a doc or script actually exists.
+//   1. Named source paths exist. The canonical generated app is checked later
+//      by the build, signature and runtime health gates.
 //   2. Every relative Markdown link resolves.
 //   3. Every script under scripts/, mac/scripts/, release/ is reachable from
 //      package.json, another script, a doc, or a launchd plist.

@@ -17,7 +17,7 @@ Paste into the next agent:
 - Source checks for `e61d2622`: 92 focused tests, 407 shared-client tests, TypeScript, Mac native suite. Preserve these receipts; rerun only as required by changed source/build verification.
 - Windows SSH failure was account lockout from WebView2 bad-password attempts. A machine policy prevented the reproduced launch-triggered failures. Reboot and overnight persistence remain unverified.
 - Runs 171–174 failed. Run 176 passed one concurrent round. Neither establishes complete reliability.
-- Unrelated dirty paths: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, `scripts/.probe-editor.ts`. Coordinate ownership before touching them. Do not stage them with this work.
+- Unrelated dirty paths: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, the untracked `.probe-editor.ts` in `scripts/`. Coordinate ownership before touching them. Do not stage them with this work.
 
 ### Execution and evidence rules
 

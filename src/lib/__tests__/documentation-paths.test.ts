@@ -16,6 +16,14 @@ describe("documentation source path references", () => {
       .toEqual([missing, source]);
   });
 
+  it("does not require the generated app before its release build", () => {
+    const artifact = ["mac", "build", "TextText.app"].join("/");
+    const unknown = ["mac", "build", "Missing.swift"].join("/");
+    const otherApp = ["mac", "build", "Other.app"].join("/");
+    expect(repositoryPathsInText(`Build ${artifact}; inspect ${unknown} and ${otherApp}.`))
+      .toEqual([unknown, otherApp]);
+  });
+
   it("does not reinterpret nested dependency paths as repository roots", () => {
     expect(repositoryPathsInText(`node_modules/dependency/${source}`)).toEqual([]);
   });

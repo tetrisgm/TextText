@@ -1,8 +1,10 @@
+> ARCHIVED: Historical handoff retained for reference. Replaced by the current [docs/HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work (October 11)
 
-Goal: reliable local TextPack and cloud collaboration across Mac app/browser/CLI and Windows app/browser/CLI. Full six-client acceptance remains open; see [acceptance matrix](verification/six-client-sync-acceptance.md).
+Goal: reliable local TextPack and cloud collaboration across Mac app/browser/CLI and Windows app/browser/CLI. Full six-client acceptance remains open; see [acceptance matrix](../verification/six-client-sync-acceptance.md).
 
 Latest physical receipts: installed Mac build 1256 opened the existing iCloud workspace, saved/reopened a test note, and found it by search; the latest Windows candidate was installed. Fresh attachment fixture 156 converged all six clients with Mac CLI and then PC CLI asset replacement (runs 156-157), reopened the exact saved text and asset hashes in a separate process (158), and survived PC app offline/restart (159). Reciprocal Mac app restart failed in run 160: native open briefly reported `local_changed`, then a pending browser journal stayed in recovery after the native file had caught up to a newer same-epoch server revision. The client now checks a fresh server read before resuming that exact safe case; native open retries bounded unchanged-byte baseline races. Focused regressions, TypeScript, and 4,945 shared tests pass. Rebuild/install both clients and repeat the Mac restart and six-client acceptance before claiming completion. Receipts are under `/private/tmp/texttext-six-20261011/results/` with run suffixes 156-160.
 
@@ -31,7 +33,7 @@ Other acceptance gaps: resolve the same-entry attachment conflict without interr
 
 ## References
 
-- [Six-client acceptance](verification/six-client-sync-acceptance.md)
-- [Previous receipts and context](archive/texttext-handoff-pre-e417ed28.md)
-- [Live binary sync protocol](verification/live-binary-sync.md)
-- [Oracle operations](../release/oracle/README.md)
+- [Six-client acceptance](../verification/six-client-sync-acceptance.md)
+- [Previous receipts and context](texttext-handoff-pre-e417ed28.md)
+- [Live binary sync protocol](../verification/live-binary-sync.md)
+- [Oracle operations](../../release/oracle/README.md)

@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff retained for reference. Replaced by the current [docs/HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work (October 11)
@@ -76,8 +78,8 @@ other work; preserve them.
 
 ## References
 
-- [Six-client acceptance and receipts](verification/six-client-sync-acceptance.md)
-- [Live binary sync protocol](verification/live-binary-sync.md)
-- [Detailed prior handoff](archive/texttext-handoff-2026-10-11-stress.md)
-- [Earlier history](archive/texttext-handoff-through-2026-10-11.md)
-- [Oracle operations](../release/oracle/README.md)
+- [Six-client acceptance and receipts](../verification/six-client-sync-acceptance.md)
+- [Live binary sync protocol](../verification/live-binary-sync.md)
+- [Detailed prior handoff](texttext-handoff-2026-10-11-stress.md)
+- [Earlier history](texttext-handoff-through-2026-10-11.md)
+- [Oracle operations](../../release/oracle/README.md)

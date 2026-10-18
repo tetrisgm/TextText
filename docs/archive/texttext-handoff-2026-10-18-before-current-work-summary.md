@@ -1,3 +1,5 @@
+> ARCHIVED: Historical handoff retained for reference. Replaced by the current [docs/HANDOFF.md](../HANDOFF.md).
+
 # TextText handoff
 
 ## Current work (October 18)
