@@ -16,7 +16,7 @@ export interface FolderMoveOperationContext {
  finish(intent: FolderMoveIntent): Promise<void>;
  sync(directory: string): Promise<void>;
 }
-async function exists(file: string) {try {await fs.lstat(file);return true;}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}}
+async function exists(file: string) {try {if (!(await fs.readdir(path.dirname(file))).includes(path.basename(file))) return false;await fs.lstat(file);return true;}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return false;throw error;}}
 /** Requires the caller's exclusive workspace lock. The intent already exists
  * durably before reserve, so recovery can finish every committed reservation.
  * No intermediate per-item paths are exposed to an engine reader. */
@@ -37,7 +37,7 @@ export async function applyFolderMoveIntent(intent: FolderMoveIntent, context: F
  if(!hasStaged&&hasSource){
   // Final source check follows the awaited metadata transaction.
   if((await snapshotFolderTree(source)).hash!==intent.treeHash){await context.metadata(intent,"abort");throw Error("Folder contents changed before the move");}
-  await assertFolderDestinationAvailable(destination);
+  await assertFolderDestinationAvailable(destination,intent.plan.caseOnly ? source : undefined);
   await fs.rename(source,staged);await context.sync(path.dirname(source));await context.sync(context.pendingDirectory);
   hasSource=false;hasStaged=true;
  }

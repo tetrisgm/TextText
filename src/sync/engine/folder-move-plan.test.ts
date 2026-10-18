@@ -40,3 +40,14 @@ it("binds all reviewed changes while accepting JSONB key order and grant input o
   expect(folderMovePlanHash(changed)).not.toBe(digest);
  }
 });
+it("permits only explicit same-parent case mode and preserves inherited access without extra grants",()=>{
+ const input={source:"Parent/Case",destination:"Parent/CASE",manifestRevision:"a".repeat(64),folders:["Parent","Parent/Case","Parent/Case/Empty"],items:[{itemId:"one",relativePath:"Parent/Case/one.textpack",revision:"b".repeat(64)}],grants:[{id:"ancestor",path:"Parent",signature:"sig",email:"reader@test.example",role:"viewer" as const},{id:"child",path:"Parent/Case/Empty",signature:"child-sig",email:"other@test.example",role:"editor" as const}]};
+ expect(()=>planFolderMove(input)).toThrow("outside");
+ const plan=planFolderMove({...input,caseOnly:true});expect(plan.caseOnly).toBe(true);expect(plan.addedAccess).toEqual([]);expect(plan.preserveInherited).toEqual([]);expect(plan.movedGrants).toEqual([expect.objectContaining({id:"child",destination:"Parent/CASE/Empty"})]);
+ expect(()=>planFolderMove({...input,caseOnly:true,destination:"parent/CASE"})).toThrow("same-parent");
+ expect(()=>planFolderMove({...input,caseOnly:true,folders:[...input.folders,"Parent/case"]})).toThrow("occupied");
+});
+
+it("refuses distinct folded descendants for the automatic lane",()=>{
+ expect(()=>planFolderMove({source:"Case",destination:"CASE",manifestRevision:"a".repeat(64),folders:["Case","Case/Child","Case/child"],items:[],grants:[],caseOnly:true})).toThrow("case-folded peers");
+});

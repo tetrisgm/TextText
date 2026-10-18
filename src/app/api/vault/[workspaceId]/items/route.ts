@@ -18,7 +18,8 @@ function authorizedManifest(manifest: Manifest, access: Access) {
   const items = entries(manifest.items), tombstones = entries(manifest.tombstones ?? []);
   const folders = (manifest.folders ?? []).filter(folder => access.fullAccess || canSeeVaultFolder(access.grants, folder));
   const problems = access.fullAccess ? manifest.problems : [];
-  const permissions = { fullAccess: access.fullAccess, canCreateContent, writableFolders };
+  const permissions = { fullAccess: access.fullAccess, canCreateContent, writableFolders,
+    ...(access.canManageShares && access.fullAccess ? {manifestRevision:manifest.revision,syncCapabilities:["folder-case-moves-v1"]} : {}) };
   // Capabilities participate in the ETag even when no file bytes changed.
   const revision = createHash("sha256").update(JSON.stringify([access.fullAccess ? manifest.revision : null,
     items, tombstones, folders, permissions])).digest("hex");

@@ -14,7 +14,7 @@ async function ownerLock(tx: Transaction, workspaceId: string, actorUserId: stri
 }
 type FolderMovePreviewInput = {
  root: string; workspaceId: string; actorUserId: string;
- source: string; destination: string; manifestRevision: string;
+ source: string; destination: string; manifestRevision: string; caseOnly?: true;
  folders: string[]; items: FolderMoveItem[];
 };
 async function folderMovePreview(tx: Transaction, input: FolderMovePreviewInput) {
@@ -45,7 +45,7 @@ export async function assertNoReservedFolderMove(tx: Transaction, workspaceId: s
  * reservation survives database rollback during the later filesystem phase. */
 export async function reserveFolderMove(input: {
  root: string; workspaceId: string; actorUserId: string; operationId: string; requestHash: string;
- source: string; destination: string; manifestRevision: string; folders: string[]; items: FolderMoveItem[];
+ source: string; destination: string; manifestRevision: string; caseOnly?: true; folders: string[]; items: FolderMoveItem[];
  expectedGrantsFingerprint: string;
  expectedPlanHash: string;
 }) {

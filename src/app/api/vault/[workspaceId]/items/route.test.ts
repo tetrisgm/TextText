@@ -108,3 +108,10 @@ describe("shared workspace manifests", () => {
     expect(await (await GET(new Request("https://texttext.test/items?readFeedEntries=1"), context)).json()).toEqual({ hashes: [], entries: [] });
   });
 });
+
+it("advertises raw folder-case revision only to exact owners and invalidates ETag on owner loss",async()=>{
+ mocks.auth.mockResolvedValue({...identity,canEditContent:true,canManageShares:true});mocks.list.mockResolvedValue(manifest);mocks.wait.mockResolvedValue(manifest);
+ const owner=await GET(new Request("https://texttext.test/items"),context);const data=await owner.json();expect(data.manifestRevision).toBe(manifest.revision);expect(data.syncCapabilities).toEqual(["folder-case-moves-v1"]);
+ mocks.auth.mockResolvedValue({...identity,canEditContent:true,canManageShares:false});
+ const editor=await GET(new Request("https://texttext.test/items?wait=25",{headers:{"If-None-Match":owner.headers.get("ETag")!}}),context);expect(editor.status).toBe(200);const current=await editor.json();expect(current.manifestRevision).toBeUndefined();expect(current.syncCapabilities).toBeUndefined();expect(editor.headers.get("ETag")).not.toBe(owner.headers.get("ETag"));
+});

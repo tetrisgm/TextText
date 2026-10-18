@@ -94,7 +94,9 @@ interface Intent {
   commentAction?: "vault.comment.create" | "vault.comment.reply" | "vault.comment.resolve" | "vault.comment.reopen";
   publicationAction?: "vault.publish" | "vault.unpublish";
 }
-export type VaultFolderResult = { status: "folder_created"; relativePath: string } | { status: "folder_moved"; relativePath: string };
+export type VaultFolderCaseRequest = { operationId: string; source: string; destination: string; baseManifestRevision: string; folders: string[]; items: {itemId: string; relativePath: string; revision: string}[] };
+export type VaultFolderCaseResult = {operationId: string; status: "moved"; source: string; destination: string; folders: string[]; items: {itemId: string; relativePath: string; revision: string}[]; manifestRevision: string};
+export type VaultFolderResult = { status: "folder_created"; relativePath: string } | { status: "folder_moved"; relativePath: string; caseMove?: VaultFolderCaseResult };
 interface FolderIntent { kind: "create_folder"; workspaceId: string; operationId: string; relativePath: string; requestHash: string; audit: NonNullable<VaultWrite["audit"]> }
 export interface VaultMutationReceipt {
   workspaceId: string; operationId: string;
@@ -2584,6 +2586,11 @@ async function applySubtreeMove(layout: Layout, intent: FolderMoveIntent, pendin
    const previous=JSON.parse((await fs.readFile(metadataPath)).toString());
    await atomicWrite(metadataPath,json({...previous,relativePath:item.destination,fingerprint:info}));
   }
+  if (intent.plan.caseOnly && result.status === "folder_moved") {
+   const current = await manifestSnapshot(layout);
+   result.caseMove = {operationId:intent.operationId,status:"moved",source:intent.plan.source,destination:intent.plan.destination,
+    folders:intent.plan.folders.map(row=>row.to),items:intent.plan.items.map(row=>({itemId:row.itemId,relativePath:row.destination,revision:row.revision})),manifestRevision:current.revision};
+  }
   const receipt:Receipt<VaultFolderResult>={requestHash:intent.requestHash,result,mutation:{workspaceId:intent.workspaceId,operationId:intent.operationId,actorUserId:intent.actorUserId,actorType:intent.actorType,result}};
   await atomicWrite(receiptPath,json(receipt));await deliverReceipt(layout,receipt);
  }}); } catch (error) {
@@ -2591,7 +2598,8 @@ async function applySubtreeMove(layout: Layout, intent: FolderMoveIntent, pendin
   // when the original directory object is still at the original path.
   const staged = await fs.lstat(path.join(pendingDir, "tree")).catch(() => null);
   const source = await verifyFolderParents(layout.workspace, intent.plan.source);
-  const currentTree = await snapshotFolderTree(source).catch(() => null);
+  const exactSource = (await fs.readdir(path.dirname(source))).includes(path.basename(source));
+  const currentTree = exactSource ? await snapshotFolderTree(source).catch(() => null) : null;
   if (!staged && currentTree?.entries[0]?.identity === intent.treeIdentity) {
    await layout.onFolderMove(intent, "abort");
    await fs.rm(pendingDir, { recursive: true }); await syncDirectory(layout.pending);
@@ -2619,5 +2627,35 @@ export async function moveVaultFolder(input:VaultLocation & {operationId:string;
   const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:input.actorType,plan:input.plan,manifest:reviewedManifest,treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
   const pendingDir=await directory(layout.pending,input.operationId);await atomicWrite(path.join(pendingDir,"intent.json"),json(intent));await syncDirectory(layout.pending);
   return applySubtreeMove(layout,intent,pendingDir);
+ });
+}
+
+/** Narrow owner-only native sync lane. The stable request freezes exact original
+ * topology and revisions; unlike reviewed general moves, content drift refuses. */
+export async function moveVaultFolderCase(input: VaultLocation & VaultFolderCaseRequest & {
+ actorUserId:string; authorize:()=>Promise<void>;
+ preparePlan:(current:{folders:string[];items:{itemId:string;relativePath:string;revision:string}[];revision:string})=>Promise<ReturnType<typeof planFolderMove>>;
+}):Promise<VaultFolderCaseResult> {
+ if(!input.onReceipt||!input.onFolderMove)throw Error("Folder move requires metadata and audit coordinators");
+ segment(input.operationId);const layout=await setup(input);
+ const folders=[...input.folders].sort();const items=input.items.map(({itemId,relativePath,revision})=>({itemId,relativePath,revision})).sort((a,b)=>a.itemId.localeCompare(b.itemId));
+ if(new Set(folders).size!==folders.length||new Set(items.map(row=>row.itemId)).size!==items.length)throw Error("Duplicate folder case topology");
+ const requestHash=hash(json(["folder-case-v1",input.actorUserId,input.source,input.destination,input.baseManifestRevision,folders,items]));
+ return locked(layout,async()=>{
+  await input.authorize();await recover(layout);
+  const saved=await maybeRead(path.join(layout.receipts,`${input.operationId}.json`));
+  if(saved){const receipt=JSON.parse(saved.toString()) as Receipt<VaultFolderResult>;if(receipt.requestHash!==requestHash||receipt.result.status!=="folder_moved"||!receipt.result.caseMove)throw Error("Operation id was reused");await deliverReceipt(layout,receipt);return receipt.result.caseMove;}
+  const current=await manifestSnapshot(layout);
+  if(current.revision!==input.baseManifestRevision)throw Error("Workspace manifest changed before folder case move");
+  const within=(value:string)=>value===input.source||value.startsWith(input.source+"/");
+  const actualFolders=current.folders.filter(within).sort();const actualItems=current.items.filter(row=>within(row.relativePath)).map(({itemId,relativePath,revision})=>({itemId,relativePath,revision})).sort((a,b)=>a.itemId.localeCompare(b.itemId));
+  if(json(actualFolders).toString()!==json(folders).toString()||json(actualItems).toString()!==json(items).toString()||current.problems.some(row=>within(row.relativePath)))throw Error("Folder original topology or revisions changed");
+  const plan=await input.preparePlan(current);
+  if(plan.caseOnly!==true||plan.source!==input.source||plan.destination!==input.destination||plan.manifestRevision!==current.revision||plan.addedAccess.length||plan.preserveInherited.length)throw Error("Invalid automatic folder case plan");
+  const latest=await manifestSnapshot(layout);if(latest.revision!==current.revision)throw Error("Workspace changed before folder case publication");
+  await input.authorize();const source=await verifyFolderParents(layout.workspace,plan.source);const tree=await snapshotFolderTree(source);
+  const intent:FolderMoveIntent={kind:"move_folder",workspaceId:input.workspaceId,operationId:input.operationId,requestHash,actorUserId:input.actorUserId,actorType:"human",plan,manifest:{folders:current.folders,items:current.items},treeHash:tree.hash,treeIdentity:tree.entries[0].identity};
+  const pendingDir=await directory(layout.pending,input.operationId);await atomicWrite(path.join(pendingDir,"intent.json"),json(intent));await syncDirectory(layout.pending);
+  const result=await applySubtreeMove(layout,intent,pendingDir);if(result.status!=="folder_moved"||!result.caseMove)throw Error("Folder case receipt unavailable");return result.caseMove;
  });
 }

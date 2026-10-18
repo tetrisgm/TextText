@@ -40,7 +40,7 @@ export async function verifyFolderParents(workspace: string, relative: string): 
   return path.join(current, relative.split("/").at(-1)!);
 }
 
-export async function assertFolderDestinationAvailable(destination: string): Promise<void> {
+export async function assertFolderDestinationAvailable(destination: string, allowedSource?: string): Promise<void> {
   const name = path.basename(destination).normalize("NFC").toLowerCase();
-  if ((await fs.readdir(path.dirname(destination))).some(entry => entry.normalize("NFC").toLowerCase() === name)) throw Error("Folder destination is occupied");
+  if ((await fs.readdir(path.dirname(destination))).some(entry => entry.normalize("NFC").toLowerCase() === name && !(allowedSource && path.dirname(allowedSource) === path.dirname(destination) && entry === path.basename(allowedSource)))) throw Error("Folder destination is occupied");
 }

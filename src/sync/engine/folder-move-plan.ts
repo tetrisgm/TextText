@@ -18,19 +18,28 @@ function folder(value: string) {
 /** Pure immutable preview. Filesystem identities and current grant rows must be
  * authenticated by the caller before this plan can become a durable intent. */
 export function planFolderMove(input: {
-  source: string; destination: string; manifestRevision: string;
+  source: string; destination: string; manifestRevision: string; caseOnly?: true;
   folders: readonly string[]; items: readonly FolderMoveItem[];
   grants: readonly FolderMoveGrant[];
 }) {
   const source = folder(input.source), destination = folder(input.destination);
   const grants = input.grants.map(grant => ({ ...grant, email: grant.email.trim().toLowerCase() })).sort((a,b) => a.id.localeCompare(b.id));
   const canonical = (value: string) => value.normalize("NFC").toLowerCase();
-  if (within(canonical(destination), canonical(source)) || canonical(source) === canonical(destination)) throw Error("Destination must be outside the source folder");
+  const caseOnly = input.caseOnly === true;
+  const sourceParent = source.includes("/") ? source.slice(0, source.lastIndexOf("/")) : "";
+  const destinationParent = destination.includes("/") ? destination.slice(0, destination.lastIndexOf("/")) : "";
+  if (caseOnly) {
+    if (source === destination || sourceParent !== destinationParent || canonical(source) !== canonical(destination)) throw Error("Only same-parent case-only folder changes are automatic");
+  } else if (within(canonical(destination), canonical(source))) throw Error("Destination must be outside the source folder");
   if (!/^[a-f0-9]{64}$/.test(input.manifestRevision)) throw Error("Invalid manifest revision");
   if (!input.folders.includes(source)) throw Error("Source folder is unavailable");
   const parent = destination.includes("/") ? destination.slice(0, destination.lastIndexOf("/")) : "";
   if (parent && !input.folders.includes(parent)) throw Error("Destination parent is unavailable");
-  if (input.folders.some(value => canonical(value) === canonical(destination)) || input.items.some(item => canonical(item.relativePath) === canonical(destination))) throw Error("Folder destination is occupied");
+  if (input.folders.some(value => canonical(value) === canonical(destination) && !(caseOnly && value === source)) || input.items.some(item => canonical(item.relativePath) === canonical(destination))) throw Error("Folder destination is occupied");
+  if (caseOnly) {
+    const paths = [...input.folders, ...input.items.map(item => item.relativePath)].filter(value => within(value, source));
+    if (new Set(paths.map(canonical)).size !== paths.length) throw Error("Folder subtree has distinct case-folded peers");
+  }
   const rebase = (value: string) => destination + value.slice(source.length);
   const folders = input.folders.filter(value => within(value, source)).map(value => ({ from: value, to: rebase(value) })).sort((a,b) => a.from.localeCompare(b.from));
   const items = input.items.filter(item => within(item.relativePath, source)).map(item => ({ ...item, destination: rebase(item.relativePath) })).sort((a,b) => a.itemId.localeCompare(b.itemId));
@@ -43,13 +52,14 @@ export function planFolderMove(input: {
     const old = retainedAccess.get(grant.email);
     if (!old || rank[old.role] < rank[grant.role]) retainedAccess.set(grant.email, grant);
   }
-  const preserveInherited = sourceInherited.filter(grant => retainedAccess.get(grant.email)?.id === grant.id)
+  const preserveInherited = (caseOnly ? [] : sourceInherited).filter(grant => retainedAccess.get(grant.email)?.id === grant.id)
     .map(grant => ({ ...grant, destination }));
   const addedAccess = grants.filter(grant => within(destination, grant.path) && !within(grant.path, source))
     .filter(grant => !retainedAccess.has(grant.email) || rank[retainedAccess.get(grant.email)!.role] < rank[grant.role])
     .map(grant => ({ email: grant.email, role: grant.role, via: grant.path }));
+  if (caseOnly && addedAccess.length) throw Error("Automatic folder case change cannot expand access");
   const grantsFingerprint = createHash("sha256").update(JSON.stringify([...grants].sort((a,b) => a.id.localeCompare(b.id)))).digest("hex");
-  return { source, destination, manifestRevision: input.manifestRevision, grantsFingerprint, folders, items, movedGrants, preserveInherited, addedAccess };
+  return { ...(caseOnly ? {caseOnly: true as const} : {}), source, destination, manifestRevision: input.manifestRevision, grantsFingerprint, folders, items, movedGrants, preserveInherited, addedAccess };
 }
 
 /** Bind approval and recovery to every planned file and access transition.
@@ -67,7 +77,7 @@ export function folderMovePlanHash(plan: ReturnType<typeof planFolderMove>): str
  * Keep reviewed revisions only in approval metadata; the executor snapshots
  * and moves the current bytes under its exclusive workspace lock. */
 export function reviewedFolderMoveManifest(plan: ReturnType<typeof planFolderMove>, current: { folders: string[]; items: FolderMoveItem[]; revision: string }) {
-  const latest = planFolderMove({ ...current, manifestRevision: current.revision, source: plan.source, destination: plan.destination, grants: [] });
+  const latest = planFolderMove({ ...current, manifestRevision: current.revision, source: plan.source, destination: plan.destination, ...(plan.caseOnly ? {caseOnly:true} : {}), grants: [] });
   const topology = (value: ReturnType<typeof planFolderMove>) => JSON.stringify({ folders: value.folders, items: value.items.map(({ itemId, relativePath, destination }) => ({ itemId, relativePath, destination })) });
   if (topology(latest) !== topology(plan)) throw Error("Workspace changed. Review the folder move again.");
   const revisions = new Map(plan.items.map(item => [item.itemId, item.revision]));

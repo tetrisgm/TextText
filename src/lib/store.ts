@@ -13,6 +13,7 @@ import {
   setVaultFolderTemplate as setDirectoryFolderTemplate,
   createVaultFolder as createDirectoryFolder,
   moveVaultFolder as moveDirectoryFolder,
+  moveVaultFolderCase as moveDirectoryFolderCase,
   readVaultTextpack as readDirectoryTextpack,
   readVaultTextpackPath as readDirectoryTextpackPath,
   readVaultTextpackIdentity as readDirectoryTextpackIdentity,
@@ -8542,4 +8543,13 @@ export function setVaultFolderTemplate(input: Omit<Parameters<typeof setDirector
 export function retireVaultTemplate(input: Omit<Parameters<typeof retireDirectoryTemplate>[0], "audit" | "onReceipt"> & { actorUserId: string; actorType: "human" | "external_agent" }) {
   if (!db) throw new Error(NO_DATABASE);
   return retireDirectoryTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: input.actorType }, ...folderMoveCoordinator(input.root) });
+}
+
+/** Only owner-authenticated native same-parent case propagation bypasses review.
+ * Filesystem CAS and SQL owner/grant reservation still execute under the normal
+ * durable folder-move protocol. General moves retain explicit owner review. */
+export async function moveVaultFolderCase(input: FolderMoveActor & import("@/sync/engine/store").VaultFolderCaseRequest) {
+ if(!db)throw new Error(NO_DATABASE);
+ return moveDirectoryFolderCase({...input,...folderMoveCoordinator(input.root),authorize:()=>authorizeFolderMoveOwner(input),
+  preparePlan: current=>previewFolderMoveMetadata({...input,folders:current.folders,items:current.items,manifestRevision:current.revision,caseOnly:true})});
 }
