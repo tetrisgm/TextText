@@ -161,14 +161,17 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
     if (method === "recoveryList") {
+      const folderRenames = await rpc.request<{ resolved: boolean }[]>("files.folderRenameList", recoveryScope, signal);
+      if (folderRenames.some(entry => !entry.resolved)) return { entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderRenames,
+        warning: "A folder name change needs review. Inspect the current folder paths before continuing." };
       const replacements = await rpc.request<unknown[]>("files.replacementList", recoveryScope, signal);
       const assets = await rpc.request<{ assets: unknown[]; assetsTruncated: boolean }>("files.recoveryAssets", recoveryScope, signal);
       try {
         const page = await shared.request(method, params, signal) as Record<string, unknown>;
-        return { ...page, replacements, ...assets };
+        return { ...page, replacements, ...assets, folderRenames };
       } catch (error) {
-        if (signal?.aborted || (replacements.length === 0 && assets.assets.length === 0)) throw error;
-        return { entries: [], truncated: false, replacements, ...assets, warning: "Saved server versions are unavailable. Local recovery is still available." };
+        if (signal?.aborted || (replacements.length === 0 && assets.assets.length === 0 && folderRenames.length === 0)) throw error;
+        return { entries: [], truncated: false, replacements, ...assets, folderRenames, warning: "Saved server versions are unavailable. Local recovery is still available." };
       }
     }
     if (method === "replacementRead") {
@@ -180,6 +183,8 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
       return { ...pack.file, data: result.data };
     }
+    if (method === "folderRenameRead") return rpc.request("files.folderRenameRead", { ...params, ...recoveryScope }, signal);
+    if (method === "resolveFolderRename") return rpc.request("files.resolveFolderRename", { ...params, ...recoveryScope }, signal);
     if (method === "resolveMove") return rpc.request("files.resolveMove", { ...params, ...recoveryScope }, signal);
     if (method === "resolveReplacement") return rpc.request("files.resolveReplacement", { ...params, ...recoveryScope }, signal);
     if (method === "cancelUncapturedDeletion") return rpc.request("files.cancelUncapturedDeletion", { ...params, ...recoveryScope }, signal);
