@@ -12,12 +12,13 @@ enum RetainedReplacementProfile {
         let originalOwnerHash: String
     }
     enum Failure: Error, LocalizedError {
-        case unsupportedOwner, invalidProfile, changed
+        case unsupportedOwner, invalidProfile, changed, busy
         var errorDescription: String? {
             switch self {
             case .unsupportedOwner: return "Update TextText or complete the workspace account review before protected saving. Saved files are preserved."
             case .invalidProfile: return "This workspace's account recovery record could not be verified. Return to the original account or update TextText. Saved files are preserved."
             case .changed: return "The workspace's account details changed while preparing the save. Reopen the workspace and review its account."
+            case .busy: return "This workspace's account setup is finishing. Try saving again."
             }
         }
     }
@@ -42,11 +43,21 @@ enum RetainedReplacementProfile {
     static func hasRetainedProfile(stateDirectory: URL) -> Bool {
         FileManager.default.fileExists(atPath: stateDirectory.appendingPathComponent("retained-replacement-profile").path)
     }
+    private static func withMigrationLease<T>(stateDirectory: URL, _ body: () throws -> T) throws -> T {
+        do {
+            return try RetainedFileRemoval.withLease(at: stateDirectory.appendingPathComponent("retained-replacement-profile.lock"), body)
+        } catch RetainedFileReplacement.Failure.unresolved { throw Failure.busy }
+    }
     static func verify(root: URL, owner: LocalVaultAccountRootOwnership.Owner) throws {
         try verify(stateDirectory: LocalVaultDeviceState.directory(root: root), owner: owner,
             expectedRootHash: digest(Data(root.standardizedFileURL.resolvingSymlinksInPath().path.utf8)))
     }
     static func verify(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws {
+        try withMigrationLease(stateDirectory: stateDirectory) {
+            try verifyUnlocked(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
+        }
+    }
+    private static func verifyUnlocked(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws {
         try verifyContents(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
         let target = stateDirectory.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
         for recovery in try RetainedFileReplacement.inspect(target) where recovery.record.state == .pending {
@@ -78,9 +89,15 @@ enum RetainedReplacementProfile {
             guard try StableFileSnapshot.read(target, maximumBytes: 4096) == bytes else { throw Failure.invalidProfile }
         } else { try RetainedFileReplacement.create(bytes, at: target) }
     }
-    /// Source integration calls this before any projection mutation. All live
-    /// invocation remains held until delivery/migration acceptance is complete.
+    /// Owned stores call this before projection mutation. Migration and its
+    /// startup verification share one device-private root lease.
     static func prepare(root: URL, observe: ((String) throws -> Void)? = nil) throws {
+        let root = root.standardizedFileURL.resolvingSymlinksInPath()
+        try withMigrationLease(stateDirectory: LocalVaultDeviceState.directory(root: root)) {
+            try prepareUnlocked(root: root, observe: observe)
+        }
+    }
+    private static func prepareUnlocked(root: URL, observe: ((String) throws -> Void)?) throws {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         let state = LocalVaultDeviceState.directory(root: root)
@@ -100,7 +117,7 @@ enum RetainedReplacementProfile {
         let original = try StableFileSnapshot.read(ownerURL, maximumBytes: 4096)
         var owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: original)
         guard owner.rootHash == digest(Data(root.path.utf8)) else { throw Failure.invalidProfile }
-        if owner.version == 2 { try verify(root: root, owner: owner); return }
+        if owner.version == 2 { try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8))); return }
         guard owner.version == 1 else { throw Failure.unsupportedOwner }
         let marker = Marker(version: 1, ownerVersion: 2, principalHash: try principalHash(owner), originalOwnerHash: digest(original))
         let folder = directory(root)
@@ -123,6 +140,6 @@ enum RetainedReplacementProfile {
             }
         }
         try observe?("ownerPublished")
-        try verify(root: root, owner: owner)
+        try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
     }
 }

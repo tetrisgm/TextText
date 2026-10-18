@@ -20,6 +20,19 @@ final class RetainedReplacementProfileTests: XCTestCase {
         let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: bytes)
         guard owner.version == 1 else { throw LocalVaultAccountRootOwnership.Failure.future }
     }
+    func testConcurrentPrepareAndVerifyCannotReconcileAnActiveOwnerExchange() throws {
+        let ownerBefore = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: marker))
+        var interleaved = false
+        XCTAssertNoThrow(try RetainedReplacementProfile.prepare(root: root) { stage in
+            guard stage == "ownerBeforePublish" else { return }
+            interleaved = true
+            XCTAssertThrowsError(try RetainedReplacementProfile.prepare(root: self.root), "A concurrent migration must refuse while the first owns the root lease.")
+            XCTAssertThrowsError(try RetainedReplacementProfile.verify(root: self.root, owner: ownerBefore), "Verification must not reconcile an active exchange.")
+        })
+        XCTAssertTrue(interleaved)
+        XCTAssertNoThrow(try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: "account-a"))
+        XCTAssertEqual(try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: marker)).version, 2)
+    }
     func testOwnedProfilePreservesExactOldBytesAndOldFactoryRefusesNewVersion() throws {
         let before = try Data(contentsOf: marker)
         try oldFactory(before)
