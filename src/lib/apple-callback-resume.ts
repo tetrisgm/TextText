@@ -45,7 +45,10 @@ export async function resumeAppleCallback(request: Request, handler: (request: N
   headers.set("content-type", "application/x-www-form-urlencoded");
   // Call Auth.js directly with its canonical callback URL; never re-enter the first-hop route.
   const response = await handler(new NextRequest(new URL(callbackPath, origin), { method:"POST", headers, body:data.toString() }));
-  response.headers.set("Cache-Control", "no-store");
-  response.headers.set("Referrer-Policy", "no-referrer");
-  return response;
+  // Auth.js can return an immutable redirect response. Preserve its cookies and
+  // body while applying privacy headers to a fresh response, not the original.
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.set("Cache-Control", "no-store");
+  responseHeaders.set("Referrer-Policy", "no-referrer");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
 }

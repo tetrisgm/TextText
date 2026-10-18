@@ -29,3 +29,22 @@ it("preserves provider denial fields for Auth.js error handling",async()=>{
   const handler=vi.fn(async(req:Request)=>{expect(Object.fromEntries(await req.formData())).toEqual({state:"nonce",error:"user_cancelled_authorize",error_description:"Cancelled"});return new Response(null,{status:303});});
   expect((await resumeAppleCallback(request({state:"nonce",error:"user_cancelled_authorize",error_description:"Cancelled"},{Origin:origin}),handler)).status).toBe(303);
 });
+it("wraps an actual immutable redirect without changing its target or security headers",async()=>{
+  const original=Response.redirect(`${origin}/start`,303);
+  expect(()=>original.headers.set("Cache-Control","no-store")).toThrow(TypeError);
+  const result=await resumeAppleCallback(request({state:"nonce",code:"fixture"},{Origin:origin}),async()=>original);
+  expect(result.status).toBe(303);expect(result.statusText).toBe(original.statusText);
+  expect(result.headers.get("Location")).toBe(`${origin}/start`);
+  expect(result.headers.get("Cache-Control")).toBe("no-store");expect(result.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(original.headers.has("Cache-Control")).toBe(false);
+});
+it.each([303,400])("preserves separate cookies, body and response metadata for Auth.js status %s",async status=>{
+  const cookies=["session=fixture; Path=/; HttpOnly; Secure; SameSite=Lax","state=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; HttpOnly; Secure; SameSite=Lax"];
+  const headers=new Headers({Location:"/start","X-Fixture":"unchanged"});for(const cookie of cookies)headers.append("Set-Cookie",cookie);
+  const original=new Response(status===400?"Provider denied":null,{status,statusText:"Fixture status",headers});
+  const result=await resumeAppleCallback(request({state:"nonce",code:"fixture"},{Origin:origin}),async()=>original);
+  expect(result.status).toBe(status);expect(result.statusText).toBe("Fixture status");expect(result.headers.getSetCookie()).toEqual(cookies);
+  expect(result.headers.get("Location")).toBe("/start");expect(result.headers.get("X-Fixture")).toBe("unchanged");
+  expect(result.headers.get("Cache-Control")).toBe("no-store");expect(result.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(await result.text()).toBe(status===400?"Provider denied":"");
+});
