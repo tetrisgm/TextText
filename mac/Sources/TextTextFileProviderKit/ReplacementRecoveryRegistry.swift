@@ -368,6 +368,45 @@ struct ReplacementRecoveryRegistry {
         if entry.kind == "removal" { return try visibleMatches(visibleClassificationTarget(entry, retained), hash: nil, present: false) }
         return digest(try StableFileSnapshot.read(visibleClassificationTarget(entry, retained))) == entry.preparedHash
     }
+    private func cancelRenamedUncaptured(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) throws -> RetainedFileReplacement.Recovery? {
+        guard entry.kind == "removal", retained.record.state == .pending else { return nil }
+        var info = stat()
+        guard lstat(retained.displaced.path, &info) != 0, errno == ENOENT else { return nil }
+        let original = root.appendingPathComponent(entry.path)
+        var parent = root
+        for part in entry.path.split(separator: "/").dropLast() {
+            parent.appendPathComponent(String(part))
+            if lstat(parent.path, &info) != 0 {
+                guard errno == ENOENT else { throw Failure.invalidRegistry }
+                break
+            }
+            guard info.st_mode & S_IFMT == S_IFDIR else { throw Failure.invalidRegistry }
+        }
+        // A different recreated original file is ambiguous even when expected
+        // content is found elsewhere. Never substitute that other pathname.
+        guard lstat(original.path, &info) != 0, errno == ENOENT else { return nil }
+        let store = LocalVaultDocumentStore(root: root)
+        let paths = try store.list()
+        guard paths.count < 20_000 else { throw Failure.invalidRegistry }
+        var candidate: URL?
+        for path in paths {
+            var visible = root
+            let parts = path.split(separator: "/")
+            for (index, part) in parts.enumerated() {
+                visible.appendPathComponent(String(part))
+                guard lstat(visible.path, &info) == 0,
+                      info.st_mode & S_IFMT == (index == parts.count - 1 ? S_IFREG : S_IFDIR) else { throw Failure.invalidRegistry }
+            }
+            let bytes = try StableFileSnapshot.read(visible)
+            let document = try store.parseDocument(path: path, bytes: bytes, preserveHistory: false)
+            guard MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == entry.itemId else { continue }
+            guard candidate == nil, digest(bytes) == entry.expectedHash else { throw Failure.unresolved(entry.operation) }
+            candidate = visible
+        }
+        guard let candidate else { return nil }
+        guard lstat(original.path, &info) != 0, errno == ENOENT else { throw Failure.unresolved(entry.operation) }
+        return try RetainedFileRemoval.cancelUncaptured(retained, preservedAt: candidate)
+    }
     private func restoreDeletionMarker(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) throws {
         guard entry.kind == "removal", entry.userDeletion == true, entry.deletionMarkerPublished != true, entry.deletionIntentCancelled != true else { return }
         let visible = root.appendingPathComponent(entry.path)
@@ -376,7 +415,7 @@ struct ReplacementRecoveryRegistry {
         else {
             let store = LocalVaultDocumentStore(root: root)
             let paths = try store.list()
-            guard paths.count <= 20_000 else { throw Failure.invalidRegistry }
+            guard paths.count < 20_000 else { throw Failure.invalidRegistry }
             var matches = 0
             for path in paths where path != entry.path {
                 guard let bytes = try? StableFileSnapshot.read(store.url(for: path)),
@@ -463,7 +502,7 @@ struct ReplacementRecoveryRegistry {
                 try restoreDeletionMarker(entry, retained)
                 continue
             }
-            let classified = try RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained))
+            let classified = try cancelRenamedUncaptured(entry, retained) ?? RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained))
             guard classified.record.state == .completed || classified.record.state == .cancelled else { throw Failure.unresolved(entry.operation) }
             try restoreDeletionMarker(entry, classified)
         }

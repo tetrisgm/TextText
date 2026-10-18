@@ -122,6 +122,51 @@ final class RetainedFileRemovalTests: XCTestCase {
         XCTAssertThrowsError(try registry.assertReadable(itemId: "removal-item"))
         XCTAssertEqual(try store.replacementRecoveryList().count, 1)
     }
+    func testUncapturedUniqueRenameCancelsIntentAndAllowsNormalReadAndSave() throws {
+        let before = try pack("before"), after = try pack("after")
+        try before.write(to: target)
+        let renamed = root.appendingPathComponent("Renamed.textpack"), source = target
+        var writer = store
+        writer.writeObservationForTesting = { stage in
+            if stage == "removalPrepared" {
+                try FileManager.default.moveItem(at: source, to: renamed)
+                throw Interrupted.stopped
+            }
+        }
+        XCTAssertThrowsError(try writer.delete(path: "Original.textpack", expectedHash: hash(before)))
+        let observed = try LocalVaultDocumentStore(root: root).read(path: "Renamed.textpack")
+        XCTAssertEqual(observed.hash, hash(before))
+        let entry = try XCTUnwrap(registry.entries().first)
+        XCTAssertTrue(entry.deletionIntentCancelled == true)
+        XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: "removal-item"))
+        XCTAssertEqual(try store.replaceExact(path: "Renamed.textpack", expectedHash: observed.hash, bytes: after).hash, hash(after))
+        XCTAssertEqual(try Data(contentsOf: renamed), after)
+    }
+    func testUncapturedRenameRefusesDuplicateChangedOrForeignOriginal() throws {
+        let before = try pack("before"), changed = try pack("changed"), foreign = try pack("foreign", id: "foreign-item")
+        for mode in ["duplicate", "changed", "foreign-original"] {
+            let isolated = root.appendingPathComponent(mode)
+            try FileManager.default.createDirectory(at: isolated, withIntermediateDirectories: true)
+            let source = isolated.appendingPathComponent("Original.textpack"), renamed = isolated.appendingPathComponent("Renamed.textpack")
+            try before.write(to: source)
+            var writer = LocalVaultDocumentStore(root: isolated)
+            writer.writeObservationForTesting = { stage in
+                if stage == "removalPrepared" {
+                    try FileManager.default.moveItem(at: source, to: renamed)
+                    throw Interrupted.stopped
+                }
+            }
+            XCTAssertThrowsError(try writer.delete(path: "Original.textpack", expectedHash: hash(before)))
+            if mode == "duplicate" { try before.write(to: isolated.appendingPathComponent("Duplicate.textpack")) }
+            if mode == "changed" { try changed.write(to: renamed, options: .atomic) }
+            if mode == "foreign-original" { try foreign.write(to: source) }
+            let index = ReplacementRecoveryRegistry(root: isolated)
+            XCTAssertThrowsError(try index.assertReadable(itemId: "removal-item"), mode)
+            XCTAssertNil(try LocalVaultDeviceState.deletionSnapshot(root: isolated, itemId: "removal-item"))
+            XCTAssertEqual(try Data(contentsOf: renamed), mode == "changed" ? changed : before)
+            if mode == "foreign-original" { XCTAssertEqual(try Data(contentsOf: source), foreign) }
+        }
+    }
     func testRemovedIdentityElsewhereRefusesAmbiguousResolution() throws {
         let before = try pack("before"), external = Data([2])
         try before.write(to: target)

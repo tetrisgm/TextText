@@ -5,6 +5,24 @@ import TextTextWorkspaceCore
 /// A deletion retains the actual inode with an exclusive same-volume rename.
 /// Nothing is unlinked and a recreated visible path is never rolled back.
 enum RetainedFileRemoval {
+    /// Abandon only an unperformed deletion after a unique unchanged file was
+    /// found elsewhere. This never moves or changes that visible file.
+    static func cancelUncaptured(_ recovery: RetainedFileReplacement.Recovery, preservedAt candidate: URL) throws -> RetainedFileReplacement.Recovery {
+        guard recovery.record.kind == "removal", recovery.record.state == .pending else { throw RetainedFileReplacement.Failure.invalidJournal }
+        var info = stat()
+        guard lstat(recovery.displaced.path, &info) != 0, errno == ENOENT else { throw RetainedFileReplacement.Failure.invalidJournal }
+        let prepared = try StableFileSnapshot.read(recovery.prepared)
+        let before = try RetainedFileReplacement.fingerprint(candidate)
+        let bytes = try StableFileSnapshot.read(candidate)
+        guard TextTextStableDigest.sha256Hex(prepared) == recovery.record.expectedHash,
+              bytes == prepared, before == (try RetainedFileReplacement.fingerprint(candidate)),
+              lstat(recovery.displaced.path, &info) != 0, errno == ENOENT else { throw RetainedFileReplacement.Failure.invalidJournal }
+        var record = recovery.record
+        record.state = .cancelled
+        try RetainedFileReplacement.save(record, in: recovery.directory)
+        return .init(directory: recovery.directory, record: record, storageTarget: recovery.storageTarget)
+    }
+
     static func capture(_ target: URL, expectedHash: String, recoveryRoot: URL, operation: UUID,
                         observe: ((String) throws -> Void)? = nil) throws -> RetainedFileReplacement.Recovery {
         let before = try StableFileSnapshot.read(target)

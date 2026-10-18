@@ -59,7 +59,7 @@ extension LocalVaultDocumentStore {
             guard info.st_mode & S_IFMT == (index == parts.count - 1 ? S_IFREG : S_IFDIR) else { throw Failure.invalidPath }
         }
         let paths = try list()
-        guard paths.count <= 20_000 else { throw Failure.tooLarge }
+        guard paths.count < 20_000 else { throw Failure.tooLarge }
         for path in paths where path != entry.path {
             guard let bytes = try? StableFileSnapshot.read(url(for: path)),
                   let document = try? parseDocument(path: path, bytes: bytes, preserveHistory: false) else { continue }
