@@ -1,3 +1,4 @@
+import { observeSealedSource, fixedDriverFiles, ownerBindingScope, canonicalJSON } from './identity-observation.mjs';
 // Direct-file stress actor for the mac-cli and pc-cli roles. It speaks the coordinator's JSONL
 // protocol and edits one dedicated acceptance TextPack the way an ordinary external tool would:
 // read the whole ZIP, append the exact edit text to the canonical text.md body, keep every other
@@ -53,7 +54,8 @@ export function validateActorConfig(raw) {
   if (typeof itemId !== 'string' || !IDENTITY.test(itemId)) fail('itemId is required');
   const observeMaxMs = raw.observeMaxMs ?? OBSERVE.maxMs;
   if (!Number.isInteger(observeMaxMs) || observeMaxMs < 100 || observeMaxMs > OBSERVE.maxMs) fail(`observeMaxMs must be 100..${OBSERVE.maxMs}`);
-  return { role, file, workspaceId, itemId, title, receiptDir, observeMaxMs };
+  for (const name of ['identityReceipt', 'workspaceRoot', 'ownerBindingPath']) if (raw[name] !== undefined && (typeof raw[name] !== 'string' || !isAbsolute(raw[name]))) fail(`${name} must be an absolute path`);
+  return { role, file, workspaceId, itemId, title, receiptDir, observeMaxMs, ...Object.fromEntries(['identityReceipt', 'workspaceRoot', 'ownerBindingPath'].filter(name => raw[name] !== undefined).map(name => [name, raw[name]])) };
 }
 
 export function loadActorConfig(path) {
@@ -324,7 +326,21 @@ export function createActor(config, { platform = process.platform, machineId = h
       mkdirSync(runDir, { recursive: false, mode: 0o700 });
       state.runId = m.runId; state.runDir = runDir;
       journal({ event: 'hello', runId: m.runId, role: config.role, machineId, platform, fixture: m.fixture, fileSha256: sha256(readFileSync(config.file)) });
-      return { type: 'attest', round: 0, mode: 'real', workspaceId: config.workspaceId, itemId: config.itemId, machineId, adapter: 'file-adapter' };
+      let identity, initialPack;
+      if (m.identitySchema === 1) {
+        const source = observeSealedSource(config.identityReceipt, config.role, fixedDriverFiles(config.role));
+        const bytes = await stableRead(config.file), pack = readPack(bytes), body = validateIdentity(pack, config).body;
+        const paths = pack.entries.filter(entry => entry.name.startsWith(pack.root + 'assets/') && !entry.name.endsWith('/')).map(entry => entry.name.slice(pack.root.length));
+        if (paths.length > 32) throw new ActorError('identity', 'physical fixture exceeds asset identity bound');
+        identity = { schemaVersion: 1, role: config.role, platform, artifactKind: 'direct-file-driver',
+          principalKind: 'workspace-owner-binding', principalScopeHash: ownerBindingScope(config),
+          runtimeName: 'Node.js', runtimeVersion: process.versions.node, ...source };
+        initialPack = { packSha256: sha256(bytes), bodySha256: sha256(body.replace(/\r\n/g, '\n')),
+          documentSha256: sha256(canonicalJSON(JSON.parse(strFromU8(entryOf(pack, 'document.json').data)))),
+          assetHashes: assetHashesOf(pack, paths) };
+      }
+      return { type: 'attest', round: 0, mode: 'real', workspaceId: config.workspaceId, itemId: config.itemId, machineId, adapter: 'file-adapter',
+        ...(identity ? { identity, initialPack } : {}) };
     },
     async prepare(m) {
       requireRun();

@@ -177,12 +177,13 @@ def main():
                     fail("Native actor did not reopen after the crash.", round_)
                     break
                 try:
-                    if json.loads(attestation).get("type") != "attest":
+                    fresh_attestation = json.loads(attestation)
+                    if fresh_attestation.get("type") != "attest":
                         raise ValueError("not an attestation")
                 except ValueError:
                     fail("Native actor did not attest after the crash.", round_)
                     break
-                emit(json.dumps({"type": "restart", "round": round_, "generation": generation}))
+                emit(json.dumps({"type": "restart", "round": round_, "generation": generation, "attestation": fresh_attestation}))
                 continue
             seq += 1
             if process.poll() is not None and seq > 1:

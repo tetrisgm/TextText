@@ -1,3 +1,5 @@
+import { boundedFile } from './identity-observation.mjs';
+import { normalizeIdentity, checkIdentity, normalizeInitialPack, verifyReopenIdentity, checkRestartAttestation } from './identity.mjs';
 // Bounded six-client stress coordinator. Finite seeded rounds, all-ready barrier, concurrent dispatch,
 // exact convergence, first-failure stop with preserved evidence. No background service.
 import { createHash } from 'node:crypto';
@@ -124,8 +126,20 @@ export function validateConfig(config) {
     || config.rounds < 1 || config.restart?.role === 'pc-app')) {
     fail('closeProbe requires a real run with at least one round and no pc-app restart');
   }
+  if (config.mode === 'real') {
+    if (!config.expectedIdentities || typeof config.expectedIdentities !== 'object'
+      || Object.keys(config.expectedIdentities).length !== ROLES.length) fail('real runs require all six expectedIdentities pins');
+    for (const role of ROLES) {
+      try { normalizeIdentity(config.expectedIdentities[role], role, { expected: true }); }
+      catch (error) { fail(`expectedIdentities.${role}: ${error.message}`); }
+    }
+  }
   const f = config.fixture;
   if (!f || typeof f.workspaceId !== 'string' || !f.workspaceId || typeof f.itemId !== 'string' || !f.itemId) fail('fixture.workspaceId and fixture.itemId are required');
+  if (config.mode === 'real' && config.rounds === 0) {
+    try { verifyReopenIdentity(JSON.parse(boundedFile(config.reopenReceipt, 1024 * 1024)), config); }
+    catch (error) { fail(`reopenReceipt: ${error.message}`); }
+  }
   if (!config.roles || typeof config.roles !== 'object') fail('roles object is required');
   const missing = ROLES.filter((r) => !config.roles[r]);
   if (missing.length) fail(`missing roles: ${missing.join(', ')}`);
@@ -188,7 +202,7 @@ export class Coordinator {
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
       role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) }));
     if (this.config.diagnosticSameEntryRace) scenario.diagnosticSameEntryRace = true;
-    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping)}, null, 2));
+    writeFileSync(join(dir, 'plan.json'), JSON.stringify({seed:this.config.seed, fixture:this.config.fixture, scenario, ...(this.config.mode === 'real' ? { expectedIdentities: Object.fromEntries(ROLES.map(role => [role, normalizeIdentity(this.config.expectedIdentities[role], role, { expected: true })])) } : {}), rounds:planRounds(this.config.seed, this.config.rounds, this.config.pattern, this.config.sustainedTyping)}, null, 2));
     this.record('run-start', { runId: this.runId, seed: this.config.seed, rounds: this.config.rounds, mode: this.config.mode, fixture: this.config.fixture, scenario });
     this.writeDashboard('running');
   }
@@ -218,6 +232,12 @@ export class Coordinator {
       }
       if (texts.some(text => typeof text !== 'string' || text.length > MAX_TEXT) || new Set(texts.map(normalizeText)).size !== 1) throw new StressFailure('baseline-divergence', { evidence });
       this.baseline = normalizeText(texts[0]);
+      if (this.config.mode === 'real') {
+        const files = ['mac-cli', 'pc-cli'].map(role => ({ role, ...this.attestations[role].initialPack }));
+        if (files.some(file => file.bodySha256 !== hashText(this.baseline)) || files[0].documentSha256 !== files[1].documentSha256
+          || JSON.stringify(files[0].assetHashes) !== JSON.stringify(files[1].assetHashes))
+          throw new StressFailure('fixture-semantic-mismatch', { files });
+      }
       if (['overlap-replace', 'file-overlap', 'partial-overlap'].includes(this.config.pattern) && this.config.rounds > 0 && this.baseline.split(REPLACE_TARGET).length !== 2) {
         throw new StressFailure('replacement-fixture-invalid', { target: REPLACE_TARGET, count: this.baseline.split(REPLACE_TARGET).length - 1 });
       }
@@ -260,7 +280,9 @@ export class Coordinator {
       }
     }
     const summary = {
-      runId: this.runId, status, failure, mode: this.config.mode,
+      runId: this.runId, status, failure, mode: this.config.mode, fixture: { workspaceId: this.config.fixture.workspaceId, itemId: this.config.fixture.itemId },
+      finalHash: this.roundResults.at(-1)?.hash ?? (status === 'passed' ? this.config.expectedBaselineHash ?? (this.baseline ? hashText(this.baseline) : null) : null),
+      expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
         ? (this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
@@ -289,7 +311,7 @@ export class Coordinator {
     const pending = this.collect(0, 'attest');
     for (const [role, adapter] of this.adapters) {
       adapter.start();
-      adapter.send({ type: 'hello', runId: this.runId, role, mode: this.config.mode, fixture: this.config.fixture });
+      adapter.send({ type: 'hello', runId: this.runId, role, mode: this.config.mode, ...(this.config.mode === 'real' ? { identitySchema: 1 } : {}), fixture: this.config.fixture });
     }
     const attest = await pending;
     this.checkAttestations(attest);
@@ -304,11 +326,21 @@ export class Coordinator {
       if (a.adapter === 'fake-adapter' && a.mode === 'real') throw new StressFailure('mode-mismatch', { role, reason: 'test adapter cannot provide physical evidence' });
       if (a.mode !== this.config.mode) throw new StressFailure('mode-mismatch', { role, expected: this.config.mode, actual: a.mode });
       if (a.workspaceId !== f.workspaceId || a.itemId !== f.itemId) throw new StressFailure('fixture-mismatch', { role, expected: f, actual: { workspaceId: a.workspaceId, itemId: a.itemId } });
-      if (typeof a.machineId !== 'string' || !a.machineId) throw new StressFailure('machine-missing', { role });
+      if (typeof a.machineId !== 'string' || !a.machineId || a.machineId.length > 160 || /[\x00-\x1f]/.test(a.machineId)) throw new StressFailure('machine-missing', { role });
       const m = machineOf(role);
       if (byMachine[m] && byMachine[m] !== a.machineId) throw new StressFailure('machine-mismatch', { machine: m, role, expected: byMachine[m], actual: a.machineId });
       byMachine[m] = a.machineId;
-      this.attestations[role] = { mode: a.mode, machineId: a.machineId, adapter: String(a.adapter ?? 'unknown').slice(0, 80) };
+      let identity, initialPack;
+      if (this.config.mode === 'real') {
+        try {
+          identity = checkIdentity(a.identity, this.config.expectedIdentities[role], role);
+          if (role.endsWith('-cli')) initialPack = normalizeInitialPack(a.initialPack);
+        } catch (error) { throw new StressFailure('identity-mismatch', { role, reason: String(error.message).slice(0, 240) }); }
+      }
+      this.attestations[role] = { mode: a.mode, machineId: a.machineId.slice(0, 160), adapter: String(a.adapter ?? 'unknown').slice(0, 80),
+        ...(identity ? { identity } : {}), ...(initialPack ? { initialPack } : {}),
+        ...(typeof a.sessionId === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(a.sessionId) ? { sessionId: a.sessionId } : {}),
+        ...(Number.isInteger(a.generation) && a.generation >= 1 && a.generation <= 10000 ? { generation: a.generation } : {}) };
     }
     if (byMachine.mac === byMachine.pc) throw new StressFailure('machine-shared', { machineId: byMachine.mac });
     this.record('attested', { attestations: this.attestations });
@@ -494,11 +526,18 @@ export class Coordinator {
     this.adapters.get(role).send({ type: 'restart', round });
     const reply = (await pending).get(role);
     if (reply.generation !== 2) {
-      throw new StressFailure('restart-mismatch', { round, role, reply });
+      throw new StressFailure('restart-mismatch', { round, role, generation: reply.generation });
     }
     const baseline = this.editorBaseline[role];
-    if (!baseline) throw new StressFailure('restart-mismatch', { round, role, baseline, reply });
-    const evidence = { round, generation: reply.generation, sessionId: null };
+    if (!baseline) throw new StressFailure('restart-mismatch', { round, role, baseline });
+    let attested;
+    if (this.config.mode === 'real') {
+      try { attested = checkRestartAttestation(reply.attestation, this.config.expectedIdentities[role], role,
+        { fixture: this.config.fixture, machineId: this.attestations[role].machineId, sessionId: baseline.sessionId, generation: reply.generation }); }
+      catch (error) { throw new StressFailure('restart-identity-mismatch', { round, role, reason: String(error.message).slice(0, 240) }); }
+    }
+    const evidence = { round, generation: reply.generation, sessionId: null,
+      ...(attested ? { attestedSessionId: attested.sessionId, identity: attested.identity } : {}) };
     this.restartEvidence[role] = evidence;
     this.record('restart', { round, role, ...evidence });
   }
@@ -511,7 +550,7 @@ export class Coordinator {
     const restart = this.restartEvidence[role];
     if (restart && round >= restart.round) {
       if (restart.sessionId === null) {
-        if (editor.sessionId === base.sessionId) throw new StressFailure('editor-discontinuity', { round, role, restart, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
+        if (editor.sessionId === base.sessionId || (restart.attestedSessionId && editor.sessionId !== restart.attestedSessionId)) throw new StressFailure('editor-discontinuity', { round, role, restart, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
         restart.sessionId = editor.sessionId;
       } else if (editor.sessionId !== restart.sessionId) throw new StressFailure('editor-discontinuity', { round, role, restart, actual: { sessionId: editor.sessionId, reloads: editor.reloads } });
       return;

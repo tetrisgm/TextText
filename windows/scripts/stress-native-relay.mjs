@@ -87,7 +87,7 @@ async function main() {
           const next = await request(++actorSeq, helloLine, 'hello');
           if (next?.type !== 'attest' || next.generation !== generation || typeof next.sessionId !== 'string' || !next.sessionId)
             throw new Error('Restarted native actor did not attest.');
-          answer = { type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId };
+          answer = { type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId, attestation: next };
           attestation = next;
         } else {
           answer = await request(++actorSeq, line, message.type);

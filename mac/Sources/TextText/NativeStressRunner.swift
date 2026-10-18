@@ -1,5 +1,6 @@
 #if TEXTTEXT_STRESS_ACTOR
 import AppKit
+import CryptoKit
 import Darwin
 import Foundation
 import WebKit
@@ -63,6 +64,7 @@ enum NativeStressActor {
         let workspaceId: String
         let title: String
         let totalMinutes: Int?
+        let identityReceipt: String?
     }
 
     struct Validated {
@@ -73,6 +75,7 @@ enum NativeStressActor {
         let workspaceId: String
         let title: String
         let totalMinutes: Int
+        let identityReceipt: String?
     }
 
     struct Failure: LocalizedError {
@@ -147,7 +150,7 @@ enum NativeStressActor {
             throw Failure("Test file identity mismatch.")
         }
         return Validated(fileURL: fileURL, relativePath: relativePath, root: root, itemId: config.itemId,
-                         workspaceId: config.workspaceId, title: config.title, totalMinutes: totalMinutes)
+                         workspaceId: config.workspaceId, title: config.title, totalMinutes: totalMinutes, identityReceipt: config.identityReceipt)
     }
 
     /// Two native editors on one device journal would corrupt the acceptance
@@ -198,9 +201,9 @@ enum NativeStressActor {
             // Identical to AppDelegate.openLocalVaultAction: the production controller,
             // bundled entry, configured root (loaded by the controller itself) and the
             // real credential provider. It connects and syncs on its own.
-            let controller = LocalVaultWindowController(entry: entry, credentials: {
+            let controller = LocalVaultWindowController(entry: entry, root: validated.root, verifiedCredentials: {
                 guard let account = store.loadCredentials() else { return nil }
-                return (resolveServerOrigin(credentials: account), account.token)
+                return LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: account), token: account.token, accountId: account.accountId)
             })
             let runner = NativeStressRunner(controller: controller, validated: validated, session: session)
             self.runner = runner
@@ -233,6 +236,7 @@ final class NativeStressRunner {
     private let log: FileHandle
     private let sessionId = "editor-" + UUID().uuidString.lowercased()
     private let adapterName: String
+    private let capturedWindowAccount: LocalVaultAccountCredential?
     private let deadline: Date
     private(set) var failure: String?
     private var inputProgress: [String: Any]?
@@ -246,6 +250,7 @@ final class NativeStressRunner {
 
     init(controller: LocalVaultWindowController, validated: NativeStressActor.Validated, session: URL) {
         self.controller = controller
+        self.capturedWindowAccount = try? controller.stressVerifiedAccount(expectedRoot: validated.root)
         // LocalVaultWindowController installs its WKWebView as the window content view.
         self.webView = (controller.window?.contentView as? WKWebView) ?? WKWebView()
         self.config = validated
@@ -366,6 +371,7 @@ final class NativeStressRunner {
     }
 
     private func handle(type: String, round: Int, request: [String: Any]) async throws -> [String: Any] {
+        _ = try requireActorAccount()
         switch type {
         case "hello":
             guard request["role"] as? String == NativeStressActor.roleServed else { throw NativeStressActor.Failure("This native adapter only serves the \(NativeStressActor.roleServed) role.") }
@@ -375,8 +381,15 @@ final class NativeStressRunner {
                 throw NativeStressActor.Failure("Coordinator fixture does not match the configured test item and workspace.")
             }
             try await open()
-            return ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId, "itemId": config.itemId,
-                    "machineId": NativeStressActor.hostName(), "adapter": adapterName]
+            let mailboxName = session.lastPathComponent
+            guard mailboxName.range(of: #"^gen-[0-9]{4}$"#, options: .regularExpression) != nil,
+                  let generation = Int(mailboxName.dropFirst(4)), (1...9999).contains(generation) else {
+                throw NativeStressActor.Failure("The actor requires a fresh relay-owned generation mailbox.")
+            }
+            var result: [String: Any] = ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId, "itemId": config.itemId,
+                    "machineId": NativeStressActor.hostName(), "adapter": adapterName, "sessionId": sessionId, "generation": generation]
+            if request["identitySchema"] as? Int == 1 { result["identity"] = try observedIdentity() }
+            return result
         case "prepare":
             try await requireSelected()
             if request["select"] as? String == "Existing fixture text." {
@@ -462,6 +475,66 @@ final class NativeStressRunner {
         }
     }
 
+    @discardableResult private func requireActorAccount() throws -> LocalVaultAccountCredential {
+        let current = try controller.stressVerifiedAccount(expectedRoot: config.root)
+        guard let capturedWindowAccount, capturedWindowAccount.accountId != nil, capturedWindowAccount.sameAccount(as: current),
+              let saved = StateStore().loadCredentials(), let accountId = saved.accountId else {
+            throw NativeStressActor.Failure("The test window has no unchanged verified account lifetime.")
+        }
+        let stored = LocalVaultAccountCredential(origin: resolveServerOrigin(credentials: saved), token: saved.token, accountId: accountId)
+        guard current.sameAccount(as: stored) else {
+            throw NativeStressActor.Failure("The test window account differs from the current signed-in account.")
+        }
+        return current
+    }
+
+    private func evidenceBytes(_ url: URL, limit: Int) throws -> Data {
+        let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
+        let before = try FileManager.default.attributesOfItem(atPath: canonical.path)
+        guard before[.type] as? FileAttributeType == .typeRegular,
+              let size = before[.size] as? NSNumber, size.intValue <= limit else { throw NativeStressActor.Failure("Artifact identity is outside its bound.") }
+        let bytes = try Data(contentsOf: canonical)
+        let after = try FileManager.default.attributesOfItem(atPath: canonical.path)
+        guard bytes.count == size.intValue, before[.systemFileNumber] as? NSNumber == after[.systemFileNumber] as? NSNumber,
+              before[.size] as? NSNumber == after[.size] as? NSNumber,
+              before[.modificationDate] as? Date == after[.modificationDate] as? Date else { throw NativeStressActor.Failure("Artifact changed while observing identity.") }
+        return bytes
+    }
+    private func identityDigest(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
+    private func observedIdentity() throws -> [String: Any] {
+        let credential = try requireActorAccount()
+        guard let receiptPath = config.identityReceipt, receiptPath.hasPrefix("/"),
+              let executable = Bundle.main.executableURL, let resources = Bundle.main.resourceURL,
+              let account = credential.accountId,
+              account.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"#, options: .regularExpression) != nil,
+              let version = Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleVersion") as? String, !version.isEmpty else {
+            throw NativeStressActor.Failure("Observed build, WebKit or verified account identity unavailable.")
+        }
+        let bytes = try evidenceBytes(URL(fileURLWithPath: receiptPath), limit: 64 * 1024)
+        guard let receipt = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              receipt["schemaVersion"] as? Int == 1, receipt["role"] as? String == "mac-app",
+              let commit = receipt["sourceCommit"] as? String, commit.range(of: #"^[a-f0-9]{40}$"#, options: .regularExpression) != nil,
+              let sourceReceipt = receipt["sourceReceiptSha256"] as? String, sourceReceipt.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+              let inputs = receipt["sourceInputSha256"] as? String, inputs.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+              let expected = receipt["artifacts"] as? [String: String] else { throw NativeStressActor.Failure("Sealed private build identity receipt invalid.") }
+        let ui = resources.appendingPathComponent("LocalVault", isDirectory: true)
+        guard webView.url?.standardizedFileURL.path == ui.appendingPathComponent("index.html").standardizedFileURL.path else { throw NativeStressActor.Failure("Loaded UI differs from the native bundle.") }
+        var artifacts = ["nativeExecutable": identityDigest(try evidenceBytes(executable, limit: 256 * 1024 * 1024))]
+        for name in ["app.js", "app.css", "index.html", "mirror-policy.js", "mirror-policy.json"] {
+            artifacts["localUI/" + name] = identityDigest(try evidenceBytes(ui.appendingPathComponent(name), limit: 32 * 1024 * 1024))
+        }
+        guard artifacts == expected else { throw NativeStressActor.Failure("Loaded native and UI artifacts differ from the sealed source receipt.") }
+        let origin = credential.origin
+        guard origin.scheme == "https", origin.user == nil, origin.password == nil, origin.query == nil, origin.fragment == nil, (origin.path.isEmpty || origin.path == "/"),
+              let host = origin.host else { throw NativeStressActor.Failure("Verified account origin invalid.") }
+        let authority = "https://" + host.lowercased() + (origin.port.flatMap { $0 == 443 ? nil : ":" + String($0) } ?? "")
+        let scope = identityDigest(Data(("texttext-account-v1\0" + authority + "\0" + account).utf8))
+        return ["schemaVersion": 1, "role": "mac-app", "platform": "darwin", "artifactKind": "private-acceptance",
+                "principalKind": "authenticated-account", "principalScopeHash": scope,
+                "runtimeName": "WebKit", "runtimeVersion": version, "sourceCommit": commit,
+                "sourceReceiptSha256": sourceReceipt, "artifacts": artifacts]
+    }
+
     // MARK: Production editor
 
     /// Evaluates JavaScript in the page and returns its JSON-serialised value.
@@ -495,6 +568,7 @@ final class NativeStressRunner {
     /// Ported from Stress.cs Open: production ready, same root, activation through
     /// the production openFile path, real editor, shared document.
     private func open() async throws {
+        _ = try requireActorAccount()
         guard !opened else { throw NativeStressActor.Failure("Duplicate hello.") }
         let saved = StateStore().loadCredentials()
         let portable = try? PortableWorkspaceBinding.read(root: config.root)
@@ -535,6 +609,7 @@ final class NativeStressRunner {
     }
 
     private func requireSelected() async throws {
+        _ = try requireActorAccount()
         guard opened else { throw NativeStressActor.Failure("Editor is not open; hello must succeed first.") }
         let allowedStates = transportOffline ? "['ready','saving','offline','reconnecting','error']" : "['ready','saving']"
         let ok = try await evaluate("(()=>{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === \(expectedTitle) && \(allowedStates).includes(shared?.dataset.collaborationState) && (shared?.dataset.collaborationItem||'').toLowerCase() === \(expectedItem) && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable})()")
@@ -544,6 +619,7 @@ final class NativeStressRunner {
 
     /// Actual visible body text, after re-validating the title. `nil` when the editor is absent.
     private func body() async throws -> String? {
+        _ = try requireActorAccount()
         let raw = try await evaluate("({title:document.querySelector('.vault-context-location h2')?.textContent?.trim()??null,body:document.querySelector('[aria-label=\"Document body\"]')?.textContent??null})")
         guard let parsed = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] else { throw NativeStressActor.Failure("Editor snapshot was not readable.") }
         guard parsed["title"] as? String == config.title else { throw NativeStressActor.Failure("Editor navigated away from the dedicated test item.") }

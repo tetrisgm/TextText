@@ -1,3 +1,4 @@
+import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
 import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // Real browser adapter for the six-client stress coordinator (roles mac-web / pc-web).
 // Drives a visible installed Chrome (darwin) or Edge (win32) through Playwright against
@@ -52,8 +53,9 @@ export function validateConfig(config) {
   if (typeof config.workspaceId !== 'string' || !UUID.test(config.workspaceId)) fail('workspaceId must be a UUID');
   if (typeof config.itemId !== 'string' || !UUID.test(config.itemId)) fail('itemId must be a UUID');
   if (typeof config.title !== 'string' || !config.title.startsWith(TITLE_PREFIX) || config.title.length > 200) fail(`title must start with "${TITLE_PREFIX}"`);
+  if (config.identityReceipt !== undefined && (typeof config.identityReceipt !== 'string' || !isAbsolute(config.identityReceipt))) fail('identityReceipt must be an absolute path');
   const auth = validateAuthMode(config.auth);
-  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth };
+  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth, ...(config.identityReceipt ? { identityReceipt: config.identityReceipt } : {}) };
 }
 
 // Hello must name this machine's web role, real mode, and the configured fixture.
@@ -181,7 +183,7 @@ async function main() {
   const sessionId = randomUUID();
   let context = null, page = null, body = null, heading = null;
   let reloads = 0, started = false, stopping = false;
-  let inputProgress;
+  let inputProgress, observeAssets;
 
   const fail = (round, stage, message) => {
     process.stderr.write(`[${stage}] ${safeMessage(message)}\n`);
@@ -210,6 +212,7 @@ async function main() {
       try {
         context = await chromium.launchPersistentContext(config.profile, { channel: platform.channel, headless: false, viewport: { width: 1280, height: 900 } });
         page = context.pages()[0] ?? await context.newPage();
+        if (m.identitySchema === 1) observeAssets = createWebAssetObserver(page, ORIGIN);
         if (config.auth === 'saved-app') {
           stage = 'sign-in';
           // Fixed-message errors only; the loaded account never reaches this scope.
@@ -243,7 +246,24 @@ async function main() {
       } catch (error) {
         throw new StageError(error.stage ?? stage, safeMessage(error));
       }
-      out({ type: 'attest', round: 0, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: profile.created });
+      let identity;
+      if (m.identitySchema === 1) {
+        const source = observeSealedSource(config.identityReceipt, platform.role, fixedDriverFiles(platform.role));
+        const headers = { 'Cache-Control': 'no-cache', Pragma: 'no-cache' };
+        const buildResponse = await context.request.get(`${ORIGIN}/api/app/build?identity=${encodeURIComponent(m.runId)}`, { headers, timeout: 10000 });
+        if (!buildResponse.ok() || !/no-store/i.test(buildResponse.headers()['cache-control'] ?? '')) throw new StageError('identity', 'uncached deployment identity unavailable');
+        const build = await buildResponse.json();
+        const sessionResponse = await context.request.get(`${ORIGIN}/api/auth/session`, { headers, timeout: 10000 });
+        if (!sessionResponse.ok()) throw new StageError('identity', 'authenticated account identity unavailable');
+        const accountId = (await sessionResponse.json())?.user?.userId;
+        const browserVersion = context.browser()?.version();
+        identity = { schemaVersion: 1, role: platform.role, platform: process.platform, artifactKind: 'browser',
+          principalKind: 'authenticated-account', principalScopeHash: accountScopeHash(ORIGIN, accountId),
+          runtimeName: platform.channel, runtimeVersion: process.versions.node, browserVersion,
+          deploymentId: build.buildId, driverSourceCommit: source.sourceCommit, sourceReceiptSha256: source.sourceReceiptSha256,
+          artifacts: { ...source.artifacts, ...await observeAssets() } };
+      }
+      out({ type: 'attest', round: 0, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: profile.created, ...(identity ? { identity } : {}) });
     },
     async prepare(m) {
       await assertOnItem();

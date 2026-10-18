@@ -19,7 +19,15 @@ function makeConfig({ faults = {}, rounds = 3, timeoutMs = 3000, mode = 'simulat
     command: [process.execPath, FAKE],
     env: { STRESS_FAKE_SHARED: shared, ...(faults[role] ? { STRESS_FAKE_FAULT: faults[role] } : {}), ...(env[role] ?? {}) },
   }]));
-  return { mode, seed: 42, rounds, timeoutMs, fixture: { workspaceId: 'ws-fixture', itemId: 'item-fixture' }, roles, outputDir: join(base, 'out') };
+  const expectedIdentities = Object.fromEntries(ROLES.map(role => [role, {
+    schemaVersion: 1, role, platform: role.startsWith('mac-') ? 'darwin' : 'win32',
+    artifactKind: role.endsWith('-cli') ? 'direct-file-driver' : role.endsWith('-web') ? 'browser' : 'private-acceptance',
+    principalKind: role.endsWith('-cli') ? 'workspace-owner-binding' : 'authenticated-account', principalScopeHash: 'a'.repeat(64),
+    runtimeName: 'test-runtime', runtimeVersion: 'test-version', artifacts: { driver: 'b'.repeat(64) },
+    sourceCommit: 'c'.repeat(40), sourceReceiptSha256: 'd'.repeat(64),
+    ...(role.endsWith('-web') ? { deploymentId: 'test-build', browserVersion: 'test-browser-version', driverSourceCommit: 'c'.repeat(40) } : {}),
+  }]));
+  return { ...(mode === 'real' ? { expectedIdentities } : {}), mode, seed: 42, rounds, timeoutMs, fixture: { workspaceId: 'ws-fixture', itemId: 'item-fixture' }, roles, outputDir: join(base, 'out') };
 }
 
 async function runWith(opts) {
@@ -441,4 +449,35 @@ test('interleaved sustained chunks are accounted without requiring one arbitrary
   assert.doesNotThrow(() => coordinator.checkRoundContent(states, 1, ids));
   states.get('pc-cli').text = states.get('pc-cli').text.replace(chunks[0][0], '');
   assert.throws(() => coordinator.checkRoundContent(states, 1, ids), error => error.code === 'content-mismatch');
+});
+
+test('real configuration rejects missing artifact pins before starting any actor', () => {
+  const config=makeConfig({mode:'real',rounds:1});delete config.expectedIdentities;
+  assert.throws(()=>new Coordinator(config),/all six expectedIdentities/);
+});
+
+test('structured attestation strips unknown fields and rejects missing identity before physical readiness', () => {
+  const config=makeConfig({mode:'real',rounds:1}),coordinator=new Coordinator(config);coordinator.openOutput();
+  const values=new Map(ROLES.map(role=>{
+    const observed=structuredClone(config.expectedIdentities[role]);if(role.endsWith('-web'))delete observed.sourceCommit;
+    return [role,{type:'attest',round:0,mode:'real',adapter:'schema-unit-fixture',machineId:role.startsWith('mac-')?'fixture-mac':'fixture-pc',workspaceId:config.fixture.workspaceId,itemId:config.fixture.itemId,
+      identity:{...observed,token:'never-persist'},initialPack:{packSha256:'a'.repeat(64),bodySha256:'a'.repeat(64),documentSha256:'a'.repeat(64),assetHashes:{},password:'never-persist'}}];
+  }));
+  coordinator.checkAttestations(values);
+  assert.equal(JSON.stringify(coordinator.attestations).includes('never-persist'),false);
+  values.get('pc-app').identity=undefined;
+  assert.throws(()=>coordinator.checkAttestations(values),error=>error.code==='identity-mismatch'&&error.detail.role==='pc-app');
+});
+
+test('coordinator restart verifies fresh observed source and exact attested editor session', async () => {
+  const config=makeConfig({mode:'real',rounds:1}),coordinator=new Coordinator(config);coordinator.openOutput();
+  const role='pc-app',identity=structuredClone(config.expectedIdentities[role]);
+  coordinator.editorBaseline[role]={sessionId:'old-session',reloads:0};coordinator.attestations[role]={machineId:'actual-pc'};
+  const attestation={type:'attest',round:0,mode:'real',adapter:'schema-unit-fixture',machineId:'actual-pc',workspaceId:config.fixture.workspaceId,itemId:config.fixture.itemId,generation:2,sessionId:'new-session',identity};
+  coordinator.adapters.set(role,{send(){}});coordinator.collect=async()=>new Map([[role,{type:'restart',round:1,generation:2,attestation}]]);
+  await coordinator.restartActor(1,role);
+  assert.throws(()=>coordinator.checkEditor(1,role,{sessionId:'unattested-session',reloads:0}),error=>error.code==='editor-discontinuity');
+  coordinator.checkEditor(1,role,{sessionId:'new-session',reloads:0});
+  identity.sourceCommit='e'.repeat(40);
+  await assert.rejects(coordinator.restartActor(1,role),error=>error.code==='restart-identity-mismatch');
 });

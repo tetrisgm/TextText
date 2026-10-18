@@ -34,7 +34,7 @@ static class Stress
         public bool Online { get => Volatile.Read(ref online) != 0; set => Volatile.Write(ref online, value ? 1 : 0); }
     }
 
-    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20);
+    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20, string? IdentityReceipt = null);
     const int MaxRequestBytes = 256 * 1024, MaxText = 64 * 1024, MaxEditText = 1024;
     static readonly TimeSpan ObserveBound = TimeSpan.FromSeconds(30), EditBound = TimeSpan.FromSeconds(15);
     static readonly Regex MarkerPattern = new(@"\[(mac|pc)-(app|web|cli) r(\d+) [a-z]+\d+\]", RegexOptions.Compiled);
@@ -157,6 +157,8 @@ static class Stress
     {
         public string? Failure { get; private set; }
         WebView2? view;
+        Account? capturedAccount;
+        string? capturedRoot;
         object? inputProgress;
         bool opened;
         readonly string sessionId = "editor-" + Guid.NewGuid().ToString("N");
@@ -231,6 +233,7 @@ static class Stress
 
         async Task<object> Handle(string type, int round, JsonElement request, CancellationToken ct)
         {
+            if (type != "hello") RequireActorScope();
             switch (type)
             {
                 case "hello":
@@ -244,6 +247,9 @@ static class Stress
                         || !fixture.TryGetProperty("workspaceId", out var w) || w.GetString() != config.WorkspaceId)
                         throw new Exception("Coordinator fixture does not match the configured test item and workspace.");
                     await Open(ct);
+                    if (request.TryGetProperty("identitySchema", out var schema) && schema.GetInt32() == 1)
+                        return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
+                            machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId, identity = ObservedIdentity() };
                     return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
                         machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId };
                 }
@@ -441,6 +447,9 @@ static class Stress
                 throw new Exception("Test file is not inside the active workspace; workspace selection was not changed.");
             var active = typeof(MainWindow).GetProperty("ActiveWorkspaceId", Program.Private)?.GetValue(window) as string;
             if (active != config.WorkspaceId) throw new Exception("Active workspace does not match the configured fixture workspace.");
+            capturedAccount = Program.Field(window, "workspaceAccount") as Account;
+            capturedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+            RequireActorScope();
             await Program.Until(async () => await view!.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
             try
             {
@@ -462,8 +471,62 @@ static class Stress
             log(new { kind = "ready", config.ItemId, sessionId });
         }
 
+        void RequireActorScope()
+        {
+            var active = Program.Field(window, "workspaceAccount") as Account;
+            var signedIn = Program.Field(window, "account") as Account;
+            var root = Program.Field(window, "root") as string;
+            if (capturedAccount?.AccountId is null || capturedRoot is null || active?.AccountId is null || signedIn?.AccountId is null
+                || !AccountIdentity.SameAccount(capturedAccount, active) || !AccountIdentity.SameAccount(capturedAccount, signedIn)
+                || active.WorkspaceId != config.WorkspaceId || signedIn.WorkspaceId != config.WorkspaceId
+                || root is null || !string.Equals(capturedRoot, Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+                throw new Exception("The private test window's verified account, workspace or root changed. Reopen under the expected scope.");
+        }
+
+        static byte[] EvidenceBytes(string path, int limit)
+        {
+            var before = new FileInfo(path);
+            if (!before.Exists || before.Length > limit || (before.Attributes & FileAttributes.ReparsePoint) != 0) throw new Exception("Identity evidence file missing or outside bound.");
+            var size = before.Length; var modified = before.LastWriteTimeUtc;
+            var bytes = File.ReadAllBytes(path); before.Refresh();
+            if (bytes.LongLength != size || before.Length != size || before.LastWriteTimeUtc != modified) throw new Exception("Artifact changed while observing identity.");
+            return bytes;
+        }
+        object ObservedIdentity()
+        {
+            RequireActorScope();
+            if (config.IdentityReceipt is null || !Path.IsPathFullyQualified(config.IdentityReceipt)) throw new Exception("Explicit sealed build identity receipt required.");
+            using var parsed = JsonDocument.Parse(EvidenceBytes(config.IdentityReceipt, 64 * 1024));
+            var receipt = parsed.RootElement;
+            if (receipt.GetProperty("schemaVersion").GetInt32() != 1 || receipt.GetProperty("role").GetString() != "pc-app") throw new Exception("Sealed private build identity receipt invalid.");
+            var commit = receipt.GetProperty("sourceCommit").GetString() ?? "";
+            var sourceReceipt = receipt.GetProperty("sourceReceiptSha256").GetString() ?? "";
+            var inputs = receipt.GetProperty("sourceInputSha256").GetString() ?? "";
+            if (!Regex.IsMatch(commit, @"^[a-f0-9]{40}\z") || !Regex.IsMatch(sourceReceipt, @"^[a-f0-9]{64}\z") || !Regex.IsMatch(inputs, @"^[a-f0-9]{64}\z")) throw new Exception("Sealed source evidence invalid.");
+            var files = new Dictionary<string, string> {
+                ["nativeExecutable"] = typeof(MainWindow).Assembly.Location,
+                ["core"] = typeof(TextPackStore).Assembly.Location,
+                ["actor"] = typeof(Stress).Assembly.Location,
+                ["hostRuntime"] = Environment.ProcessPath ?? throw new Exception("Actual actor runtime path unavailable."),
+            };
+            var ui = Path.Combine(AppContext.BaseDirectory, "Assets");
+            if (view?.Source?.GetLeftPart(UriPartial.Path) != "https://texttext.local/index.html") throw new Exception("Loaded UI differs from native assets.");
+            foreach (var name in new[] { "app.js", "app.css", "index.html", "mirror-policy.js", "mirror-policy.json" }) files["localUI/" + name] = Path.Combine(ui, name);
+            var artifacts = files.ToDictionary(pair => pair.Key, pair => Program.Hash(EvidenceBytes(pair.Value, 256 * 1024 * 1024)), StringComparer.Ordinal);
+            var expected = receipt.GetProperty("artifacts").EnumerateObject().ToDictionary(pair => pair.Name, pair => pair.Value.GetString(), StringComparer.Ordinal);
+            if (artifacts.Count != expected.Count || artifacts.Any(pair => !expected.TryGetValue(pair.Key, out var hash) || pair.Value != hash)) throw new Exception("Loaded native/Core/UI artifacts differ from sealed source receipt.");
+            var account = Program.Field(window, "workspaceAccount") as Account;
+            if (account?.AccountId is not { } accountId || !Regex.IsMatch(accountId, @"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")) throw new Exception("Verified account identity unavailable.");
+            var scope = Program.Hash(Encoding.UTF8.GetBytes("texttext-account-v1\0https://texttext.app\0" + accountId));
+            return new { schemaVersion = 1, role = "pc-app", platform = "win32", artifactKind = "private-acceptance",
+                principalKind = "authenticated-account", principalScopeHash = scope, runtimeName = "WebView2",
+                runtimeVersion = view!.CoreWebView2.Environment.BrowserVersionString, sourceCommit = commit,
+                sourceReceiptSha256 = sourceReceipt, artifacts };
+        }
+
         async Task RequireSelected(CancellationToken ct)
         {
+            RequireActorScope();
             if (!opened || view?.CoreWebView2 is null) throw new Exception("Editor is not open; hello must succeed first.");
             var allowedStates = transport.Online ? "['ready','saving']" : "['ready','saving','offline','reconnecting']";
             var ok = await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-item]');return document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle} && {allowedStates}.includes(shared?.dataset.collaborationState) && shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()");
@@ -477,6 +540,7 @@ static class Stress
 
         async Task<string?> Body()
         {
+            RequireActorScope();
             using var snapshot = JsonDocument.Parse(await view!.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.vault-context-location h2')?.textContent?.trim(),body:document.querySelector('[aria-label=\"Document body\"]')?.textContent??null})"));
             using var parsed = JsonDocument.Parse(snapshot.RootElement.GetString()!);
             if (parsed.RootElement.GetProperty("title").GetString() != config.Title) throw new Exception("Editor navigated away from the dedicated test item.");
