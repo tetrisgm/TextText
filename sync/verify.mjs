@@ -105,6 +105,7 @@ async function main() {
         await run(process.execPath, ['--test', '--test-concurrency=2', ...await stressTestPaths()]);
         await run(process.execPath, ['sync/browser-journal-compatibility.browser.mjs']);
         await run(process.execPath, ['src/local-vault/__tests__/folder-rename-recovery.browser.mjs']);
+        await run(process.execPath, ['src/local-vault/__tests__/folder-sync-move-recovery.browser.mjs']);
         await run(process.execPath, ['src/local-vault/__tests__/backlinks-invalidation.browser.mjs']);
         await run(process.execPath, ['src/local-vault/__tests__/grid-invalidation.browser.mjs']);
         await run(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--config',

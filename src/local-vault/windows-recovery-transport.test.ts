@@ -23,6 +23,7 @@ it.each([false, true])("keeps bound local recovery available with hosted history
   vi.stubGlobal("window", new EventTarget());
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementList") { expect(params.workspaceRoot).toBe(status.root); return [replacement]; }
     if (method === "files.recoveryAssets") return { assets: [{ id: "asset", filename: "submitted.asset", byteLength: 3, hash: "d".repeat(64), savedAt: "2026-10-18" }], assetsTruncated: true };
@@ -45,6 +46,7 @@ it("surfaces a corrupt native registry before requesting server recovery", async
   vi.stubGlobal("window", new EventTarget());
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementList") throw new Error("Recovery registry is corrupt");
     throw new Error("Unexpected " + method);
@@ -61,6 +63,7 @@ it("returns opaque displaced bytes and binds explicit resolution and raw downloa
   const retained = { opaque: true, path: "Moved.textpack", hash: "c".repeat(64), data: btoa("not a ZIP"), parseError: "Retained file" };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     expect(params.workspaceRoot).toBe(status.root);
     if (method === "files.replacementRead") return retained;
@@ -81,6 +84,7 @@ it("returns explicit removal absence without parsing a fabricated empty pack", a
   const absent = { absent: true, path: "Removed.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementRead") return absent;
     throw new Error(method);
@@ -99,6 +103,7 @@ it("binds four-version move consent to the original native root", async () => {
   const move = { ...replacement, kind: "move", sourcePath: "Original.textpack", sourcePresent: false, sourceHash: null, currentPresent: true, captured: true };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.resolveMove") {
       expect(params).toMatchObject({ ...move, workspaceRoot: status.root });
@@ -118,6 +123,7 @@ it("preserves an absent original move path without fabricating a TextPack", asyn
   const absent = { absent: true, path: "Original.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementRead") return absent;
     throw new Error(method);
@@ -133,6 +139,7 @@ it("lists global folder recovery before fenced file history and scopes inspectio
   const view = native((method, params) => {
     if (method === "native.status") return status;
     expect(params).toMatchObject({workspaceRoot: status.root, workspaceId: status.workspaceId, accountId: status.accountId});
+    if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [folder];
     if (method === "files.folderRenameRead") return folder;
     if (method === "files.resolveFolderRename") return { resolved: true };
@@ -143,6 +150,24 @@ it("lists global folder recovery before fenced file history and scopes inspectio
     expect(await transport.request("recoveryList", {path: "elsewhere.textpack"})).toMatchObject({folderRenames: [folder], entries: [], replacements: [], assets: []});
     expect(await transport.request("folderRenameRead", { id: folder.id, workspaceRoot: "untrusted", accountId: "other" })).toEqual(folder);
     expect(await transport.request("resolveFolderRename", { id: folder.id, fromPath: folder.fromPath, toPath: folder.toPath, inspection: folder.inspection, workspaceRoot: "untrusted" })).toEqual({resolved: true});
-    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
+    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.folderSyncMoveList", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
   } finally { transport.destroy(); }
+});
+
+it("keeps saved folder commands visible before fenced metadata reads and binds fresh inspection/consent to native scope",async()=>{
+ vi.stubGlobal("window",new EventTarget());const entry={id:"saved-folder",state:"unavailable"};
+ const view=native((method,params)=>{
+  if(method==="native.status")return status;
+  expect(params.workspaceRoot).toBe(status.root);expect(params.workspaceId).toBe(status.workspaceId);expect(params.accountId).toBe(status.accountId);
+  if(method==="files.folderSyncMoveList")return[entry];
+  if(method==="files.folderSyncMoveRead")return entry;
+  if(method==="files.resolveFolderSyncMove")return{resolved:true};
+  throw Error("Unexpected fenced request "+method);
+ });const transport=await createWindowsVaultTransport(view);
+ try{
+  expect(await transport.request("recoveryList",{})).toMatchObject({folderSyncMoves:[entry],entries:[],replacements:[],assets:[]});
+  expect(await transport.request("folderSyncMoveRead",{id:entry.id,workspaceRoot:"foreign",accountId:"foreign"})).toEqual(entry);
+  expect(await transport.request("resolveFolderSyncMove",{id:entry.id,inspection:"i",localInspection:"l",requestHash:"r",consent:true})).toEqual({resolved:true});
+  expect(view.messages.map(m=>m.method)).toEqual(["native.status","files.folderSyncMoveList","files.folderSyncMoveRead","files.resolveFolderSyncMove"]);
+ }finally{transport.destroy();}
 });

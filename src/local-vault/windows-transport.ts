@@ -161,6 +161,9 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
     if (method === "recoveryList") {
+      const folderSyncMoves = await rpc.request<unknown[]>("files.folderSyncMoveList", recoveryScope, signal);
+      if (folderSyncMoves.length) return {entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderSyncMoves,
+        warning: "A saved folder change needs review. Inspect its local paths and server result before continuing."};
       const folderRenames = await rpc.request<{ resolved: boolean }[]>("files.folderRenameList", recoveryScope, signal);
       if (folderRenames.some(entry => !entry.resolved)) return { entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderRenames,
         warning: "A folder name change needs review. Inspect the current folder paths before continuing." };
@@ -183,6 +186,8 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
       return { ...pack.file, data: result.data };
     }
+    if (method === "folderSyncMoveRead") return rpc.request("files.folderSyncMoveRead", { ...params, ...recoveryScope }, signal);
+    if (method === "resolveFolderSyncMove") return rpc.request("files.resolveFolderSyncMove", { ...params, ...recoveryScope }, signal);
     if (method === "folderRenameRead") return rpc.request("files.folderRenameRead", { ...params, ...recoveryScope }, signal);
     if (method === "resolveFolderRename") return rpc.request("files.resolveFolderRename", { ...params, ...recoveryScope }, signal);
     if (method === "resolveMove") return rpc.request("files.resolveMove", { ...params, ...recoveryScope }, signal);
