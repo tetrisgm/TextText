@@ -368,14 +368,15 @@ public sealed partial class TextPackStore
     {
         lock(gate) {
             var source=Resolve(from);var target=Resolve(to);Match(source,expectedHash);Replacements.AssertPathReadable(to);
-            if(RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists.");
+            var caseOnly=RetainedFileMove.IsCaseOnlyAlias(source,target);
+            if(!caseOnly&&RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists.");
             var before=ReadProjection(source);if(Hash(before)!=expectedHash)throw new FileChangedException();var identity=Identity(before);
             RetainedReplacementProfile.Prepare(this);var operation=Guid.NewGuid();
             var recoveryRoot=System.IO.Path.Combine(Root,".texttext","retained-replacements",Hash(Encoding.UTF8.GetBytes(to)));
             _=RetainedFileMove.Move(source,target,from,expectedHash,recoveryRoot,operation,Replacements.CaptureLeasePath(operation),point=>{
-                if(point=="prepared")Replacements.Register(operation,identity,to,expectedHash,expectedHash,RetainedFileReplacement.OperationDirectory(target,operation,recoveryRoot),kind:"move",sourcePath:from);
+                if(point=="prepared")Replacements.Register(operation,identity,to,expectedHash,expectedHash,RetainedFileReplacement.OperationDirectory(target,operation,recoveryRoot),kind:"move",sourcePath:from,caseOnly:caseOnly);
                 MoveObservationForTesting?.Invoke(point);
-            });
+            },caseOnly:caseOnly);
             AssertReplacementReadable(identity);RecordIntent(new FileIntent("rename",identity,from,expectedHash,to));
         }
         Changed?.Invoke();

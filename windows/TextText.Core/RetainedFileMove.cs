@@ -4,18 +4,31 @@ namespace TextText.Core;
 /// snapshot, never represented as a hidden retained inode or rolled back.
 public static class RetainedFileMove
 {
-    public static RetainedFileReplacement.Recovery Move(string source,string target,string sourcePath,string expectedHash,string recoveryRoot,Guid operation,string leasePath,Action<string>? observe=null)
+    internal static bool CaseOnlyPaths(string source,string target)=>Path.GetDirectoryName(source)==Path.GetDirectoryName(target)&&Path.GetFileName(source)!=Path.GetFileName(target)&&string.Equals(Path.GetFileName(source),Path.GetFileName(target),StringComparison.OrdinalIgnoreCase);
+    internal static bool ExactLeafExists(string path)
+    {
+        RetainedFileReplacement.CheckPath(path);var parent=Path.GetDirectoryName(Path.GetFullPath(path))!;
+        return Directory.Exists(parent)&&Directory.EnumerateFileSystemEntries(parent).Any(entry=>Path.GetFileName(entry)==Path.GetFileName(path));
+    }
+    internal static bool IsCaseOnlyAlias(string source,string target)
+    {
+        if(!CaseOnlyPaths(source,target)||!RetainedFileReplacement.ExistsNoFollow(target)||!ExactLeafExists(source)||ExactLeafExists(target))return false;
+        if(!OperatingSystem.IsWindows())return true; // Portable fixture: one exact directory entry resolving both aliases.
+        var first=RetainedFileReplacement.Fingerprint(source);var second=RetainedFileReplacement.Fingerprint(target);
+        return first is not null&&second is not null&&first.Volume==second.Volume&&first.FileId==second.FileId;
+    }
+    public static RetainedFileReplacement.Recovery Move(string source,string target,string sourcePath,string expectedHash,string recoveryRoot,Guid operation,string leasePath,Action<string>? observe=null,bool caseOnly=false)
     {
         RetainedFileReplacement.CheckPath(source);
         var before=RetainedFileReplacement.ReadVerified(source);if(TextPackStore.Hash(before)!=expectedHash)throw new FileChangedException();
-        if(RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists.");
+        if(caseOnly?!IsCaseOnlyAlias(source,target):RetainedFileReplacement.ExistsNoFollow(target))throw new IOException("Destination exists or its case alias cannot be verified.");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);RetainedFileReplacement.CheckPath(target);
         RetainedFileReplacement.RequireSpace(target,before.Length);
         var directory=RetainedFileReplacement.OperationDirectory(target,operation,recoveryRoot);
         if(Directory.Exists(directory)||File.Exists(directory))throw new IOException("Move operation already exists.");
         Directory.CreateDirectory(directory);
         using var lease=RetainedFileReplacement.AcquireLease(leasePath);
-        var record=new RetainedFileReplacement.Manifest(1,operation,Path.GetFileName(target),expectedHash,expectedHash,"pending",Kind:"move",SourcePath:sourcePath);
+        var record=new RetainedFileReplacement.Manifest(1,operation,Path.GetFileName(target),expectedHash,expectedHash,"pending",Kind:"move",SourcePath:sourcePath,CaseOnly:caseOnly?true:null);
         var recovery=new RetainedFileReplacement.Recovery(directory,record);
         RetainedFileReplacement.Create(recovery.Prepared,before);RetainedFileReplacement.SaveJson(Path.Combine(directory,"manifest.json"),record,creating:true);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -25,13 +38,14 @@ public static class RetainedFileMove
             if(from is null||destination is null||from.Volume!=destination.Volume)throw new IOException("Moving between these drives cannot preserve this file safely.");
         }
         observe?.Invoke("prepared");
-        if(TextPackStore.Hash(RetainedFileReplacement.ReadVerified(source))!=expectedHash||RetainedFileReplacement.ExistsNoFollow(target))throw new RetainedFileReplacement.RequiredException(operation);
+        if(TextPackStore.Hash(RetainedFileReplacement.ReadVerified(source))!=expectedHash||(caseOnly?!IsCaseOnlyAlias(source,target):RetainedFileReplacement.ExistsNoFollow(target)))throw new RetainedFileReplacement.RequiredException(operation);
         observe?.Invoke("beforeMove");
         RetainedFileReplacement.CheckPath(source);RetainedFileReplacement.CheckPath(target);
         File.Move(source,target,overwrite:false);observe?.Invoke("moved");
+        if(caseOnly&&!ExactLeafExists(target))throw new RetainedFileReplacement.RequiredException(operation);
         var actual=RetainedFileReplacement.ReadVerified(target);RetainedFileReplacement.Create(recovery.Displaced,actual);
         observe?.Invoke("observed");
-        var valid=TextPackStore.Hash(actual)==expectedHash&&RetainedFileReplacement.ReadVerified(target).SequenceEqual(actual)&&!RetainedFileReplacement.ExistsNoFollow(source);
+        var valid=TextPackStore.Hash(actual)==expectedHash&&RetainedFileReplacement.ReadVerified(target).SequenceEqual(actual)&&!(caseOnly?ExactLeafExists(source):RetainedFileReplacement.ExistsNoFollow(source));
         record=record with{State=valid?"completed":"conflict"};RetainedFileReplacement.SaveJson(Path.Combine(directory,"manifest.json"),record);
         if(!valid)throw new RetainedFileReplacement.RequiredException(operation);
         return recovery with{Record=record};

@@ -10,10 +10,10 @@ public sealed partial class ReplacementRecoveryRegistry
     {
         if(consent.PreparedHash!=entry.PreparedHash||!PresenceHash(consent.Captured,consent.DisplacedHash)||!PresenceHash(consent.CurrentPresent,consent.CurrentHash)||!PresenceHash(consent.SourcePresent,consent.SourceHash))throw new InvalidDataException("Invalid move resolution receipt.");
     }
-    byte[]? MoveBytes(string path)
+    byte[]? MoveBytes(string path,bool exactLeaf=false)
     {
         using var parents=RetainedFileReplacement.PinParents(path);
-        return RetainedFileReplacement.ExistsNoFollow(path)?RetainedFileReplacement.ReadVerified(path):null;
+        return (exactLeaf?RetainedFileMove.ExactLeafExists(path):RetainedFileReplacement.ExistsNoFollow(path))?RetainedFileReplacement.ReadVerified(path):null;
     }
     internal void AssertPathReadable(string path)
     {
@@ -28,7 +28,7 @@ public sealed partial class ReplacementRecoveryRegistry
             foreach(var full in Directory.EnumerateFileSystemEntries(parent)) {
                 if(Path.GetFileName(full).StartsWith('.'))continue;
                 var relative=Path.GetRelativePath(root,full).Replace('\\','/');
-                if(SameMovePath(relative,entry.Path)||SameMovePath(relative,entry.SourcePath))continue;
+                if(relative==entry.Path||relative==entry.SourcePath)continue;
                 if(++visited>20000)throw new InvalidDataException("Too many files to inspect move identity safely.");
                 try{RetainedFileReplacement.CheckPath(full);}catch(IOException)when(!strict){continue;}
                 if(Directory.Exists(full)){Visit(full);continue;}
@@ -49,9 +49,9 @@ public sealed partial class ReplacementRecoveryRegistry
     {
         Validate(entry);if(entry.Kind!="move"||entry.SourcePath is null)throw new InvalidDataException("Not a retained move.");
         var recovery=RecoveryFor(entry);
-        if(recovery.Record.Kind!="move"||recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.PreparedHash!=entry.PreparedHash||recovery.Record.ExpectedHash!=entry.ExpectedHash)throw new InvalidDataException("Move manifest scope changed.");
+        if(recovery.Record.CaseOnly!=entry.CaseOnly||recovery.Record.Kind!="move"||recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.PreparedHash!=entry.PreparedHash||recovery.Record.ExpectedHash!=entry.ExpectedHash)throw new InvalidDataException("Move manifest scope changed.");
         var prepared=MoveBytes(recovery.Prepared)??throw new InvalidDataException("Move baseline is missing.");if(TextPackStore.Hash(prepared)!=entry.PreparedHash)throw new InvalidDataException("Move baseline changed.");
-        var displaced=MoveBytes(recovery.Displaced);var current=MoveBytes(Target(entry));var source=MoveBytes(Target(entry with{Path=entry.SourcePath}));
+        var displaced=MoveBytes(recovery.Displaced);var current=MoveBytes(Target(entry),entry.CaseOnly==true);var source=MoveBytes(Target(entry with{Path=entry.SourcePath}),entry.CaseOnly==true);
         var matches=MoveIdentityMatches(entry,strict);
         var identities=matches.Count+(MoveExpectedIdentity(current,entry.ItemId)?1:0)+(MoveExpectedIdentity(source,entry.ItemId)?1:0);
         var blocked=matches.Count>0||identities>1?"A duplicate or relocated document prevents move resolution. Keep all files and resolve the ambiguity first.":null;
@@ -60,7 +60,7 @@ public sealed partial class ReplacementRecoveryRegistry
     internal void AssertMoveReadable(Entry entry,bool persist)
     {
         var recovery=RecoveryFor(entry);
-        if(recovery.Record.Kind!="move"||recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.PreparedHash!=entry.PreparedHash||recovery.Record.ExpectedHash!=entry.ExpectedHash)throw new InvalidDataException("Move manifest scope changed.");
+        if(recovery.Record.CaseOnly!=entry.CaseOnly||recovery.Record.Kind!="move"||recovery.Record.SourcePath!=entry.SourcePath||recovery.Record.PreparedHash!=entry.PreparedHash||recovery.Record.ExpectedHash!=entry.ExpectedHash)throw new InvalidDataException("Move manifest scope changed.");
         var prepared=MoveBytes(recovery.Prepared)??throw new InvalidDataException("Move baseline is missing.");
         if(TextPackStore.Hash(prepared)!=entry.PreparedHash)throw new RetainedFileReplacement.RequiredException(entry.Operation);
         var displaced=MoveBytes(recovery.Displaced);

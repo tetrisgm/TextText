@@ -12,7 +12,7 @@ public static class RetainedFileReplacement
 {
     public sealed record Stamp(long Length, long Creation, long LastWrite, long Change, uint Volume, ulong FileId);
     public sealed record Manifest(int Version, Guid Operation, string Filename, string ExpectedHash, string PreparedHash, string State,
-        Stamp? PreparedStamp = null, Stamp? DisplacedStamp = null,string? Kind=null,string? SourcePath=null);
+        Stamp? PreparedStamp = null, Stamp? DisplacedStamp = null,string? Kind=null,string? SourcePath=null,bool? CaseOnly=null);
     public sealed record Recovery(string Directory, Manifest Record)
     {
         public string Prepared => Path.Combine(Directory, "prepared");
@@ -145,7 +145,7 @@ public static class RetainedFileReplacement
         lock(manifestGate)if(stamp is not null&&manifests.TryGetValue(path,out var cached)&&cached.Stamp==stamp)manifest=cached.Manifest;
         if(manifest is null) {
         var bytes=ReadVerified(path,8192);
-        JsonFields(bytes,["Version","Operation","Filename","ExpectedHash","PreparedHash","State","PreparedStamp","DisplacedStamp","Kind","SourcePath"],["Version","Operation","Filename","ExpectedHash","PreparedHash","State"]);
+        JsonFields(bytes,["Version","Operation","Filename","ExpectedHash","PreparedHash","State","PreparedStamp","DisplacedStamp","Kind","SourcePath","CaseOnly"],["Version","Operation","Filename","ExpectedHash","PreparedHash","State"]);
         manifest = JsonSerializer.Deserialize<Manifest>(bytes)
             ?? throw new InvalidDataException("Missing replacement manifest.");
         if(stamp!=Fingerprint(path,ancestorsVerified:true))throw new FileChangedException();
@@ -156,6 +156,7 @@ public static class RetainedFileReplacement
             Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(directory)))!=".texttext-replacements" ||
             !ValidHash(manifest.ExpectedHash) || !ValidHash(manifest.PreparedHash) ||
             manifest.Kind is not (null or "removal" or "move") || manifest.State is not ("pending" or "conflict" or "completed" or "cancelled") || manifest.State=="cancelled"&&manifest.Kind is not ("removal" or "move") || manifest.Kind is ("removal" or "move")&&manifest.ExpectedHash!=manifest.PreparedHash) throw new InvalidDataException("Invalid replacement manifest.");
+        if(manifest.CaseOnly is not null&&(manifest.Kind!="move"||manifest.CaseOnly!=true)||manifest.CaseOnly==true&&!RetainedFileMove.CaseOnlyPaths(Path.GetFileName(manifest.SourcePath!),manifest.Filename))throw new InvalidDataException("Invalid case-only move manifest.");
         if((manifest.Kind=="move")!=(manifest.SourcePath is not null))throw new InvalidDataException("Invalid move manifest source.");
         return new(directory, manifest);
     }

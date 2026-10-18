@@ -10,6 +10,43 @@ static class RetainedMoveTests
         TextPackStore Store(string name)=>new(Path.Combine(temp,"move-"+name),Path.Combine(temp,"move-"+name+"-state"));
         var before=Pack("before");var expected=TextPackStore.Hash(before);var raced=Pack("foreign raced source","foreign-id");
         {
+            var store=Store("case-only");store.Write("CaseProbe.textpack",before);
+            assert(!Refuses(()=>store.Rename("CaseProbe.textpack","caseprobe.textpack",expected)),"case-only rename succeeds without overwriting an independent destination");
+            var names=Directory.GetFiles(store.Root).Select(Path.GetFileName).ToArray();
+            assert(names.Contains("caseprobe.textpack",StringComparer.Ordinal)&&!names.Contains("CaseProbe.textpack",StringComparer.Ordinal)&&store.Read("caseprobe.textpack").SequenceEqual(before),"case-only rename verifies exact directory spelling and complete bytes");
+        }
+        foreach(var phase in new[]{"prepared","moved","observed"}) {
+            var store=Store("case-interrupted-"+phase);store.Write("CaseProbe.textpack",before);
+            Observe(store,point=>{if(point==phase)throw new IOException("case-only interruption "+phase);});
+            assert(Refuses(()=>store.Rename("CaseProbe.textpack","caseprobe.textpack",expected)),"case-only intent retains interrupted boundary "+phase);Observe(store,null);
+            var row=store.ReplacementRecoveryList().Single();
+            assert(row.SourcePresent==(phase=="prepared")&&row.CurrentPresent==(phase!="prepared"),"case-only recovery reports exact source/destination spelling instead of alias existence "+phase);
+            var restarted=new TextPackStore(store.Root,store.StateDirectory);var visible=phase=="prepared"?"CaseProbe.textpack":"caseprobe.textpack";
+            assert(restarted.Read(visible).SequenceEqual(before)&&Directory.GetFiles(store.Root).Count(path=>Path.GetFileName(path)==visible)==1,"case-only restart preserves exact existing spelling without rollback "+phase);
+        }
+        {
+            var store=Store("case-race");store.Write("CaseProbe.textpack",before);Observe(store,phase=>{if(phase=="beforeMove")File.WriteAllBytes(store.Resolve("CaseProbe.textpack"),raced);});
+            assert(Refuses(()=>store.Rename("CaseProbe.textpack","caseprobe.textpack",expected)),"case-only final gap refuses raced actual bytes");Observe(store,null);
+            var row=store.ReplacementRecoveryList().Single();
+            assert(row.CurrentPresent&&row.SourcePresent==false&&store.ReplacementRecoveryRead(row.Id,"source").Absent&&store.ReplacementRecoveryRead(row.Id,"current").ItemId=="foreign-id","case-only final gap exposes one actual foreign file and honest old-spelling absence");
+            store.ResolveMove(row.Id,row.Path,row.SourcePath!,row.ItemId,row.PreparedHash,row.DisplacedHash,row.Captured,true,row.CurrentHash,false,null);
+            assert(Directory.GetFiles(store.Root).Any(path=>Path.GetFileName(path)=="caseprobe.textpack")&&!Directory.GetFiles(store.Root).Any(path=>Path.GetFileName(path)=="CaseProbe.textpack")&&File.ReadAllBytes(store.Resolve("caseprobe.textpack")).SequenceEqual(raced),"case-only explicit consent preserves actual new spelling and foreign bytes");
+        }
+        {
+            var store=Store("case-distinct");var supported=!OperatingSystem.IsWindows();
+            if(OperatingSystem.IsWindows()) {
+                var start=new System.Diagnostics.ProcessStartInfo("fsutil.exe"){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true};
+                foreach(var argument in new[]{"file","setCaseSensitiveInfo",store.Root,"enable"})start.ArgumentList.Add(argument);
+                using var process=System.Diagnostics.Process.Start(start)!;process.StandardOutput.ReadToEnd();process.StandardError.ReadToEnd();process.WaitForExit();supported=process.ExitCode==0;
+                if(!supported)Console.WriteLine("SKIP isolated case-sensitive directory capability is unavailable");
+            }
+            store.Write("CaseProbe.textpack",before);
+            if(supported&&!File.Exists(store.Resolve("caseprobe.textpack"))) {
+                File.WriteAllBytes(store.Resolve("caseprobe.textpack"),raced);
+                assert(Refuses(()=>store.Rename("CaseProbe.textpack","caseprobe.textpack",expected))&&File.ReadAllBytes(store.Resolve("CaseProbe.textpack")).SequenceEqual(before)&&File.ReadAllBytes(store.Resolve("caseprobe.textpack")).SequenceEqual(raced),"case-fold equivalent distinct destination is never overwritten or classified as an alias");
+            }
+        }
+        {
             var store=Store("race");store.Write("From.textpack",before);Observe(store,phase=>{if(phase=="beforeMove")File.WriteAllBytes(store.Resolve("From.textpack"),raced);});
             assert(Refuses(()=>store.Rename("From.textpack","To.textpack",expected)),"move refuses acknowledgment when actual moved source changed at final boundary");Observe(store,null);
             assert(File.ReadAllBytes(store.Resolve("To.textpack")).SequenceEqual(raced),"failed raced move preserves actual foreign bytes visibly at destination without rollback");

@@ -9,6 +9,7 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--retained-move-fixtures"})) {var moveBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&moveBase.StartsWith("/var/"))moveBase="/private"+moveBase;var move=Path.Combine(moveBase,"texttext-move-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(move);RetainedMoveTests.Run(move,Assert);Console.WriteLine("All retained move fixtures passed. Receipt: "+move);return;}
  if(args.SequenceEqual(new[]{"--retained-replacement-fixtures"})) {
  var fixtureBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&fixtureBase.StartsWith("/var/"))fixtureBase="/private"+fixtureBase;
  var fixture=Path.Combine(fixtureBase,"texttext-retained-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);
