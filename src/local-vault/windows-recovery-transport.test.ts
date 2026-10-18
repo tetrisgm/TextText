@@ -84,6 +84,7 @@ it("returns explicit removal absence without parsing a fabricated empty pack", a
   const transport = await createWindowsVaultTransport(view);
   try {
     expect(await transport.request("replacementRead", { id: "removed", version: "current" })).toEqual(absent);
+    expect(await transport.request("replacementRead", { id: "removed", version: "displaced" })).toEqual(absent);
     await expect(transport.request("replacementRead", { id: "removed", version: "prepared" })).rejects.toThrow("Invalid local recovery response");
   } finally { transport.destroy(); }
 });

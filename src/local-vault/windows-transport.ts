@@ -173,7 +173,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
     }
     if (method === "replacementRead") {
       const result = await rpc.request<(Read & { itemId: string; opaque?: boolean; parseError?: string }) | { absent: true; path: string; hash: null; data: null }>("files.replacementRead", { ...params, ...recoveryScope }, signal);
-      if ("absent" in result && result.absent === true && params.version === "current" &&
+      if ("absent" in result && result.absent === true && (params.version === "current" || params.version === "displaced") &&
         typeof result.path === "string" && result.hash === null && result.data === null) return result;
       if ("absent" in result) throw new Error("Invalid local recovery response.");
       if (result.opaque) return { opaque: true, path: result.path, hash: result.hash, data: result.data, parseError: result.parseError };
@@ -181,6 +181,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       return { ...pack.file, data: result.data };
     }
     if (method === "resolveReplacement") return rpc.request("files.resolveReplacement", { ...params, ...recoveryScope }, signal);
+    if (method === "cancelUncapturedDeletion") return rpc.request("files.cancelUncapturedDeletion", { ...params, ...recoveryScope }, signal);
     if (method === "recoveryAssetRead") return rpc.request("files.recoveryAssetRead", { ...params, ...recoveryScope }, signal);
     if (method === "recovery") return rpc.request("native.recovery", {}, signal);
     if (["settings", "signOut", "openWeb", "openFolder"].includes(method)) return rpc.request(`native.${method}`, params, signal);
