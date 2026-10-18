@@ -20,6 +20,33 @@ final class RetainedReplacementProfileTests: XCTestCase {
         let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: bytes)
         guard owner.version == 1 else { throw LocalVaultAccountRootOwnership.Failure.future }
     }
+    func testFolderProfileFloorPreservesPriorMarkerAndRefusesPriorStrictReader() throws {
+        try RetainedReplacementProfile.prepare(root: root)
+        let profile = marker.deletingLastPathComponent().appendingPathComponent("retained-replacement-profile/profile.json")
+        let before = try Data(contentsOf: profile), ownerBefore = try Data(contentsOf: marker)
+        try RetainedReplacementProfile.prepareFolderCase(root: root)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: profile)) as? [String: Any])
+        XCTAssertEqual(object["version"] as? Int, 2)
+        // aa599b2b's supported profile reader requires marker.version == 1.
+        XCTAssertNotEqual(object["version"] as? Int, 1)
+        XCTAssertEqual(try Data(contentsOf: profile.deletingLastPathComponent().appendingPathComponent("profile-v1.json")), before)
+        XCTAssertEqual(try Data(contentsOf: marker), ownerBefore)
+        try RetainedReplacementProfile.verify(root: root, owner: JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: ownerBefore))
+    }
+    func testFolderProfileInterruptedBeforeAndAfterPublishResumesWithoutChangingPrincipal() throws {
+        for boundary in ["folderProfile:prepared", "folderProfile:swapped"] {
+            let scoped = root.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: scoped, withIntermediateDirectories: true)
+            try LocalVaultAccountRootOwnership.open(root: scoped, binding: binding, accountId: "account-a")
+            XCTAssertThrowsError(try RetainedReplacementProfile.prepareFolderCase(root: scoped) { stage in
+                if stage == boundary { throw Interrupted.stopped }
+            })
+            try RetainedReplacementProfile.prepareFolderCase(root: scoped)
+            let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: LocalVaultDeviceState.directory(root: scoped).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)))
+            XCTAssertEqual(owner.accountId, "account-a")
+            try RetainedReplacementProfile.verify(root: scoped, owner: owner)
+        }
+    }
     func testStableProfileVerifiersShareReadLeaseButExcludeMigration() throws {
         try RetainedReplacementProfile.prepare(root: root)
         let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: Data(contentsOf: marker))

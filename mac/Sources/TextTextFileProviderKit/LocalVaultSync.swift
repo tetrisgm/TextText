@@ -242,7 +242,7 @@ public actor LocalVaultSync {
         guard document.hash == expectedHash || replayedOwnWrite,
               MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == itemId else { throw LocalVaultSyncFailure.changed }
         if let saved = checkpoint, saved.retiredReason == nil, saved.pending, saved.path != path,
-           try !RetainedFileMove.exactLeafExists(root.appendingPathComponent(saved.path)),
+           try !RetainedFileMove.exactRelativeExists(root: root, path: saved.path),
            try uniqueSameIdentityPath(itemId: itemId, excluding: saved.path) == path {
             // The file was renamed while the app was closed. The retained
             // journal follows the unique same-identity file; a different hash
@@ -394,7 +394,7 @@ public actor LocalVaultSync {
         let source = checkpoint?.path ?? live!.path, expected = checkpoint?.projectedHash ?? live!.hash
         let store = LocalVaultDocumentStore(root: root)
         _ = try store.url(for: source)
-        guard try !RetainedFileMove.exactLeafExists(root.appendingPathComponent(source)) else { return false }
+        guard try !RetainedFileMove.exactRelativeExists(root: root, path: source) else { return false }
         guard let destination = try uniqueSameIdentityPath(itemId: itemId, excluding: source),
               let moved = try? store.read(path: destination),
               MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == itemId else { return false }
@@ -1143,6 +1143,7 @@ public actor LocalVaultSync {
 
     private func reconcileManagedFolders() async throws {
         if let catalog = await transport.authoritativeFolders() {
+            try LocalVaultDocumentStore(root: root).validateFolderCatalog(catalog)
             let current = Set(catalog)
             var retained = current
             for folder in (state.managedFolders ?? []).filter({ !current.contains($0) }).sorted(by: { $0.count > $1.count }) {
@@ -1277,6 +1278,7 @@ public actor LocalVaultSync {
         var manifest = try await transport.manifest()
         let folders = await transport.folders()
         guard folders.count <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        try LocalVaultDocumentStore(root: root).validateFolderCatalog(folders)
         if let catalog = await transport.authoritativeFolders() {
             try LocalVaultDocumentStore(root: root).validateFolderCatalog(catalog)
             let updated = Array(Set(state.managedFolders ?? []).union(catalog)).sorted()

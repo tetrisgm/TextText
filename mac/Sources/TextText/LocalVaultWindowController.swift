@@ -706,7 +706,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
-        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove" || method == "recoveryList" || method == "recoveryAssetRead"
+        let replacementOperation = method == "folderRenameRead" || method == "resolveFolderRename" || method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove" || method == "recoveryList" || method == "recoveryAssetRead"
         if replacementOperation && params["workspaceRoot"] as? String != root.path {
             reply(id, result: .failure(CancellationError())); return
         }
@@ -745,11 +745,21 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         throw VaultBridgeError("This linked card is no longer in the workspace.")
                     }
                     return ["path": path]
+                case "folderRenameRead":
+                    return Self.folderRenamePayload(try store.folderRenameRecoveryRead(id: Self.string(params, "id")))
+                case "resolveFolderRename":
+                    try store.resolveFolderRename(id: Self.string(params, "id"), fromPath: Self.string(params, "fromPath"), toPath: Self.string(params, "toPath"), inspection: Self.string(params, "inspection"), beforeAcknowledge: requireRecoveryScope)
+                    return ["resolved": true]
                 case "recoveryList":
+                    let folderRenames = try store.folderRenameRecoveryList()
+                    if folderRenames.contains(where: { !$0.resolved }) {
+                        return ["folderRenames": folderRenames.map(Self.folderRenamePayload), "entries": [], "replacements": [], "assets": [], "truncated": false, "assetsTruncated": false,
+                            "warning": "Inspect the retained folder details before continuing recovery."]
+                    }
                     let replacements = try store.replacementRecoveryList().filter { params["path"] == nil || $0.path == params["path"] as? String }
                     let page = try store.recoveryList(path: params["path"] as? String)
                     let assets = try store.recoveryAssets()
-                    return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
+                    return ["folderRenames": folderRenames.map(Self.folderRenamePayload), "entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
                         "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "identityMode": $0.identityMode, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "sourcePath": ($0.sourcePath as Any?) ?? NSNull(), "sourcePresent": ($0.sourcePresent as Any?) ?? NSNull(), "sourceHash": ($0.sourceHash as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
                         "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
                 case "recoveryAssetRead":
@@ -924,7 +934,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let decorated = result.map { value in
                     method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
                 }
-                if method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove", case .success = decorated { self?.connection?.schedule() }
+                if method == "resolveFolderRename" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove", case .success = decorated { self?.connection?.schedule() }
                 self?.reply(id, result: decorated, current: conflictCurrent)
             }
         }
@@ -1011,6 +1021,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             return row
         }
         return value
+    }
+
+    private static func folderRenamePayload(_ entry: FolderRenameRecoveryEntry) -> [String: Any] {
+        ["id": entry.id, "fromPath": entry.fromPath, "toPath": entry.toPath, "expectedIdentity": entry.expectedIdentity,
+         "from": ["present": entry.from.present, "identity": (entry.from.identity as Any?) ?? NSNull()] as [String: Any],
+         "to": ["present": entry.to.present, "identity": (entry.to.identity as Any?) ?? NSNull()] as [String: Any],
+         "inspection": entry.inspection, "summary": entry.summary,
+         "resolutionBlocked": (entry.resolutionBlocked as Any?) ?? NSNull(), "resolved": entry.resolved]
     }
 
     private static func payload(_ document: LocalVaultDocumentStore.Document) -> [String: Any] {

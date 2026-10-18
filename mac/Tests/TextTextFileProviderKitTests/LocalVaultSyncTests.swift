@@ -73,6 +73,29 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Placeholder").path))
     }
 
+    func testAuthoritativeEmptyFolderCaseChangePreservesExactNewCatalogAcrossRestart() async throws {
+        try LocalVaultAccountRootOwnership.open(root: root, binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"), accountId: "account-a")
+        let transport = FakeVaultTransport()
+        await transport.setFolders(["Before", "Before/Empty"], authoritative: true)
+        _ = try await engine(transport).sync()
+        await transport.setFolders(["before", "before/empty"], authoritative: true)
+        _ = try await engine(transport).sync()
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).contains("before"))
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains("Before"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("before").path), ["empty"])
+        _ = try await engine(transport).sync()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("before").path), ["empty"])
+    }
+
+    func testContradictoryFolderCatalogAliasesRefuseBeforeCreatingOtherFolders() throws {
+        let store = LocalVaultDocumentStore(root: root)
+        try store.ensureFolders(["Before"])
+        let before = try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("Before").path)[.systemFileNumber] as? NSNumber
+        XCTAssertThrowsError(try store.ensureFolders(["Unrelated", "Before", "before"]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Unrelated").path))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("Before").path)[.systemFileNumber] as? NSNumber, before)
+    }
+
     func testRevokedPendingWriteIsRetainedWithoutRetryLoop() async throws {
         let transport = FakeVaultTransport()
         await transport.set(itemId: itemId, path: path, data: try pack("before"))

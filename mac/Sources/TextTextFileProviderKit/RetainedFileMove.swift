@@ -19,6 +19,29 @@ enum RetainedFileMove {
         guard names.count <= 100_000 else { throw LocalVaultDocumentStore.Failure.tooLarge }
         return names.contains(target.lastPathComponent)
     }
+    /// Check every visible component, so a case-insensitive parent alias is not
+    /// mistaken for the old path after Finder or catalog reconciliation moved it.
+    static func exactRelativeExists(root: URL, path: String) throws -> Bool {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.isEmpty, path.utf8.count <= 4096,
+              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.hasPrefix(".") }) else {
+            throw LocalVaultDocumentStore.Failure.invalidPath
+        }
+        var current = root
+        for (index, component) in components.enumerated() {
+            let next = current.appendingPathComponent(String(component))
+            guard try exactLeafExists(next) else { return false }
+            var info = stat()
+            guard lstat(next.path, &info) == 0, info.st_mode & S_IFMT != S_IFLNK else {
+                throw RetainedFileReplacement.Failure.invalidJournal
+            }
+            if index < components.count - 1, info.st_mode & S_IFMT != S_IFDIR {
+                throw RetainedFileReplacement.Failure.invalidJournal
+            }
+            current = next
+        }
+        return true
+    }
     static func caseOnlyAlias(_ source: URL, _ destination: URL) throws -> Bool {
         guard source.deletingLastPathComponent().standardizedFileURL == destination.deletingLastPathComponent().standardizedFileURL,
               source.lastPathComponent != destination.lastPathComponent,

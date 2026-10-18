@@ -465,7 +465,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         _ = try store.url(for: source); _ = try store.url(for: newPath)
         let sourceURL = root.appendingPathComponent(source), destinationURL = root.appendingPathComponent(newPath)
         let caseOnly = try RetainedFileMove.caseOnlyAlias(sourceURL, destinationURL) || RetainedFileMove.caseOnlyAlias(destinationURL, sourceURL)
-        let sourcePresent = caseOnly ? try RetainedFileMove.exactLeafExists(sourceURL) : FileManager.default.fileExists(atPath: try store.url(for: source).path)
+        let sourcePresent = try RetainedFileMove.exactRelativeExists(root: root, path: source)
         if sourcePresent {
             let destinationOccupied = FileManager.default.fileExists(atPath: try store.url(for: newPath).path)
             let current = try store.read(path: source)
@@ -496,7 +496,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         let source = intent.caseOnly == true ? root.appendingPathComponent(intent.sourcePath) : validatedSource
         let target = intent.checkpoint
         guard intent.sourcePath != target.path else { throw LocalVaultSharedFailure.invalid }
-        let sourcePresent = intent.caseOnly == true ? try RetainedFileMove.exactLeafExists(source) : FileManager.default.fileExists(atPath: source.path)
+        let sourcePresent = try RetainedFileMove.exactRelativeExists(root: root, path: intent.sourcePath)
         if sourcePresent {
             if intent.caseOnly == true {
                 guard try RetainedFileMove.caseOnlyAlias(source, root.appendingPathComponent(target.path)) else { throw LocalVaultSyncFailure.changed }

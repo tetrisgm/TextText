@@ -71,7 +71,8 @@ public struct LocalVaultDocumentStore: Sendable {
 
     /// Materialize visible directories. Catalog reconciliation separately removes only empty managed directories.
     public func ensureFolders(_ folders: [String]) throws {
-        guard folders.count <= 20_000 else { throw Failure.invalidPath }
+        try validateFolderCatalog(folders)
+        try FolderCaseRename(root: root).assertReadable()
         for path in folders {
             let parts = path.split(separator: "/", omittingEmptySubsequences: false)
             guard !parts.isEmpty, path.utf8.count <= 1024,
@@ -83,6 +84,21 @@ public struct LocalVaultDocumentStore: Sendable {
                 guard !FileManager.default.fileExists(atPath: placeholder.path) else { throw Failure.invalidPath }
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: current.path) {
                     guard attrs[.type] as? FileAttributeType == .typeDirectory else { throw Failure.invalidPath }
+                    if try !RetainedFileMove.exactLeafExists(current) {
+                        let parent = current.deletingLastPathComponent()
+                        let names = try FileManager.default.contentsOfDirectory(atPath: parent.path)
+                        guard names.count <= 100_000 else { throw Failure.tooLarge }
+                        var requested = stat(); guard lstat(current.path, &requested) == 0 else { throw Failure.changed }
+                        let aliases = names.filter { name in
+                            guard name.lowercased() == String(part).lowercased() else { return false }
+                            var actual = stat()
+                            return lstat(parent.appendingPathComponent(name).path, &actual) == 0 && actual.st_dev == requested.st_dev && actual.st_ino == requested.st_ino
+                        }
+                        guard aliases.count == 1, let actual = aliases.first else { throw Failure.changed }
+                        let oldPath = String(parent.appendingPathComponent(actual).path.dropFirst(root.path.count + 1))
+                        let newPath = String(current.path.dropFirst(root.path.count + 1))
+                        try FolderCaseRename(root: root).rename(sourcePath: oldPath, destinationPath: newPath, observe: writeObservationForTesting)
+                    }
                 } else {
                     try FileManager.default.createDirectory(at: current, withIntermediateDirectories: false)
                 }
@@ -93,10 +109,24 @@ public struct LocalVaultDocumentStore: Sendable {
 
     public func validateFolderCatalog(_ folders: [String]) throws {
         guard folders.count <= 20_000 else { throw Failure.invalidPath }
+        var requestedIdentities: [String: String] = [:]
         for path in folders {
             let parts = path.split(separator: "/", omittingEmptySubsequences: false)
             guard path.utf8.count <= 1024, !parts.isEmpty,
                   parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(" ") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw Failure.invalidPath }
+            var prefix = ""
+            for part in parts {
+                prefix += (prefix.isEmpty ? "" : "/") + part
+                var info = stat()
+                if lstat(root.appendingPathComponent(prefix).path, &info) == 0 {
+                    // Non-directory collisions remain per-folder failures so
+                    // independent catalog entries can still materialize.
+                    guard info.st_mode & S_IFMT == S_IFDIR else { break }
+                    let identity = "\(info.st_dev):\(info.st_ino)"
+                    if let previous = requestedIdentities[identity], previous != prefix { throw Failure.invalidPath }
+                    requestedIdentities[identity] = prefix
+                } else if errno != ENOENT { throw Failure.invalidPath }
+            }
         }
     }
 
@@ -105,6 +135,9 @@ public struct LocalVaultDocumentStore: Sendable {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard path.utf8.count <= 1024, !parts.isEmpty,
               parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(" ") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw Failure.invalidPath }
+        // A retired spelling that only aliases the current catalog is already
+        // absent. Never rmdir the live differently spelled directory through it.
+        guard try RetainedFileMove.exactRelativeExists(root: root, path: path) else { return true }
         var target = root
         for part in parts {
             target.appendPathComponent(String(part), isDirectory: true)

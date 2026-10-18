@@ -626,6 +626,7 @@ struct ReplacementRecoveryRegistry {
     /// Nil identity means a malformed/unidentified projection. Fail closed for
     /// any unresolved workspace entry instead of accepting a renamed candidate.
     func assertReadable(itemId: String?, path: String? = nil, observeDeletionPublication: ((String) throws -> Void)? = nil) throws {
+        try FolderCaseRename(root: root).assertReadable()
         var validatedTargets: [String: (URL, RetainedFileReplacement.Layout?)] = [:]
         for entry in try entries(itemId: itemId, path: path) {
             let key = entry.path + "\0" + (entry.recoveryPath ?? entry.path)
