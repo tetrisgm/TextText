@@ -3,6 +3,10 @@
 import { createServer } from "node:http";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { lstatSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { networkInterfaces } from "node:os";
+import { isIP } from "node:net";
 import {
   listVaultTextpacks, readVaultTextpack, writeVaultTextpack,
   moveVaultTextpack, deleteVaultTextpack, waitVaultTextpacks, moveVaultFolderCase, recoverVaultFolderCase,
@@ -13,7 +17,19 @@ import { planFolderMove } from "../src/sync/engine/folder-move-plan";
 const [root, readyFile] = process.argv.slice(2);
 if (!root || !readyFile || !path.isAbsolute(root) || !path.isAbsolute(readyFile)) throw new Error("Pass absolute fixture root and ready-file paths");
 const workspaceId = "contract-workspace";
-const fixtureAuthorization = "Bearer vault-http-fixture";
+const fixtureBind = process.env.TEXTTEXT_HTTP_FIXTURE_BIND ?? "127.0.0.1";
+const fixtureToken = process.env.TEXTTEXT_HTTP_FIXTURE_TOKEN ?? "vault-http-fixture";
+if(fixtureBind!=="127.0.0.1"){
+  const octets=fixtureBind.split(".").map(Number);
+  const privateAddress=octets[0]===10||octets[0]===172&&octets[1]>=16&&octets[1]<=31||octets[0]===192&&octets[1]===168;
+  const local=Object.values(networkInterfaces()).flat().some(row=>row?.address===fixtureBind&&!row.internal);
+  if(isIP(fixtureBind)!==4||!privateAddress||!local||!process.env.TEXTTEXT_HTTP_FIXTURE_TOKEN||!/^[a-f0-9]{64}$/.test(fixtureToken))throw Error("LAN fixture requires an explicitly pinned local private interface and isolated token");
+  const marker=path.join(path.dirname(root),"fixture-owner.json");const info=lstatSync(marker);
+  if(!info.isFile()||info.isSymbolicLink()||info.size>16384)throw Error("Invalid fixture ownership marker");
+  const owner=JSON.parse(readFileSync(marker,"utf8"));
+  if(Object.keys(owner).sort().join(",")!=="bind,nonce,readyFile,root,tokenHash,version"||owner.version!==1||owner.root!==root||owner.readyFile!==readyFile||owner.bind!==fixtureBind||!/^[a-f0-9]{64}$/.test(owner.nonce)||owner.tokenHash!==createHash("sha256").update(fixtureToken).digest("hex"))throw Error("LAN fixture ownership does not match its isolated paths and interface");
+}
+const fixtureAuthorization = "Bearer " + fixtureToken;
 let loseReplies = 0;
 let folderCaseEnabled = false;
 let raceFolderCase = false;
@@ -136,12 +152,12 @@ const server = createServer(async (request, response) => {
   } catch (error) { send(500, { error: error instanceof Error ? error.message : "Fixture failed" }); }
 });
 
-server.listen(0, "127.0.0.1", async () => {
+server.listen(0, fixtureBind, async () => {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing fixture port");
   // The native harness watches existence, so publish only complete JSON.
   const readyTemporary = `${readyFile}.${process.pid}.tmp`;
-  await writeFile(readyTemporary, JSON.stringify({ origin: `http://127.0.0.1:${address.port}` }));
+  await writeFile(readyTemporary, JSON.stringify({ origin: `http://${fixtureBind}:${address.port}` }));
   await rename(readyTemporary, readyFile);
 });
 process.once("SIGTERM", () => { server.closeAllConnections(); server.close(() => process.exit(0)); });
