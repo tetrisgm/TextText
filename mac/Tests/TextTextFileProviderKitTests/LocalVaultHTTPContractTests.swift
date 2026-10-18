@@ -1,3 +1,4 @@
+import Darwin
 import TextTextSyncTestSupport
 import XCTest
 @testable import TextTextFileProviderKit
@@ -155,4 +156,59 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         XCTAssertTrue(manifest.contains { $0.itemId == movedId && $0.isDeleted })
         XCTAssertEqual(try Data(contentsOf: secondRoot.appendingPathComponent(".texttext/history/\(TextTextStableDigest.sha256Hex(moveBytes)).textpack")), moveBytes)
     }
+
+    func testWholeFolderCaseMoveAcrossTwoNativeHTTPClientsAndLostReplyRestart() async throws {
+        guard ProcessInfo.processInfo.environment["TEXTTEXT_VAULT_HTTP_TEST"] == "1" else { throw XCTSkip("Enable the isolated loopback HTTP fixture") }
+        var repository = URL(fileURLWithPath: #filePath); for _ in 0..<4 { repository.deleteLastPathComponent() }
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-folder-http-native-" + UUID().uuidString).standardizedFileURL.resolvingSymlinksInPath()
+        let firstRoot = temporary.appendingPathComponent("first"), secondRoot = temporary.appendingPathComponent("second"), serverRoot = temporary.appendingPathComponent("server"), ready = temporary.appendingPathComponent("ready.json")
+        for root in [firstRoot, secondRoot, serverRoot.appendingPathComponent(workspaceId + "/Parent/Case/Empty")] { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/env"); process.currentDirectoryURL = repository
+        process.arguments = ["node", "--import", "tsx", "scripts/vault-http-test-server.ts", serverRoot.path, ready.path]
+        let errors = Pipe(); process.standardError = errors; process.standardOutput = FileHandle.nullDevice; try process.run()
+        defer { if process.isRunning { process.terminate(); process.waitUntilExit() }; try? FileManager.default.removeItem(at: temporary) }
+        for _ in 0..<500 { if FileManager.default.fileExists(atPath: ready.path) || !process.isRunning { break }; try await Task.sleep(nanoseconds: 20_000_000) }
+        guard FileManager.default.fileExists(atPath: ready.path) else { XCTFail("Owned loopback fixture did not become ready"); return }
+        struct Ready: Decodable { let origin: URL }
+        let origin = try JSONDecoder().decode(Ready.self, from: Data(contentsOf: ready)).origin
+        func control(_ path: String) async throws {
+            var request = URLRequest(url: URL(string: path, relativeTo: origin)!.absoluteURL); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (_, response) = try await URLSession.shared.data(for: request); XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        }
+        let binding = try LocalVaultSyncBinding(origin: origin, workspaceId: workspaceId), account = "folder-http-account"
+        for root in [firstRoot, secondRoot] { try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: account) }
+        let configuration = URLSessionConfiguration.ephemeral; configuration.timeoutIntervalForRequest = 2; configuration.timeoutIntervalForResource = 4
+        let session = URLSession(configuration: configuration); defer { session.invalidateAndCancel() }
+        let firstTransport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: workspaceId, token: token, session: session, accountId: account)
+        let secondTransport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: workspaceId, token: token, session: session, accountId: account)
+        let first = try makeTestSync(root: firstRoot, binding: binding, transport: firstTransport, accountId: account)
+        let second = try makeTestSync(root: secondRoot, binding: binding, transport: secondTransport, accountId: account)
+        let itemId = "33333333-3333-4333-8333-333333333333", oldPath = "Parent/Case/one.textpack", newPath = "Parent/CASE/one.textpack"
+        let archive = try pack(in: temporary, itemId: itemId, body: "Exact native HTTP folder bytes")
+        try write(archive, to: firstRoot, path: oldPath); _ = try await first.sync(); _ = try await second.sync()
+        // Opt-in preserves the original loopback contract and tests discovery.
+        try await control("__test/folder-case?enabled=1")
+        _ = try await first.sync(); _ = try await second.sync()
+        guard Darwin.rename(firstRoot.appendingPathComponent("Parent/Case").path, firstRoot.appendingPathComponent("Parent/CASE").path) == 0 else { throw POSIXError(.init(rawValue: errno)!) }
+        try await control("__test/reply-loss?enabled=1")
+        var lostReply = false
+        do { _ = try await first.sync() } catch { lostReply = true }
+        XCTAssertTrue(lostReply, "No response may be treated as a folder receipt")
+        let statePath = LocalVaultDeviceState.directory(root: firstRoot).appendingPathComponent("sync/state.json")
+        let pending = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: statePath)) as? [String: Any]); XCTAssertNotNil(pending["folderCaseCommand"])
+        try await control("__test/reply-loss?enabled=0")
+        let reopened = try makeTestSync(root: firstRoot, binding: binding, transport: firstTransport, accountId: account)
+        _ = try await reopened.sync(); _ = try await second.sync()
+        for root in [firstRoot, secondRoot] {
+            XCTAssertFalse(try RetainedFileMove.exactRelativeExists(root: root, path: "Parent/Case"))
+            XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: root, path: "Parent/CASE/Empty"))
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(newPath)), archive)
+        }
+        let catalog = try await secondTransport.manifest(); XCTAssertEqual(catalog.first(where: { $0.itemId == itemId })?.relativePath, newPath)
+        let folders = await secondTransport.authoritativeFolders(); XCTAssertEqual(folders?.sorted(), ["Parent", "Parent/CASE", "Parent/CASE/Empty"])
+        let before = try await stats(origin: origin); XCTAssertEqual(before["folderPublications"], 1); XCTAssertEqual(before["renames"], 0)
+        _ = try await reopened.sync(); _ = try await second.sync(); let after = try await stats(origin: origin)
+        for key in ["uploads", "downloads", "renames", "deletions", "folderRequests", "folderPublications"] { XCTAssertEqual(before[key], after[key], "Idle mutation/transfer: \(key)") }
+    }
+
 }
