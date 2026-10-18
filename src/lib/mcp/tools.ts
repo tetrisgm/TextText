@@ -1832,7 +1832,9 @@ async function executeLegacyWorkspaceCommand(
     }
 
     case "create_item": {
-      const input = args as WorkspaceToolInput<"create_item">;
+      const publicInput = args as WorkspaceToolInput<"create_item">;
+      // The legacy post adapter keeps its storage names; file commands use canonical templates.
+      const input = { ...publicInput, kind: publicInput.kind === "gallery" ? "media_post" as const : publicInput.kind === "talk" ? "video_post" as const : publicInput.kind };
       // A folder editor may not have a workspace-wide grant. Resolve the
       // named workspace here, then authorize the exact destination below.
       const requestedHandle = extra.authInfo?.extra?.workspaceHandle;

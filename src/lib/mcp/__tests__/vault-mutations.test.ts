@@ -107,6 +107,22 @@ describe("durable file MCP commands through public input schemas", () => {
     expect(unzipSync(pack!.bytes)["Note.textbundle/assets/opaque.bin"]).toEqual(asset);
     expect(await body()).toContain("New section");
   });
+  it.each([["gallery", "gallery"], ["talk", "talk"], ["media_post", "gallery"], ["video_post", "talk"]])("creates %s through public input with canonical %s template and exact replay", async (kind, canonical) => {
+    const args = parseWorkspaceToolInput("create_item", { title: "Builtin fixture", body: "Original", kind, template_id: `texttext.${canonical}`, idempotency_key: `builtin-${kind}` });
+    const first = await mutateVaultTool("create_item", args, context());
+    const saved = await readVaultTextpack({ root, workspaceId: "workspace", itemId: first.itemId });
+    const doc = readDocument(openPack(saved!.bytes, saved!.relativePath, saved!.revision).file);
+    expect(doc.schemaVersion).toBe(1);
+    expect(doc.presentation.template.id).toBe(`texttext.${canonical}`);
+    expect(doc.content.body).toBe("Original");
+    expect(await mutateVaultTool("create_item", args, context())).toEqual(first);
+    expect(await mutateVaultTool("create_item", { ...args, kind: canonical }, context())).toEqual(first);
+    expect((await readVaultTextpack({ root, workspaceId: "workspace", itemId: first.itemId }))!.bytes).toEqual(saved!.bytes);
+    await mutateVaultTool("update_item", parseWorkspaceToolInput("update_item", { id: first.itemId, body: "Edited", if_match_hash: saved!.revision, idempotency_key: `edit-${kind}` }), context());
+    expect(readDocument(openPack((await readVaultTextpack({ root, workspaceId: "workspace", itemId: first.itemId }))!.bytes, saved!.relativePath, "hash").file).presentation.template.id).toBe(`texttext.${canonical}`);
+    authorize.mockRejectedValueOnce(new Error("revoked before commit"));
+    await expect(mutateVaultTool("create_item", args, context())).rejects.toThrow("revoked before commit");
+  });
   it("creates a readable deterministic file and replays create without duplication", async () => {
     const args = parseWorkspaceToolInput("create_item", { title: "New note", kind: "note", idempotency_key: "event" });
     const first = await mutateVaultTool("create_item", args, context());

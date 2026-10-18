@@ -50,7 +50,8 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
     const parsed = rawMarkdown !== null ? parsePostMarkdownFile(rawMarkdown) : null;
     if (parsed?.fields.status === "published") throw new Error("New files are private. Publish separately after review.");
     const parsedKind = parsed?.fields.type === "video_post" ? "talk" : parsed?.fields.type === "media_post" ? "gallery" : parsed?.fields.type;
-    const kind = capture?.kind ?? parsedKind ?? (typeof args.kind === "string" ? args.kind : "note");
+    const structuredKind = args.kind === "media_post" ? "gallery" : args.kind === "video_post" ? "talk" : args.kind;
+    const kind = capture?.kind ?? parsedKind ?? (typeof structuredKind === "string" ? structuredKind : "note");
     if (!["note", "article", "bookmark", "gallery", "talk"].includes(kind)) throw new Error("Unsupported item kind.");
     const template = requireBuiltinTemplate(`texttext.${kind}`);
     let document = emptyDocumentSnapshot({ id: template.id, version: template.version });

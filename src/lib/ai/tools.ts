@@ -122,11 +122,13 @@ const ifMatchHash = z
   );
 const itemKind = z.enum([
   "article",
-  "media_post",
-  "video_post",
+  "gallery",
+  "talk",
   "note",
   "bookmark",
-]);
+  "media_post",
+  "video_post",
+]).describe("Use article, gallery, talk, note, or bookmark. media_post and video_post are legacy aliases for gallery and talk.");
 const tags = z
   .array(z.string().trim().min(1).max(48))
   .max(24)
@@ -211,7 +213,7 @@ const createItemInput = z
     folder_path: folderPath
       .optional()
       .describe(
-        "The destination folder path. Omit it and the item goes to the folder its kind belongs in: a note to Notes, a bookmark to Bookmarks, anything else to Blog. Quick capture routes the same way.",
+        "The destination folder path. Omit it to use the kind default: Notes, Bookmarks, Blog, Gallery, or Presentations. Quick capture routes text to Notes and URLs to Bookmarks.",
       ),
     capture: z
       .string()
