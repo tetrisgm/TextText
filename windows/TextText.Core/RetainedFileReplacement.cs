@@ -12,7 +12,7 @@ public static class RetainedFileReplacement
 {
     public sealed record Stamp(long Length, long Creation, long LastWrite, long Change, uint Volume, ulong FileId);
     public sealed record Manifest(int Version, Guid Operation, string Filename, string ExpectedHash, string PreparedHash, string State,
-        Stamp? PreparedStamp = null, Stamp? DisplacedStamp = null);
+        Stamp? PreparedStamp = null, Stamp? DisplacedStamp = null,string? Kind=null);
     public sealed record Recovery(string Directory, Manifest Record)
     {
         public string Prepared => Path.Combine(Directory, "prepared");
@@ -145,7 +145,7 @@ public static class RetainedFileReplacement
         lock(manifestGate)if(stamp is not null&&manifests.TryGetValue(path,out var cached)&&cached.Stamp==stamp)manifest=cached.Manifest;
         if(manifest is null) {
         var bytes=ReadVerified(path,8192);
-        JsonFields(bytes,["Version","Operation","Filename","ExpectedHash","PreparedHash","State","PreparedStamp","DisplacedStamp"],["Version","Operation","Filename","ExpectedHash","PreparedHash","State"]);
+        JsonFields(bytes,["Version","Operation","Filename","ExpectedHash","PreparedHash","State","PreparedStamp","DisplacedStamp","Kind"],["Version","Operation","Filename","ExpectedHash","PreparedHash","State"]);
         manifest = JsonSerializer.Deserialize<Manifest>(bytes)
             ?? throw new InvalidDataException("Missing replacement manifest.");
         if(stamp!=Fingerprint(path,ancestorsVerified:true))throw new FileChangedException();
@@ -155,7 +155,7 @@ public static class RetainedFileReplacement
             Path.GetFileName(directory)!=operation.ToString("D") || Path.GetFileName(Path.GetDirectoryName(directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(filename)) ||
             Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(directory)))!=".texttext-replacements" ||
             !ValidHash(manifest.ExpectedHash) || !ValidHash(manifest.PreparedHash) ||
-            manifest.State is not ("pending" or "conflict" or "completed")) throw new InvalidDataException("Invalid replacement manifest.");
+            manifest.Kind is not (null or "removal") || manifest.State is not ("pending" or "conflict" or "completed" or "cancelled") || manifest.State=="cancelled"&&manifest.Kind!="removal" || manifest.Kind=="removal"&&manifest.ExpectedHash!=manifest.PreparedHash) throw new InvalidDataException("Invalid replacement manifest.");
         return new(directory, manifest);
     }
     public static string OriginalTarget(Recovery recovery) => Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(recovery.Directory)))!,recovery.Record.Filename);
@@ -165,6 +165,17 @@ public static class RetainedFileReplacement
             Path.GetFileName(Path.GetDirectoryName(recovery.Directory))!=TextPackStore.Hash(Encoding.UTF8.GetBytes(recovery.Record.Filename)) ||
             recovery.Record.Filename != Path.GetFileName(target)) throw new InvalidDataException("Replacement target mismatch.");
         CheckPath(recovery.Directory,verified);
+        if(recovery.Record.Kind=="removal"&&(recovery.Record.State is "pending" or "cancelled")&&!ExistsNoFollow(recovery.Displaced)) {
+            var preparedHash=TextPackStore.Hash(ReadVerified(recovery.Prepared));
+            if(preparedHash!=recovery.Record.PreparedHash)throw new InvalidDataException("Prepared removal changed.");
+            if(recovery.Record.State=="cancelled")return recovery;
+            if(ExistsNoFollow(target)&&TextPackStore.Hash(Read(target))==recovery.Record.ExpectedHash) {
+                var cancelled=recovery.Record with{State="cancelled"};
+                if(persist)SaveJson(Path.Combine(recovery.Directory,"manifest.json"),cancelled);
+                return recovery with{Record=cancelled};
+            }
+            return recovery;
+        }
         bool Matches(string path,Stamp? expected)=>expected is not null&&expected==Fingerprint(path,ancestorsVerified:true);
         var preparedUnchanged = Matches(recovery.Prepared, recovery.Record.PreparedStamp);
         var prepared = preparedUnchanged ? (Hash: recovery.Record.PreparedHash, Stamp: recovery.Record.PreparedStamp) : HashStable(recovery.Prepared,ancestorsVerified:true);
@@ -176,11 +187,26 @@ public static class RetainedFileReplacement
         // An old open descriptor may still change its displaced file, however.
         var state = recovery.Record.State == "completed"
             ? displaced.Hash == recovery.Record.ExpectedHash ? "completed" : "conflict"
-            : displaced.Hash == recovery.Record.ExpectedHash && TryHash(target).Hash == recovery.Record.PreparedHash ? "completed" : "conflict";
+            : displaced.Hash == recovery.Record.ExpectedHash && (recovery.Record.Kind=="removal"?!ExistsNoFollow(target):TryHash(target).Hash == recovery.Record.PreparedHash) ? "completed" : "conflict";
         if (state == recovery.Record.State && prepared.Stamp == recovery.Record.PreparedStamp && displaced.Stamp == recovery.Record.DisplacedStamp) return recovery;
         var record = recovery.Record with { State = state, PreparedStamp = prepared.Stamp, DisplacedStamp = displaced.Stamp };
         if(persist)SaveJson(Path.Combine(recovery.Directory, "manifest.json"), record);
         return recovery with { Record = record };
+    }
+    internal static IDisposable AcquireLease(string path)
+    {
+        CheckPath(path);Directory.CreateDirectory(Path.GetDirectoryName(path)!);CheckPath(Path.GetDirectoryName(path)!);
+        if(!OperatingSystem.IsWindows())return new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+        var handle=CreateFileW(NativePath(path),0xC0000000,0,IntPtr.Zero,4,0x00200000,IntPtr.Zero);
+        if(handle.IsInvalid||!GetFileInformationByHandle(handle,out var info)) {handle.Dispose();throw new IOException("Removal operation is currently active or unavailable.");}
+        if((info.Attributes&(uint)(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0){handle.Dispose();throw new IOException("Invalid removal operation lease.");}
+        return handle;
+    }
+    internal static bool ExistsNoFollow(string path)
+    {
+        CheckPath(path);
+        try {var attributes=File.GetAttributes(path);if((attributes&(FileAttributes.Directory|FileAttributes.ReparsePoint))!=0)throw new IOException("Recovery observation is not a regular file.");return true;}
+        catch(FileNotFoundException){return false;}catch(DirectoryNotFoundException){return false;}
     }
     public static Recovery Replace(string target, string expectedHash, byte[] prepared, Guid operation,
         Action<string>? observe = null,string? recoveryRoot=null)

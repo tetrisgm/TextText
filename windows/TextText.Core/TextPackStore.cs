@@ -8,7 +8,7 @@ namespace TextText.Core;
 public sealed record ScanError(string Path,string Reason,string? ItemId=null);
 public sealed record PackFile(string Path, string Hash, string ItemId);
 public sealed record WorkspaceInventory(IReadOnlyList<PackFile> Files, IReadOnlyList<string> Folders);
-public sealed record FileIntent(string Kind, string ItemId, string Path, string Hash, string? Destination = null);
+public sealed record FileIntent(string Kind, string ItemId, string Path, string Hash, string? Destination = null,string? OperationId=null);
 public sealed record FileMutationReceipt(int Version, string Fingerprint, string ItemId, string Path, string Hash, bool Committed);
 public sealed record FileCreationReceipt(int Version, string Intent, string ItemId, string Path, string Hash, string Data);
 public sealed class FileChangedException() : IOException("The file changed. Reload its current contents before writing.");
@@ -19,6 +19,7 @@ public sealed partial class TextPackStore
     public IReadOnlyList<ScanError> LastScanErrors {get;private set;}=[];
     public event Action? Changed;
     internal Action? BeforeWriteCommitForTesting { get; set; }
+    internal Action<string>? RemovalObservationForTesting { get; set; }
     readonly object gate = new();
     internal T WithExclusiveMutation<T>(Func<T> action) { lock(gate) return action(); }
     public TextPackStore(string root, string? stateDirectory = null)
@@ -368,16 +369,37 @@ public sealed partial class TextPackStore
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!); File.Move(source,target); }
         Changed?.Invoke();
     }
-    public void Delete(string path,string expectedHash)
+    public void Delete(string path,string expectedHash)=>RemoveRetaining(path,expectedHash,recordDeletion:true);
+    public void RemoveRetaining(string path,string expectedHash,bool recordDeletion=false)
     {
-        lock(gate) { var full=Resolve(path); Match(full,expectedHash); var bytes=ReadProjection(full); Preserve(bytes,"trash"); RecordIntent(new("delete",Identity(bytes),path,expectedHash)); File.Delete(full); } Changed?.Invoke();
+        lock(gate) {
+            var full=Resolve(path);Match(full,expectedHash);var bytes=ReadProjection(full);var identity=Identity(bytes);
+            if(Hash(bytes)!=expectedHash)throw new FileChangedException();
+            RetainedReplacementProfile.Prepare(this);Preserve(bytes,"history");
+            var operation=Guid.NewGuid();var recoveryRoot=System.IO.Path.Combine(Root,".texttext","retained-replacements",Hash(Encoding.UTF8.GetBytes(path)));
+            _=RetainedFileRemoval.Capture(full,expectedHash,recoveryRoot,operation,point=>{
+                if(point=="prepared")Replacements.Register(operation,identity,path,expectedHash,expectedHash,RetainedFileReplacement.OperationDirectory(full,operation,recoveryRoot),kind:"removal",userDeletion:recordDeletion);
+                RemovalObservationForTesting?.Invoke(point);
+            },leasePath:Replacements.CaptureLeasePath(operation));
+            RemovalObservationForTesting?.Invoke("beforeDeletionMarker");
+            if(recordDeletion)AssertReplacementReadable(identity);
+        }
+        Changed?.Invoke();
     }
-    void RecordIntent(FileIntent intent) => AtomicWrite(System.IO.Path.Combine(StateDirectory,"intent-"+intent.ItemId+".json"),JsonSerializer.SerializeToUtf8Bytes(intent));
+    internal static IDisposable DeletionPublication(string state)
+    {
+        var path=System.IO.Path.Combine(state,".deletion-publication.lock");RetainedFileReplacement.CheckPath(path);
+        return new FileStream(path,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+    }
+    void RecordIntent(FileIntent intent) {using var publication=DeletionPublication(StateDirectory);AtomicWrite(System.IO.Path.Combine(StateDirectory,"intent-"+intent.ItemId+".json"),JsonSerializer.SerializeToUtf8Bytes(intent));}
     public FileIntent? Intent(string id) { var path=System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"); return File.Exists(path)?JsonSerializer.Deserialize<FileIntent>(File.ReadAllBytes(path)):null; }
-    public void ClearIntent(string id, FileIntent expected) {
-        lock(gate) { if(Intent(id)==expected)ClearIntent(id); }
+    void ConsumeIntent(string id,FileIntent? expected=null)
+    {
+        using var publication=DeletionPublication(StateDirectory);var saved=Intent(id);if(saved is null||expected is not null&&saved!=expected)return;
+        Replacements.MarkDeletionConsumed(saved);File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
     }
-    public void ClearIntent(string id) => File.Delete(System.IO.Path.Combine(StateDirectory,"intent-"+id+".json"));
+    public void ClearIntent(string id, FileIntent expected) {lock(gate)ConsumeIntent(id,expected);}
+    public void ClearIntent(string id) {lock(gate)ConsumeIntent(id);}
     public string GetRecoveryDirectory() {
         var directory=System.IO.Path.Combine(StateDirectory,"recovery");
         CheckLinks(directory);Directory.CreateDirectory(directory);CheckLinks(directory);

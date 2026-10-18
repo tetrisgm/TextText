@@ -290,7 +290,7 @@ public sealed class SyncEngine
                 if(file==null) continue;
                 if(server is { Deleted:true }) {
                     if(file.Hash!=baseline.Hash) { store.Preserve(store.Read(file.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",id,file.Path,null,baseline.Revision,file.Hash,null,true));continue; }
-                    store.Delete(file.Path,file.Hash);state.Items.Remove(id);Save(state);store.ClearIntent(id);local.Remove(id);continue;
+                    store.RemoveRetaining(file.Path,file.Hash);state.Items.Remove(id);Save(state);store.ClearIntent(id);local.Remove(id);continue;
                 }
                 if(server==null) continue; // Missing visibility is not authority to delete or recreate.
                 if(file.Path!=baseline.Path) {

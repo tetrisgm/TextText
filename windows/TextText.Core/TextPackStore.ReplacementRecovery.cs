@@ -2,7 +2,7 @@ namespace TextText.Core;
 
 public sealed partial class TextPackStore
 {
-    ReplacementRecoveryRegistry Replacements => new(Root, StateDirectory);
+    ReplacementRecoveryRegistry Replacements => new(Root, StateDirectory,RemovalObservationForTesting);
     public void AssertReplacementReadable(string? itemId) { lock(gate) Replacements.AssertReadable(itemId); }
     public void ValidateReplacementRegistry() { lock(gate) _=Replacements.Entries(); }
     public bool ReplacementBlocked(string itemId)
@@ -19,8 +19,8 @@ public sealed partial class TextPackStore
             return result;
         }
     }
-    public sealed record ReplacementRecoveryEntry(string Id, string Path, string ItemId, string CurrentHash, string PreparedHash, string DisplacedHash, string SavedAt,bool Resolved=false);
-    public sealed record ReplacementRecoveryFile(string Path, string Hash, string ItemId, byte[] Data, bool Opaque=false, string? ParseError=null);
+    public sealed record ReplacementRecoveryEntry(string Id, string Path, string ItemId, string? CurrentHash, string PreparedHash, string? DisplacedHash, string SavedAt,bool Resolved=false,string Kind="replacement",bool CurrentPresent=true,bool Captured=true,string? ResolutionBlocked=null);
+    public sealed record ReplacementRecoveryFile(string Path, string? Hash, string ItemId, byte[]? Data, bool Opaque=false, string? ParseError=null,bool Absent=false);
     ReplacementRecoveryFile ReplacementVisible(ReplacementRecoveryRegistry.Entry entry)
     {
         ReplacementRecoveryFile? found=null;var inspected=0;
@@ -42,17 +42,32 @@ public sealed partial class TextPackStore
         }
         Visit(Root);return found??throw new RetainedFileReplacement.RequiredException(entry.Operation);
     }
+    ReplacementRecoveryFile RecoveryCurrent(ReplacementRecoveryRegistry.Entry entry,bool strict=false)
+    {
+        if(entry.Kind!="removal")return ReplacementVisible(entry);
+        var bytes=Replacements.RemovalCurrent(entry,refuseRelocation:strict);
+        if(bytes is null)return new(entry.Path,null,entry.ItemId,null,Absent:true);
+        try{return new(entry.Path,Hash(bytes),Identity(bytes),bytes);}
+        catch(Exception error)when(error is IOException or InvalidDataException or System.Text.Json.JsonException){return new(entry.Path,Hash(bytes),"",bytes,true,"This current file cannot be opened as a TextText document. Download its exact bytes for recovery.");}
+    }
     public IReadOnlyList<ReplacementRecoveryEntry> ReplacementRecoveryList()
     {
         lock(gate) {
             var result=new List<ReplacementRecoveryEntry>();
             foreach(var entry in Replacements.Entries()) {
+                if(entry.Kind=="removal"&&!Replacements.RemovalHasCapturedInode(entry)) {
+                    var uncaptured=Replacements.InspectUncaptured(entry);
+                    if(uncaptured.Recovery.Record.State=="cancelled"&&entry.UncapturedCancellation is null)continue;
+                    var current=RecoveryCurrent(entry);var blocked=Replacements.RemovalIdentityMatches(entry).Any(pair=>pair.Path!=entry.Path)?"A duplicate or relocated document prevents resolution. Keep all files and resolve the ambiguity first.":null;
+                    result.Add(new(entry.Operation.ToString("D"),entry.Path,entry.ItemId,current.Hash,entry.PreparedHash,null,Directory.GetCreationTimeUtc(uncaptured.Recovery.Directory).ToString("O"),entry.UncapturedCancellation is not null,"removal",!current.Absent,false,blocked));continue;
+                }
                 var resolved=false;
-                try {Replacements.AssertEntryReadable(entry,persist:false);if(entry.Resolution is null)continue;resolved=true;}catch(RetainedFileReplacement.RequiredException){}
+                try {Replacements.AssertEntryReadable(entry,persist:false);if(entry.Kind=="removal"&&!Replacements.RemovalHasCapturedInode(entry))continue;if(entry.Resolution is null){if(entry.Kind=="removal"&&entry.UserDeletion==true)resolved=entry.DeletionMarkerPublished==true||entry.DeletionIntentCancelled==true;else continue;}else resolved=true;}catch(RetainedFileReplacement.RequiredException){}
                 var inspection=Replacements.Inspect(entry);
-                var visible=ReplacementVisible(entry);
+                var visible=RecoveryCurrent(entry);
+                var resolutionBlocked=entry.Kind=="removal"&&Replacements.RemovalIdentityMatches(entry).Any(pair=>pair.Path!=entry.Path)?"A duplicate or relocated document prevents resolution. Keep all files and resolve the ambiguity first.":null;
                 result.Add(new(entry.Operation.ToString("D"),visible.Path,entry.ItemId,visible.Hash,inspection.PreparedHash,inspection.DisplacedHash,
-                    Directory.GetCreationTimeUtc(inspection.Recovery.Directory).ToString("O"),resolved));
+                    Directory.GetCreationTimeUtc(inspection.Recovery.Directory).ToString("O"),resolved,entry.Kind??"replacement",!visible.Absent,true,resolutionBlocked));
             }
             return result;
         }
@@ -62,26 +77,44 @@ public sealed partial class TextPackStore
         lock(gate) {
             if(!Guid.TryParseExact(id,"D",out var operation))throw new InvalidDataException("Invalid replacement identity.");
             var entry=Replacements.Entries().SingleOrDefault(entry=>entry.Operation==operation)??throw new InvalidDataException("Unknown replacement.");
-            var inspection=Replacements.Inspect(entry);var visible=ReplacementVisible(entry);
-            var bytes=version switch{"current"=>visible.Data,"prepared"=>inspection.Prepared,"displaced"=>inspection.Displaced,_=>throw new InvalidDataException("Unknown replacement version.")};
+            var visible=RecoveryCurrent(entry);
+            if(entry.Kind=="removal"&&!Replacements.RemovalHasCapturedInode(entry)) {
+                var uncaptured=Replacements.InspectUncaptured(entry);
+                if(version=="current")return visible;
+                if(version=="displaced")return new(entry.Path,null,entry.ItemId,null,Absent:true);
+                if(version!="prepared")throw new InvalidDataException("Unknown replacement version.");
+                return new(entry.Path,entry.PreparedHash,Identity(uncaptured.Prepared),uncaptured.Prepared);
+            }
+            var inspection=Replacements.Inspect(entry);
+            if(version=="current"&&visible.Absent)return visible;
+            var bytes=version switch{"current"=>visible.Data!,"prepared"=>inspection.Prepared,"displaced"=>inspection.Displaced,_=>throw new InvalidDataException("Unknown replacement version.")};
             string identity;
             try {identity=Identity(bytes);}
-            catch(Exception error)when(version=="displaced"&&error is IOException or InvalidDataException or System.Text.Json.JsonException) {
+            catch(Exception error)when((version=="displaced"||entry.Kind=="removal"&&version=="current")&&error is IOException or InvalidDataException or System.Text.Json.JsonException) {
                 return new(visible.Path,Hash(bytes),"",bytes,true,"This retained file cannot be opened as a TextText document. Download its exact bytes for recovery.");
             }
-            if(version!="displaced"&&identity!=entry.ItemId)throw new InvalidDataException("Retained replacement identity changed.");
+            if(version!="displaced"&&!(entry.Kind=="removal"&&version=="current")&&identity!=entry.ItemId)throw new InvalidDataException("Retained replacement identity changed.");
             return new(visible.Path,Hash(bytes),identity,bytes);
         }
     }
-    public void ResolveReplacement(string id,string path,string itemId,string currentHash,string preparedHash,string displacedHash,Action? beforeAcknowledge=null)
+    public void ResolveReplacement(string id,string path,string itemId,string? currentHash,string preparedHash,string displacedHash,Action? beforeAcknowledge=null,bool currentPresent=true,string kind="replacement")
     {
         lock(gate) {
             if(!Guid.TryParseExact(id,"D",out var operation))throw new InvalidDataException("Invalid replacement identity.");
             var entry=Replacements.Entries().SingleOrDefault(entry=>entry.Operation==operation)??throw new InvalidDataException("Unknown replacement.");
-            var visible=ReplacementVisible(entry);
-            if(visible.Path!=path||visible.ItemId!=itemId||visible.Hash!=currentHash)throw new FileChangedException();
-            Replacements.ResolveKeepCurrent(operation,itemId,path,new(currentHash,preparedHash,displacedHash),beforeAcknowledge);
+            var visible=RecoveryCurrent(entry,strict:true);
+            if(entry.ItemId!=itemId||(entry.Kind??"replacement")!=kind||visible.Path!=path||!visible.Absent!=currentPresent||visible.Hash!=currentHash)throw new FileChangedException();
+            Replacements.ResolveKeepCurrent(operation,itemId,path,new(currentHash,preparedHash,displacedHash,CurrentPresent:currentPresent),beforeAcknowledge);
         }
         Changed?.Invoke();
     }
+    public void CancelUncapturedDeletion(string id,string path,string itemId,string preparedHash,bool currentPresent,string? currentHash,Action? beforeAcknowledge=null)
+    {
+        lock(gate) {
+            if(!Guid.TryParseExact(id,"D",out var operation))throw new InvalidDataException("Invalid deletion identity.");
+            Replacements.CancelUncapturedDeletion(operation,path,itemId,preparedHash,currentPresent,currentHash,beforeAcknowledge);
+        }
+        Changed?.Invoke();
+    }
+
 }

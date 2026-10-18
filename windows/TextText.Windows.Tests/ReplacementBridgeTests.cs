@@ -7,9 +7,9 @@ using TextText.Windows;
 static class ReplacementBridgeTests
 {
     static JsonElement Json(object value)=>JsonSerializer.SerializeToElement(value);
-    static byte[] Pack(string text) {
+    static byte[] Pack(string text,string id="bridge-recovery") {
         using var output=new MemoryStream();using(var archive=new ZipArchive(output,ZipArchiveMode.Create,true))
-        using(var writer=new StreamWriter(archive.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: \"bridge-recovery\"\n---\n"+text);
+        using(var writer=new StreamWriter(archive.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: \""+id+"\"\n---\n"+text);
         return output.ToArray();
     }
     public static async Task Run(string temporary,Action<bool,string> check)
@@ -42,6 +42,31 @@ static class ReplacementBridgeTests
             _=await bridge.InvokeAsync("files.resolveReplacement",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=operation.ToString("D"),path=file.Path,itemId=file.ItemId,currentHash=file.Hash,preparedHash=file.Hash,displacedHash=TextPackStore.Hash(displaced)}),CancellationToken.None);
             var resolved=Json((await bridge.InvokeAsync("files.replacementList",Json(Scope(root)),CancellationToken.None))!);
             check(resolved.GetArrayLength()==1&&resolved[0].GetProperty("resolved").GetBoolean(),"native explicit recovery keeps readonly retained versions discoverable");
+            var removedBytes=Pack("removed baseline","bridge-removed");var removed=store.Write("Removed.textpack",removedBytes);var removal=Guid.NewGuid();
+            registry.Register(removal,removed.ItemId,removed.Path,removed.Hash,removed.Hash,kind:"removal");
+            var removalDirectory=RetainedFileReplacement.OperationDirectory(store.Resolve(removed.Path),removal);Directory.CreateDirectory(removalDirectory);
+            RetainedFileReplacement.Create(Path.Combine(removalDirectory,"prepared"),removedBytes);
+            File.Move(store.Resolve(removed.Path),Path.Combine(removalDirectory,"displaced"));
+            RetainedFileReplacement.SaveJson(Path.Combine(removalDirectory,"manifest.json"),new RetainedFileReplacement.Manifest(1,removal,"Removed.textpack",removed.Hash,removed.Hash,"conflict",Kind:"removal"),creating:true);
+            var absent=Json((await bridge.InvokeAsync("files.replacementRead",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=removal.ToString("D"),version="current"}),CancellationToken.None))!);
+            check(absent.GetProperty("absent").GetBoolean()&&absent.GetProperty("hash").ValueKind==JsonValueKind.Null&&absent.GetProperty("data").ValueKind==JsonValueKind.Null,"native removal bridge returns explicit absence without an empty TextPack");
+            refused=false;try{_=await bridge.InvokeAsync("files.resolveReplacement",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=removal.ToString("D"),path=removed.Path,itemId=removed.ItemId,currentHash=(string?)null,preparedHash=removed.Hash,displacedHash=removed.Hash,kind="replacement",currentPresent=false}),CancellationToken.None);}catch(InvalidDataException){refused=true;}
+            check(refused,"native removal consent refuses replacement-kind absence");
+            _=await bridge.InvokeAsync("files.resolveReplacement",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=removal.ToString("D"),path=removed.Path,itemId=removed.ItemId,currentHash=(string?)null,preparedHash=removed.Hash,displacedHash=removed.Hash,kind="removal",currentPresent=false}),CancellationToken.None);
+            check(!File.Exists(store.Resolve(removed.Path))&&store.ReplacementRecoveryList().Single(entry=>entry.Id==removal.ToString("D")).Resolved,"native keep-deleted consent preserves absence and readonly retained versions");
+            var uncapturedBytes=Pack("uncaptured baseline","bridge-uncaptured");var uncaptured=store.Write("Uncaptured.textpack",uncapturedBytes);var unfinished=Guid.NewGuid();
+            registry.Register(unfinished,uncaptured.ItemId,uncaptured.Path,uncaptured.Hash,uncaptured.Hash,kind:"removal");
+            var unfinishedDirectory=RetainedFileReplacement.OperationDirectory(store.Resolve(uncaptured.Path),unfinished);Directory.CreateDirectory(unfinishedDirectory);
+            RetainedFileReplacement.Create(Path.Combine(unfinishedDirectory,"prepared"),uncapturedBytes);
+            RetainedFileReplacement.SaveJson(Path.Combine(unfinishedDirectory,"manifest.json"),new RetainedFileReplacement.Manifest(1,unfinished,"Uncaptured.textpack",uncaptured.Hash,uncaptured.Hash,"pending",Kind:"removal"),creating:true);
+            var recreated=Pack("recreated current","bridge-current-other");File.WriteAllBytes(store.Resolve(uncaptured.Path),recreated);
+            var unfinishedList=Json((await bridge.InvokeAsync("files.replacementList",Json(Scope(root)),CancellationToken.None))!);
+            var unfinishedRow=unfinishedList.EnumerateArray().Single(row=>row.GetProperty("id").GetString()==unfinished.ToString("D"));
+            check(!unfinishedRow.GetProperty("captured").GetBoolean()&&unfinishedRow.GetProperty("displacedHash").ValueKind==JsonValueKind.Null,"native uncaptured recovery row reports no displaced version honestly");
+            var noCapture=Json((await bridge.InvokeAsync("files.replacementRead",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=unfinished.ToString("D"),version="displaced"}),CancellationToken.None))!);
+            check(noCapture.GetProperty("absent").GetBoolean()&&noCapture.GetProperty("data").ValueKind==JsonValueKind.Null,"native uncaptured displaced read never fabricates an empty archive");
+            _=await bridge.InvokeAsync("files.cancelUncapturedDeletion",Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=unfinished.ToString("D"),path=uncaptured.Path,itemId=uncaptured.ItemId,preparedHash=uncaptured.Hash,currentPresent=true,currentHash=TextPackStore.Hash(recreated)}),CancellationToken.None);
+            check(File.ReadAllBytes(store.Resolve(uncaptured.Path)).SequenceEqual(recreated)&&store.ReplacementRecoveryList().Single(entry=>entry.Id==unfinished.ToString("D")).Resolved,"native cancel unfinished deletion preserves recreated bytes and keeps readonly snapshots");
             transport.Release.TrySetResult();await bridge.RetireAsync();
             var closed=false;try{await bridge.InvokeAsync("files.replacementRead",Json(Scope(root)),CancellationToken.None);}catch(Exception error)when(error is OperationCanceledException or ObjectDisposedException){closed=true;}
             check(closed,"retired native bridge refuses recovery reads from the old connection");

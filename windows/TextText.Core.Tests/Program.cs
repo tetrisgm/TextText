@@ -12,7 +12,7 @@ static class Test
  if(args.SequenceEqual(new[]{"--retained-replacement-fixtures"})) {
  var fixtureBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&fixtureBase.StartsWith("/var/"))fixtureBase="/private"+fixtureBase;
  var fixture=Path.Combine(fixtureBase,"texttext-retained-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);
- RetainedReplacementTests.Run(fixture,Assert);RetainedReplacementAdoptionTests.Run(fixture,Assert);RecoveryAssetTests.Run(fixture,Assert);
+ RetainedRemovalTests.Run(fixture,Assert);RetainedReplacementTests.Run(fixture,Assert);RetainedReplacementAdoptionTests.Run(fixture,Assert);RecoveryAssetTests.Run(fixture,Assert);
  await RetainedReplacementSyncFenceTests.Run(fixture,Assert);
  Console.WriteLine("All retained replacement fixtures passed. Receipt: "+fixture);return;
  }
@@ -30,7 +30,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- RetainedReplacementTests.Run(temp,Assert);
+ RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);

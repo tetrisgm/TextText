@@ -250,13 +250,24 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
             case "files.replacementList": return ReplacementScope(p,ct,()=>files.ReplacementRecoveryList().Select(entry=>new {
-                id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved }).ToArray());
+                id=entry.Id,path=entry.Path,itemId=entry.ItemId,currentHash=entry.CurrentHash,preparedHash=entry.PreparedHash,displacedHash=entry.DisplacedHash,savedAt=entry.SavedAt,resolved=entry.Resolved,kind=entry.Kind,currentPresent=entry.CurrentPresent,captured=entry.Captured,resolutionBlocked=entry.ResolutionBlocked }).ToArray());
             case "files.replacementRead": return ReplacementScope(p,ct,()=>{
                 var file=files.ReplacementRecoveryRead(Required(p,"id"),Required(p,"version"));
+                if(file.Absent)return (object)new {absent=true,path=file.Path,hash=(string?)null,data=(string?)null};
+                if(file.Data is null||file.Hash is null)throw new InvalidDataException("Recovery bytes are unavailable. Reopen Recovery.");
                 return new {path=file.Path,hash=file.Hash,itemId=file.ItemId,data=Convert.ToBase64String(file.Data),opaque=file.Opaque,parseError=file.ParseError};
             });
             case "files.resolveReplacement": return ReplacementScope(p,ct,()=>{
-                files.ResolveReplacement(Required(p,"id"),Required(p,"path"),Required(p,"itemId"),Required(p,"currentHash"),Required(p,"preparedHash"),Required(p,"displacedHash"),()=>RequireReplacementScope(p,ct));
+                var kind=p.TryGetProperty("kind",out var kindValue)?kindValue.GetString():"replacement";
+                var present=!p.TryGetProperty("currentPresent",out var presenceValue)||presenceValue.GetBoolean();
+                if(kind is not ("replacement" or "removal")||(!present&&(kind!="removal"||!p.TryGetProperty("currentHash",out var hashValue)||hashValue.ValueKind!=JsonValueKind.Null)))throw new InvalidDataException("The inspected file changed. Reopen Recovery.");
+                files.ResolveReplacement(Required(p,"id"),Required(p,"path"),Required(p,"itemId"),present?Required(p,"currentHash"):null,Required(p,"preparedHash"),Required(p,"displacedHash"),()=>RequireReplacementScope(p,ct),currentPresent:present,kind:kind);
+                Changed();return new {resolved=true};
+            });
+            case "files.cancelUncapturedDeletion": return ReplacementScope(p,ct,()=>{
+                var present=p.GetProperty("currentPresent").GetBoolean();
+                if(!present&&(!p.TryGetProperty("currentHash",out var hashValue)||hashValue.ValueKind!=JsonValueKind.Null))throw new InvalidDataException("The inspected file changed. Reopen Recovery.");
+                files.CancelUncapturedDeletion(Required(p,"id"),Required(p,"path"),Required(p,"itemId"),Required(p,"preparedHash"),present,present?Required(p,"currentHash"):null,()=>RequireReplacementScope(p,ct));
                 Changed();return new {resolved=true};
             });
             case "files.recoveryAssets": return ReplacementScope(p,ct,()=>{
