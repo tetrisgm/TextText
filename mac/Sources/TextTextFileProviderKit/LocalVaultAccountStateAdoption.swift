@@ -36,6 +36,7 @@ public enum LocalVaultAccountStateAdoption {
         return target
     }
     private static func limit(_ path: String) -> Int {
+        if path.hasPrefix("replacement-index/") { return 8192 }
         if path == "sync/state.json" { return 90 * 1024 * 1024 }
         if path == "workspace-capabilities.json" { return 8 * 1024 * 1024 }
         if path.hasSuffix("/intent.json") { return 9 * 1024 * 1024 }
@@ -72,11 +73,16 @@ public enum LocalVaultAccountStateAdoption {
     private static func allowed(_ path: String) -> Bool {
         if ["sync/state.json", "workspace-capabilities.json"].contains(path) { return true }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        if parts.count == 2, parts[0] == "replacement-index", parts[1].hasSuffix(".json"),
+           UUID(uuidString: String(parts[1].dropLast(5))) != nil { return true }
         return parts.count == 3 && parts[0] == "shared-editing" && (try? LocalVaultAccountIdentity.validate(parts[1])) != nil && active.contains(parts[2])
     }
     private static func bind(_ original: Data, path: String, root: URL, owner: LocalVaultAccountRootOwnership.Owner) throws -> (Data, Bool) {
         guard var object = try JSONSerialization.jsonObject(with: original) as? [String: Any] else { throw invalid() }
         try version(object)
+        if path.hasPrefix("replacement-index/") {
+            return try ReplacementRecoveryRegistry.bindForAdoption(original, path: path, root: root, owner: owner)
+        }
         if path == "sync/state.json" {
             try LocalVaultSync.validateStateForAdoption(original, root: root, binding: owner.binding)
             let changed = try unbound(object, account: owner.accountId); object["accountId"] = owner.accountId
@@ -120,6 +126,16 @@ public enum LocalVaultAccountStateAdoption {
                     let relative = "shared-editing/" + item.lastPathComponent + "/" + file.lastPathComponent
                     guard allowed(relative), result.count < 2048 else { throw invalid() }; result.append(relative)
                 }
+            }
+        }
+        let replacements = try safe(directory, "replacement-index")
+        if manager.fileExists(atPath: replacements.path) {
+            for listed in try manager.contentsOfDirectory(at: replacements, includingPropertiesForKeys: [.isRegularFileKey]) {
+                if listed.lastPathComponent.hasPrefix("."), UUID(uuidString: String(listed.lastPathComponent.dropFirst())) != nil { continue }
+                let file = try safe(replacements, listed.lastPathComponent)
+                guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+                      allowed("replacement-index/" + file.lastPathComponent) else { throw invalid() }
+                result.append("replacement-index/" + file.lastPathComponent)
             }
         }
         return result.sorted()

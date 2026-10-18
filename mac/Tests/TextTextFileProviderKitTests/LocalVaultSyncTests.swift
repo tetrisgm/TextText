@@ -1036,7 +1036,7 @@ final class LocalVaultSyncTests: XCTestCase {
     }
     func testBinaryRecoveryFaultRetainsOriginalStagedAssetAndOperation() async throws {
         let parent = root!
-        for damage in ["missing", "corrupt", "recovery", "journal"] {
+        for damage in ["missing", "corrupt", "recovery", "provenance", "journal"] {
             root = parent.appendingPathComponent(damage)
             defer { root = parent }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1057,7 +1057,7 @@ final class LocalVaultSyncTests: XCTestCase {
                     try FileManager.default.moveItem(at: state, to: state.appendingPathExtension("fixture-retained"))
                     try FileManager.default.createDirectory(at: state, withIntermediateDirectories: false)
                 } else {
-                    let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + "/local.textpack")
+                    let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + (damage == "provenance" ? "/asset-provenance.json" : "/local.textpack"))
                     try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try Data("corrupt recovery".utf8).write(to: copy)
                 }
@@ -1079,8 +1079,8 @@ final class LocalVaultSyncTests: XCTestCase {
             XCTAssertEqual(pending["conflicted"] as? Bool, false)
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), local)
             try submitted.write(to: stateURL.deletingLastPathComponent().appendingPathComponent("outbox/" + operation + ".asset"))
-            if damage == "recovery" {
-                let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + "/local.textpack")
+            if damage == "recovery" || damage == "provenance" {
+                let copy = workspace.appendingPathComponent(".texttext/conflicts/" + operation + (damage == "provenance" ? "/asset-provenance.json" : "/local.textpack"))
                 XCTAssertEqual(try Data(contentsOf: copy), Data("corrupt recovery".utf8))
                 try FileManager.default.moveItem(at: copy, to: copy.appendingPathExtension("fixture-quarantine"))
             }
@@ -1091,6 +1091,13 @@ final class LocalVaultSyncTests: XCTestCase {
             XCTAssertEqual(requests.map(\.operationId), [operation, operation])
             let retained = workspace.appendingPathComponent(".texttext/conflicts/" + operation)
             XCTAssertEqual(try Data(contentsOf: retained.appendingPathComponent("local-asset.bin")), submitted)
+            let provenance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: retained.appendingPathComponent("asset-provenance.json"))) as? [String: Any])
+            XCTAssertEqual(provenance["operationId"] as? String, operation)
+            XCTAssertEqual(provenance["itemId"] as? String, itemId)
+            XCTAssertEqual(provenance["entryPath"] as? String, "assets/data.txt")
+            XCTAssertEqual(provenance["rawFilename"] as? String, "local-asset.bin")
+            XCTAssertEqual(provenance["payloadHash"] as? String, TextTextStableDigest.sha256Hex(submitted))
+            XCTAssertEqual(provenance["rawHash"] as? String, TextTextStableDigest.sha256Hex(submitted))
             XCTAssertEqual(try Data(contentsOf: retained.appendingPathComponent("remote.textpack")), remote)
             try await sync.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
         }

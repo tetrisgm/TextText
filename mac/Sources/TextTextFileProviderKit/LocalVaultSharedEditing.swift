@@ -111,6 +111,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         var assetHash: String?
     }
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
         guard itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) == itemId.startIndex..<itemId.endIndex else { throw LocalVaultSharedFailure.invalid }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -351,6 +352,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         return prefix
     }
     private func finishBinary(_ intent: BinaryIntent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultDocumentStore.Document {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.itemId)
         guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         guard validHash(intent.beforeHash), validHash(intent.afterHash),
               intent.entryPath.hasPrefix("assets/"), intent.entryPath.utf8.count <= 512,
@@ -376,10 +378,14 @@ struct LocalVaultSharedEditingStore: Sendable {
                   saved.retiredReason == nil,
                   saved.projectedHash == intent.beforeHash || saved.projectedHash == intent.afterHash else { throw LocalVaultSharedFailure.staleSession }
             saved.projectedHash = intent.afterHash
+            try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.itemId)
             try write(bytes, to: directory.appendingPathComponent("projection.textpack"))
+            try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.itemId)
             try write(JSONEncoder().encode(saved), to: directory.appendingPathComponent("checkpoint.json"))
         }
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.itemId)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("binary-intent.json"))
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.itemId)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("binary-next.textpack"))
         return document
     }
@@ -463,6 +469,7 @@ struct LocalVaultSharedEditingStore: Sendable {
         return try finishMove(intent, directory: directory, interruptAfterMove: interruptAfterMove)
     }
     private func finishMove(_ intent: MoveIntent, directory: URL, interruptAfterMove: Bool = false) throws -> LocalVaultSharedCheckpoint {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         try validate(intent.checkpoint)
         let store = LocalVaultDocumentStore(root: root)
@@ -479,11 +486,14 @@ struct LocalVaultSharedEditingStore: Sendable {
         let moved = try store.read(path: target.path)
         guard moved.hash == target.projectedHash || intent.adoptsExternalChange == true,
               MarkdownIdentityCodec.extract(from: moved.contents.markdown)?.itemId == target.itemId else { throw LocalVaultSyncFailure.changed }
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try write(JSONEncoder().encode(target), to: directory.appendingPathComponent("checkpoint.json"))
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("move-intent.json"))
         return target
     }
     private func finish(_ intent: Intent, directory: URL, interruptAfterWrite: Bool = false) throws -> LocalVaultSharedMaterialization {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         guard intent.version == nil || intent.version == 1 else { throw LocalVaultSharedFailure.invalid }
         try validate(intent.checkpoint)
         let store = LocalVaultDocumentStore(root: root)
@@ -507,7 +517,9 @@ struct LocalVaultSharedEditingStore: Sendable {
             document = current
         } else {
             checkpoint.retiredReason = "The file changed outside shared editing. Its saved shared journal is available for recovery."
+            try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
             try write(JSONEncoder().encode(checkpoint), to: directory.appendingPathComponent("checkpoint.json"))
+            try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
             try FileManager.default.removeItem(at: directory.appendingPathComponent("intent.json"))
             throw LocalVaultSyncFailure.changed
         }
@@ -515,13 +527,17 @@ struct LocalVaultSharedEditingStore: Sendable {
         checkpoint.projectedHash = document.hash
         let bytes = try Data(contentsOf: store.url(for: document.path))
         guard TextTextStableDigest.sha256Hex(bytes) == document.hash else { throw LocalVaultSyncFailure.changed }
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try write(bytes, to: directory.appendingPathComponent("projection.textpack"))
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try write(JSONEncoder().encode(checkpoint), to: directory.appendingPathComponent("checkpoint.json"))
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: intent.checkpoint.itemId)
         try FileManager.default.removeItem(at: directory.appendingPathComponent("intent.json"))
         return LocalVaultSharedMaterialization(document: document, checkpoint: checkpoint)
     }
     func materialize(checkpoint: LocalVaultSharedCheckpoint, expectedHash: String, markdown: String, documentJSON: String,
                      interruptAfterIntent: Bool = false, interruptAfterWrite: Bool = false) throws -> LocalVaultSharedMaterialization {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: checkpoint.itemId)
         try validate(checkpoint)
         _ = try presentation(checkpoint)
         guard markdown.utf8.count <= 2 * 1024 * 1024, documentJSON.utf8.count <= 2 * 1024 * 1024,

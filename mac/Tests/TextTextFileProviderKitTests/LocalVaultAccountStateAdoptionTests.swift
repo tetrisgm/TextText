@@ -255,4 +255,54 @@ final class LocalVaultAccountStateAdoptionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: target), changed)
         XCTAssertTrue(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent(LocalVaultAccountRootOwnership.pendingAdoption).path))
     }
+    private func addRetainedReplacement(_ fixture: Fixture) throws -> (index: URL, operation: UUID, prepared: Data, displaced: Data) {
+        let target = fixture.root.appendingPathComponent("Notes/Replacement.textpack")
+        let original = try pack("replacement-adoption", "original"), prepared = try pack("replacement-adoption", "prepared"), external = try pack("replacement-adoption", "external")
+        try original.write(to: target)
+        let operation = UUID(), registry = ReplacementRecoveryRegistry(root: fixture.root)
+        XCTAssertThrowsError(try RetainedFileReplacement.replace(target, expectedHash: TextTextStableDigest.sha256Hex(original), prepared: prepared, operation: operation) { phase in
+            if phase == "prepared" { try registry.register(operation: operation, itemId: "replacement-adoption", path: "Notes/Replacement.textpack", expectedHash: TextTextStableDigest.sha256Hex(original), preparedHash: TextTextStableDigest.sha256Hex(prepared)) }
+            if phase == "beforeSwap" { try external.write(to: target, options: .atomic) }
+        })
+        return (fixture.directory.appendingPathComponent("replacement-index/" + operation.uuidString + ".json"), operation, prepared, external)
+    }
+    func testExplicitAdoptionMigratesUnownedRegistryTransactionAndPreservesBothVersions() async throws {
+        for stop in ["intent", "applied"] {
+            let f = try await create("replacement-" + stop), retained = try addRetainedReplacement(f)
+            let staging = retained.index.deletingLastPathComponent().appendingPathComponent("." + UUID().uuidString)
+            let unfinished = Data("uncommitted staging bytes".utf8)
+            try unfinished.write(to: staging)
+            let before = try Data(contentsOf: retained.index)
+            let relative = "replacement-index/" + retained.operation.uuidString + ".json"
+            XCTAssertThrowsError(try adopt(f) { phase in if phase == (stop == "intent" ? "intent" : "applied:" + relative) { throw Interrupted() } })
+            let result = try adopt(f)
+            let backup = try XCTUnwrap(result.recoveryDirectory).appendingPathComponent("before/" + relative)
+            XCTAssertEqual(try Data(contentsOf: backup), before)
+            XCTAssertEqual(try Data(contentsOf: staging), unfinished)
+            let registry = ReplacementRecoveryRegistry(root: f.root), entry = try XCTUnwrap(registry.entries().first)
+            let inspection = try registry.inspect(entry)
+            XCTAssertEqual(inspection.prepared, retained.prepared)
+            XCTAssertEqual(inspection.displaced, retained.displaced)
+            XCTAssertThrowsError(try LocalVaultDocumentStore(root: f.root).read(path: "Notes/Replacement.textpack"), "Adoption never resolves the retained content conflict.")
+            let store = LocalVaultDocumentStore(root: f.root), shown = try XCTUnwrap(store.replacementRecoveryList().first)
+            try store.resolveReplacement(id: shown.id, path: shown.path, itemId: shown.itemId, currentHash: shown.currentHash, preparedHash: shown.preparedHash, displacedHash: shown.displacedHash)
+            XCTAssertEqual(try store.read(path: shown.path).hash, TextTextStableDigest.sha256Hex(retained.prepared))
+        }
+    }
+    func testAdoptionRefusesFutureForeignAndUnknownReplacementFieldsWithoutChangingIndex() async throws {
+        for mutation in ["future", "foreign", "unknown", "unknown-resolution"] {
+            let f = try await create("replacement-refusal-" + mutation), retained = try addRetainedReplacement(f)
+            var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: retained.index)) as? [String: Any])
+            if mutation == "future" { value["version"] = 999 }
+            if mutation == "foreign" { value["ownerHash"] = String(repeating: "f", count: 64) }
+            if mutation == "unknown" { value["futureRequiredPolicy"] = true }
+            if mutation == "unknown-resolution" { value["resolution"] = ["visibleHash": String(repeating: "a", count: 64), "preparedHash": String(repeating: "a", count: 64), "displacedHash": String(repeating: "a", count: 64), "futureRequiredPolicy": true] }
+            let bytes = try JSONSerialization.data(withJSONObject: value)
+            try bytes.write(to: retained.index)
+            XCTAssertThrowsError(try adopt(f))
+            XCTAssertEqual(try Data(contentsOf: retained.index), bytes)
+            XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("sync/state.json")), f.state)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent(LocalVaultAccountRootOwnership.pendingAdoption).path))
+        }
+    }
 }

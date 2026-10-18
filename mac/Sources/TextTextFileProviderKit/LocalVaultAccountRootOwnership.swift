@@ -60,8 +60,19 @@ public enum LocalVaultAccountRootOwnership {
         try publish(expected, root: canonical)
     }
     static func verify(_ target: URL, expected: Owner) throws {
-        let actual = try JSONDecoder().decode(Owner.self, from: read(target, limit: 4096))
-        guard actual.version == 1 else { throw Failure.future }
+        var actual = try JSONDecoder().decode(Owner.self, from: read(target, limit: 4096))
+        if actual.version == 2 {
+            // Device state can be outside the workspace. Its parent is the
+            // profile root for this attestation; recover the workspace scope
+            // from the expected canonical hash, never from arbitrary JSON paths.
+            try RetainedReplacementProfile.verify(stateDirectory: target.deletingLastPathComponent(), owner: actual, expectedRootHash: expected.rootHash)
+            actual.version = 1
+        } else {
+            guard actual.version == 1 else { throw Failure.future }
+            if RetainedReplacementProfile.hasPublishedMarker(stateDirectory: target.deletingLastPathComponent()) {
+                try RetainedReplacementProfile.verify(stateDirectory: target.deletingLastPathComponent(), owner: actual, expectedRootHash: expected.rootHash)
+            }
+        }
         guard actual == expected else { throw Failure.account }
     }
     // Explicit legacy adoption publishes this only after its durable migration
@@ -71,6 +82,7 @@ public enum LocalVaultAccountRootOwnership {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let marker = directory.appendingPathComponent(fileName)
         if FileManager.default.fileExists(atPath: marker.path) { try verify(marker, expected: owner); return }
+        guard !RetainedReplacementProfile.hasRetainedProfile(stateDirectory: directory) else { throw Failure.future }
         let temporary = directory.appendingPathComponent(".account-owner-" + UUID().uuidString + ".tmp")
         defer { try? FileManager.default.removeItem(at: temporary) }
         try JSONEncoder().encode(owner).write(to: temporary, options: .withoutOverwriting)

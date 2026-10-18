@@ -99,7 +99,8 @@ extension LocalVaultDocumentStore {
         var identity: String?
         if let path {
             _ = try url(for: path)
-            identity = MarkdownIdentityCodec.extract(from: try readMetadata(path: path).contents.markdown)?.itemId
+            if let retainedIdentity = try replacementRecoveryItemId(path: path) { identity = retainedIdentity }
+            else { identity = MarkdownIdentityCodec.extract(from: try readMetadata(path: path).contents.markdown)?.itemId }
         }
         let kinds = path == nil ? ["trash", "conflicts"] : ["history"]
         var entries: [RecoveryEntry] = [], scanned = 0, totalBytes = 0, truncated = false
@@ -170,4 +171,110 @@ extension LocalVaultDocumentStore {
         guard let outcome else { throw Failure.invalidPath }
         return try outcome.get()
     }
+    public struct RecoveryAssetEntry: Sendable {
+        public let id: String
+        public let filename: String
+        public let byteLength: Int
+        public let hash: String
+        public let savedAt: String
+        public let entryPath: String?
+        public let itemPath: String?
+        public let provenanceError: String?
+    }
+    public struct RecoveryAssetsPage: Sendable {
+        public let entries: [RecoveryAssetEntry]
+        public let truncated: Bool
+    }
+    private struct RecoveryAssetID: Codable {
+        let location: String
+        let hash: String
+        let byteLength: Int
+    }
+    private func recoveryAssetURL(_ location: String) throws -> URL {
+        let parts = location.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts[0] == ".texttext", parts[1] == "conflicts", parts[3] == "local-asset.bin",
+              parts[2].range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil else { throw Failure.invalidPath }
+        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+        let url = canonical.appendingPathComponent(location)
+        guard url.standardizedFileURL.path == url.path, url.resolvingSymlinksInPath().path == url.path else { throw Failure.invalidPath }
+        return url
+    }
+    private struct AssetProvenance: Decodable {
+        let version: Int
+        let operationId: String
+        let itemId: String
+        let path: String
+        let entryPath: String
+        let payloadHash: String
+        let expectedHash: String?
+        let lifecycle: String?
+        let rawFilename: String
+        let rawHash: String
+    }
+    private func recoveryAssetOrigin(_ target: URL, hash: String) -> (entryPath: String?, itemPath: String?, error: String?) {
+        let sidecar = target.deletingLastPathComponent().appendingPathComponent("asset-provenance.json")
+        guard FileManager.default.fileExists(atPath: sidecar.path) || (try? FileManager.default.destinationOfSymbolicLink(atPath: sidecar.path)) != nil else { return (nil, nil, nil) }
+        do {
+            let bytes = try StableFileSnapshot.read(sidecar, maximumBytes: 16 * 1024)
+            let value = try JSONDecoder().decode(AssetProvenance.self, from: bytes)
+            guard value.version == 1, value.operationId == target.deletingLastPathComponent().lastPathComponent,
+                  value.itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", options: .regularExpression) != nil,
+                  value.rawFilename == "local-asset.bin", value.rawHash == hash, value.payloadHash == hash,
+                  value.path.utf8.count <= 4096, value.path.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }), !value.path.contains("\\"),
+                  value.entryPath.hasPrefix("assets/"), value.entryPath.utf8.count <= 512,
+                  value.entryPath.utf8.allSatisfy({ $0 >= 32 && $0 != 127 }), !value.entryPath.contains("\\"),
+                  value.entryPath.split(separator: "/", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+                  value.expectedHash == nil || value.expectedHash!.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                  value.lifecycle == nil || (!value.lifecycle!.isEmpty && value.lifecycle!.utf8.count <= 128) else { throw Failure.invalidPath }
+            _ = try url(for: value.path)
+            return (value.entryPath, value.path, nil)
+        } catch { return (nil, nil, "Origin metadata could not be verified. The exact retained bytes can still be downloaded.") }
+    }
+    /// Raw submitted attachment bytes are independent of the later local pack.
+    /// Inspect known recovery filenames only; never infer them from live assets.
+    public func recoveryAssets() throws -> RecoveryAssetsPage {
+        let directory = root.standardizedFileURL.resolvingSymlinksInPath().appendingPathComponent(".texttext/conflicts")
+        guard directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalidPath }
+        guard FileManager.default.fileExists(atPath: directory.path) else { return .init(entries: [], truncated: false) }
+        guard let actualDirectory = realpath(directory.path, nil) else { throw Failure.invalidPath }
+        let physicalDirectory = String(cString: actualDirectory); free(actualDirectory)
+        var scanError: Error?
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey], errorHandler: { _, error in scanError = error; return false }) else { throw Failure.invalidPath }
+        var entries: [RecoveryAssetEntry] = [], scanned = 0, totalBytes = 0, truncated = false
+        for case let file as URL in enumerator {
+            scanned += 1
+            if scanned > 2000 { truncated = true; break }
+            guard file.path.hasPrefix(physicalDirectory + "/") else { throw Failure.invalidPath }
+            let relative = String(file.path.dropFirst(physicalDirectory.count + 1))
+            let parts = relative.split(separator: "/")
+            let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+            if values.isSymbolicLink == true { enumerator.skipDescendants(); if file.lastPathComponent == "local-asset.bin" { throw Failure.invalidPath }; continue }
+            if values.isDirectory == true { if parts.count >= 2 { enumerator.skipDescendants() }; continue }
+            guard parts.count == 2, file.lastPathComponent == "local-asset.bin" else { continue }
+            if entries.count >= 200 || totalBytes + (values.fileSize ?? 0) > 64 * 1024 * 1024 { truncated = true; break }
+            let location = ".texttext/conflicts/" + relative
+            let target = try recoveryAssetURL(location)
+            let bytes = try StableFileSnapshot.read(target, maximumBytes: 16 * 1024 * 1024)
+            totalBytes += bytes.count
+            let hash = TextTextStableDigest.sha256Hex(bytes)
+            let origin = recoveryAssetOrigin(target, hash: hash)
+            let token = RecoveryAssetID(location: location, hash: hash, byteLength: bytes.count)
+            let id = try JSONEncoder().encode(token).base64EncodedString()
+            entries.append(.init(id: id, filename: "local-asset.bin", byteLength: bytes.count, hash: hash,
+                savedAt: ISO8601DateFormatter().string(from: values.contentModificationDate ?? .distantPast),
+                entryPath: origin.entryPath, itemPath: origin.itemPath, provenanceError: origin.error))
+        }
+        if let scanError { throw scanError }
+        return .init(entries: entries.sorted { $0.savedAt > $1.savedAt }, truncated: truncated)
+    }
+    public func recoveryAssetRead(id: String, hash: String) throws -> Data {
+        guard id.utf8.count <= 8192, let data = Data(base64Encoded: id),
+              let token = try? JSONDecoder().decode(RecoveryAssetID.self, from: data), token.hash == hash,
+              hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              token.byteLength >= 0, token.byteLength <= 16 * 1024 * 1024 else { throw Failure.invalidPath }
+        let bytes = try StableFileSnapshot.read(recoveryAssetURL(token.location), maximumBytes: 16 * 1024 * 1024)
+        guard bytes.count == token.byteLength, TextTextStableDigest.sha256Hex(bytes) == hash else { throw Failure.changed }
+        return bytes
+    }
+
 }

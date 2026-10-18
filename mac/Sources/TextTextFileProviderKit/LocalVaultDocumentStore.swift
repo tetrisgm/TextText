@@ -206,6 +206,7 @@ public struct LocalVaultDocumentStore: Sendable {
                     templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
                     projectionJSON: projection.map { String(decoding: $0, as: UTF8.self) },
                     assets: [], logicalSize: Int(expanded))
+                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: contents.markdown)?.itemId)
                 return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents,
                     publishedAt: publishedAt(archive, prefix: prefix))
             }
@@ -218,6 +219,7 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Read only document.json from bookmark TextPacks. The feed's Read Later
     /// list and saved state share this bounded local metadata scan.
     public func keptFeedEntries() throws -> [[String: String]] {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: nil)
         var entries: [String: [String: String]] = [:]
         for path in try list() where path.hasPrefix("Bookmarks/") {
             let target = try url(for: path)
@@ -501,7 +503,10 @@ public struct LocalVaultDocumentStore: Sendable {
         // Bound bridge memory before ZIP parsing; the package reader also
         // validates expanded entry sizes and rejects traversal/symlink entries.
         let bytes = try StableFileSnapshot.read(url)
-        return try parseDocument(path: path, bytes: bytes, preserveHistory: true)
+        let document = try parseDocument(path: path, bytes: bytes, preserveHistory: false)
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId)
+        try preserve(bytes, hash: document.hash)
+        return document
     }
 
     func parseDocument(path: String, bytes: Data, preserveHistory: Bool) throws -> Document {

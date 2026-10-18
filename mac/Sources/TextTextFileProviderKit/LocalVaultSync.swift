@@ -422,7 +422,11 @@ public actor LocalVaultSync {
         return (saved.path, saved.projectedHash)
     }
     /// Rechecked immediately before local install/staging as actor reentrancy can activate editing during network awaits.
+    private func assertReplacementReadable(itemId: String) throws {
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
+    }
     private func sharedProtection(itemId: String) throws -> Bool {
+        try assertReplacementReadable(itemId: itemId)
         let checkpoint = try readSharedCheckpoint(itemId: itemId)
         let live = sharedSessions[itemId]
         guard checkpoint != nil || live != nil else { return false }
@@ -611,7 +615,9 @@ public actor LocalVaultSync {
     }
 
     private func preserveBinaryConflict(_ pending: BinaryPending) async throws -> LocalVaultRemotePack {
+        try assertReplacementReadable(itemId: pending.itemId)
         let remote = try await transport.download(itemId: pending.itemId)
+        try assertReplacementReadable(itemId: pending.itemId)
         try validate(remote, itemId: pending.itemId, path: remote.relativePath)
         let staged = try stagedBinaryBytes(pending)
         let local = try StableFileSnapshot.read(LocalVaultDocumentStore(root: root).url(for: pending.path))
@@ -626,6 +632,24 @@ public actor LocalVaultSync {
         if let bytes = staged {
             let assetPath = "\(folder)/local-asset.bin"
             try writeVaultRecovery(bytes, to: root.appendingPathComponent(assetPath))
+            struct Provenance: Encodable {
+                let version: Int
+                let operationId: String
+                let itemId: String
+                let path: String
+                let entryPath: String
+                let payloadHash: String
+                let expectedHash: String?
+                let lifecycle: String?
+                let rawFilename: String
+                let rawHash: String
+            }
+            let hash = TextTextStableDigest.sha256Hex(bytes)
+            let provenance = Provenance(version: 1, operationId: pending.operationId, itemId: pending.itemId,
+                path: pending.path, entryPath: pending.entryPath, payloadHash: hash, expectedHash: pending.expectedHash,
+                lifecycle: pending.lifecycle, rawFilename: "local-asset.bin", rawHash: hash)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            try writeVaultRecovery(encoder.encode(provenance), to: destination.appendingPathComponent("asset-provenance.json"))
             paths.append(assetPath)
         }
         state.conflicts[pending.itemId] = Conflict(localHash: localHash, remoteRevision: remote.revision,
@@ -634,6 +658,7 @@ public actor LocalVaultSync {
     }
 
     private func adoptBinaryWinner(_ pending: BinaryPending, winner: LocalVaultRemotePack) throws -> Bool {
+        try assertReplacementReadable(itemId: pending.itemId)
         let path = pending.path, itemId = pending.itemId
         let winnerAsset = try binaryAssets(data: winner.data)[pending.entryPath]
         let winnerHash = winnerAsset.map(TextTextStableDigest.sha256Hex)
@@ -665,6 +690,7 @@ public actor LocalVaultSync {
     }
 
     private func syncOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
+        try assertReplacementReadable(itemId: itemId)
         if let pending = state.binaryOutbox?[itemId], !pending.conflicted,
            !remote.isDeleted, (pending.lifecycle != remote.lifecycle || pending.path != remote.relativePath) {
             _ = try await preserveBinaryConflict(pending)
@@ -677,12 +703,14 @@ public actor LocalVaultSync {
               let baseline = state.baselines[itemId], baseline.path == path,
               state.lifecycles?[itemId] == remote.lifecycle,
               await transport.canWrite(itemId: itemId, path: path, existing: true) else { return false }
+        try assertReplacementReadable(itemId: itemId)
         var pending = state.binaryOutbox?[itemId]
         if let pending, pending.conflicted {
             guard let conflict = state.conflicts[itemId], conflict.remotePath == path,
                   conflict.paths.allSatisfy({ FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path) })
             else { return false }
             let winner = try await transport.download(itemId: itemId)
+            try assertReplacementReadable(itemId: itemId)
             guard winner.revision == conflict.remoteRevision else { return false }
             try validate(winner, itemId: itemId, path: path)
             return try adoptBinaryWinner(pending, winner: winner)
@@ -720,6 +748,7 @@ public actor LocalVaultSync {
             let revision = try await transport.binaryPatch(itemId: itemId, operationId: pending.operationId,
                 entryPath: pending.entryPath, expectedHash: pending.expectedHash,
                 expectedLifecycle: pending.lifecycle, bytes: bytes)
+            try assertReplacementReadable(itemId: itemId)
             let previous = state
             if state.binaryBaselines == nil { state.binaryBaselines = [:] }
             if bytes == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }
@@ -742,6 +771,7 @@ public actor LocalVaultSync {
         }
     }
     private func receiveOpenBinary(itemId: String, path: String, remote: LocalVaultRemoteItem) async throws -> Bool {
+        try assertReplacementReadable(itemId: itemId)
         guard !remote.isDeleted, remote.relativePath == path,
               let baseline = state.baselines[itemId], baseline.path == path,
               state.binaryRevisions?[itemId] != remote.revision,
@@ -750,6 +780,7 @@ public actor LocalVaultSync {
               state.conflicts[itemId] == nil,
               state.lifecycles?[itemId] == remote.lifecycle else { return false }
         let manifest = try await transport.binaryManifest(itemId: itemId)
+        try assertReplacementReadable(itemId: itemId)
         guard manifest.revision == remote.revision else { throw LocalVaultSyncFailure.changed }
         var incoming: [String: LocalVaultBinaryManifest.Entry] = [:]
         for entry in manifest.entries {
@@ -769,6 +800,7 @@ public actor LocalVaultSync {
                 let bytes: Data?
                 if incoming[entryPath] != nil { bytes = try await transport.binaryRead(itemId: itemId, entryPath: entryPath) }
                 else { bytes = nil }
+                try assertReplacementReadable(itemId: itemId)
                 guard bytes == nil || (bytes!.count == incoming[entryPath]!.size && TextTextStableDigest.sha256Hex(bytes!) == target) else { throw LocalVaultSyncFailure.invalidResponse }
                 let current = try LocalVaultDocumentStore(root: root).read(path: path)
                 let updated = try sharedStore.applyRemoteBinary(itemId: itemId, path: path,
@@ -807,6 +839,7 @@ public actor LocalVaultSync {
     /// expectedLocal nil means create-only. File coordination and a final byte
     /// check prevent a download from replacing an intervening editor save.
     private func install(_ pack: LocalVaultRemotePack, itemId: String, path: String, expectedLocal: String?) throws {
+        try assertReplacementReadable(itemId: itemId)
         guard try !sharedProtection(itemId: itemId) else { throw LocalVaultSharedFailure.protected }
         try validate(pack, itemId: itemId, path: path)
         // Bind the installed bytes, not an earlier manifest snapshot, to their
@@ -821,33 +854,30 @@ public actor LocalVaultSync {
             guard marker.version == 1, !marker.generation.isEmpty else { throw LocalVaultSyncFailure.invalidResponse }
             installedLifecycle = marker.generation
         }
-        let target = try LocalVaultDocumentStore(root: root).url(for: path)
-        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        var error: NSError?
-        var result: Result<Void, Error>?
-        NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &error) { target in
-            result = Result {
-                let exists = FileManager.default.fileExists(atPath: target.path)
-                if let expectedLocal {
-                    guard exists, try hash(at: target) == expectedLocal else { throw LocalVaultSyncFailure.changed }
-                } else if exists { throw LocalVaultSyncFailure.changed }
-                let staging = target.deletingLastPathComponent().appendingPathComponent(".texttext-download-\(UUID().uuidString)")
-                try pack.data.write(to: staging, options: .atomic)
-                defer { try? FileManager.default.removeItem(at: staging) }
-                if exists {
-                    let history = root.appendingPathComponent(".texttext/history")
-                    try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
-                    let before = try Data(contentsOf: target)
-                    guard TextTextStableDigest.sha256Hex(before) == expectedLocal else { throw LocalVaultSyncFailure.changed }
-                    let recovery = history.appendingPathComponent("\(expectedLocal!).textpack")
-                    if !FileManager.default.fileExists(atPath: recovery.path) { try before.write(to: recovery, options: .atomic) }
-                    _ = try FileManager.default.replaceItemAt(target, withItemAt: staging)
-                } else { try FileManager.default.moveItem(at: staging, to: target) }
+        let store = LocalVaultDocumentStore(root: root)
+        if let expectedLocal {
+            // One replacement primitive owns editor and downloaded projections.
+            // In particular, a final-check race must retain the displaced inode.
+            _ = try store.replaceExact(path: path, expectedHash: expectedLocal, bytes: pack.data)
+        } else {
+            let target = try store.url(for: path)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var error: NSError?
+            var result: Result<Void, Error>?
+            NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &error) { target in
+                result = Result {
+                    try assertReplacementReadable(itemId: itemId)
+                    guard !FileManager.default.fileExists(atPath: target.path) else { throw LocalVaultSyncFailure.changed }
+                    let staging = target.deletingLastPathComponent().appendingPathComponent(".texttext-download-\(UUID().uuidString)")
+                    try pack.data.write(to: staging, options: .atomic)
+                    defer { try? FileManager.default.removeItem(at: staging) }
+                    try FileManager.default.moveItem(at: staging, to: target)
+                }
             }
+            if let error { throw error }
+            guard let result else { throw LocalVaultSyncFailure.changed }
+            try result.get()
         }
-        if let error { throw error }
-        guard let result else { throw LocalVaultSyncFailure.changed }
-        try result.get()
         if let installedLifecycle {
             if state.lifecycles == nil { state.lifecycles = [:] }
             state.lifecycles?[itemId] = installedLifecycle
@@ -950,6 +980,7 @@ public actor LocalVaultSync {
         replacement.path = remote.relativePath
         replacement.operationId = UUID().uuidString.lowercased()
         guard await canSend(replacement) else { return nil }
+        try assertReplacementReadable(itemId: pending.itemId)
         let store = LocalVaultDocumentStore(root: root)
         let paths = try store.list()
         let pathSet = Set(paths)
@@ -990,7 +1021,9 @@ public actor LocalVaultSync {
     }
 
     private func send(_ pending: Pending, report: inout LocalVaultSyncReport) async throws {
+        try assertReplacementReadable(itemId: pending.itemId)
         guard await canSend(pending) else { return }
+        try assertReplacementReadable(itemId: pending.itemId)
         let baselineBefore = state.baselines[pending.itemId], conflictBefore = state.conflicts[pending.itemId]
         var didRetire = false
         defer {
@@ -1010,12 +1043,14 @@ public actor LocalVaultSync {
                 let local = try LocalVaultDocumentStore(root: root).url(for: pending.path)
                 guard !FileManager.default.fileExists(atPath: local.path) else { throw LocalVaultSyncFailure.changed }
                 try await transport.delete(itemId: pending.itemId, path: pending.path, baseRevision: base, operationId: pending.operationId)
+                try assertReplacementReadable(itemId: pending.itemId)
                 state.baselines.removeValue(forKey: pending.itemId)
             } else if pending.action == "rename" {
                 guard let base = pending.baseRevision, let newPath = pending.newPath,
                       var baseline = state.baselines[pending.itemId] else { throw LocalVaultSyncFailure.invalidResponse }
                 let revision = try await transport.rename(itemId: pending.itemId, from: pending.path, to: newPath,
                     baseRevision: base, operationId: pending.operationId)
+                try assertReplacementReadable(itemId: pending.itemId)
                 baseline.path = newPath; baseline.revision = revision
                 state.baselines[pending.itemId] = baseline
                 report.hasMore = true
@@ -1030,8 +1065,10 @@ public actor LocalVaultSync {
                 let revision = try await transport.upload(itemId: pending.itemId, path: pending.path, data: bytes,
                     baseRevision: pending.baseRevision, operationId: pending.operationId,
                     nativeEditor: pending.nativeEditor == true)
+                try assertReplacementReadable(itemId: pending.itemId)
                 if revision != pending.hash {
                     let remote = try await transport.download(itemId: pending.itemId)
+                    try assertReplacementReadable(itemId: pending.itemId)
                     try install(remote, itemId: pending.itemId, path: pending.path, expectedLocal: pending.hash)
                     state.baselines[pending.itemId] = Baseline(path: pending.path, revision: remote.revision, localHash: remote.revision)
                 } else {
@@ -1042,15 +1079,18 @@ public actor LocalVaultSync {
             report.uploaded += 1
         } catch LocalVaultSyncFailure.conflict {
             let records = try await transport.manifest()
+            try assertReplacementReadable(itemId: pending.itemId)
             if let tombstone = records.first(where: { $0.itemId == pending.itemId && $0.isDeleted }) {
                 report.conflicts += try preserveDeletedConflict(pending, tombstone: tombstone)
             } else {
                 let remote = try await transport.download(itemId: pending.itemId)
+                try assertReplacementReadable(itemId: pending.itemId)
                 report.conflicts += try preserveConflict(pending, remote: remote)
             }
         } catch LocalVaultSyncFailure.changed {
             report.hasMore = true
         }
+        try assertReplacementReadable(itemId: pending.itemId)
         state.outbox.removeValue(forKey: pending.itemId)
         try persist()
         if pending.action == "delete" { try LocalVaultDeviceState.clearDeletion(root: root, itemId: pending.itemId) }
@@ -1059,11 +1099,15 @@ public actor LocalVaultSync {
     }
 
     private func removeLocal(path: String, expectedHash: String) throws {
+        let observed = try LocalVaultDocumentStore(root: root).readMetadata(path: path)
+        let itemId = MarkdownIdentityCodec.extract(from: observed.contents.markdown)?.itemId
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
         let url = try LocalVaultDocumentStore(root: root).url(for: path)
         var error: NSError?
         var result: Result<Void, Error>?
         NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &error) { target in
             result = Result {
+                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
                 let before = try Data(contentsOf: target)
                 guard TextTextStableDigest.sha256Hex(before) == expectedHash else { throw LocalVaultSyncFailure.changed }
                 let history = root.appendingPathComponent(".texttext/history")
@@ -1079,6 +1123,9 @@ public actor LocalVaultSync {
 
     private func moveLocal(from: String, to: String, expectedHash: String) throws {
         let store = LocalVaultDocumentStore(root: root)
+        let observed = try store.readMetadata(path: from)
+        let itemId = MarkdownIdentityCodec.extract(from: observed.contents.markdown)?.itemId
+        try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
         let source = try store.url(for: from), destination = try store.url(for: to)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         var error: NSError?
@@ -1086,6 +1133,7 @@ public actor LocalVaultSync {
         NSFileCoordinator().coordinate(writingItemAt: source, options: .forMoving,
             writingItemAt: destination, options: [], error: &error) { source, destination in
             result = Result {
+                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
                 guard try hash(at: source) == expectedHash else { throw LocalVaultSyncFailure.changed }
                 guard !FileManager.default.fileExists(atPath: destination.path) else { throw LocalVaultSyncFailure.conflict }
                 try FileManager.default.moveItem(at: source, to: destination)
@@ -1097,6 +1145,7 @@ public actor LocalVaultSync {
     }
 
     public func reconcileRestored(itemId: String, path: String, lifecycle: String) async throws {
+        try assertReplacementReadable(itemId: itemId)
         _ = try await sync(maxItems: 512)
         guard state.lifecycles?[itemId] == lifecycle, state.outbox[itemId] == nil,
               state.conflicts[itemId] == nil, let baseline = state.baselines[itemId], baseline.path == path,
@@ -1138,6 +1187,8 @@ public actor LocalVaultSync {
         var plans: [LifecyclePlan] = []
         for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
             let id = remote.itemId
+            do { try assertReplacementReadable(itemId: id) }
+            catch { try report.failed(error, message: "\(remote.relativePath): retained save recovery is required"); continue }
             guard try !sharedProtection(itemId: id) else { continue }
             let baseline = state.baselines[id], pending = state.outbox[id], conflict = state.conflicts[id], lifecycle = state.lifecycles?[id]
             let intent = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id)
@@ -1348,11 +1399,13 @@ public actor LocalVaultSync {
                         // simply retries next cycle.
                         guard (try? store.readMetadata(path: followed.path))?.hash == followed.hash,
                               await transport.canOrganize() else { continue }
+                        try assertReplacementReadable(itemId: id)
                         let saved = followed
                         activePath = saved.path
                         do {
                             let revision = try await transport.rename(itemId: id, from: baseline.path, to: saved.path,
                                 baseRevision: remote.revision, operationId: UUID().uuidString.lowercased())
+                            try assertReplacementReadable(itemId: id)
                             if var current = state.baselines[id], current.path == baseline.path {
                                 current.path = saved.path; current.revision = revision
                                 state.baselines[id] = current
