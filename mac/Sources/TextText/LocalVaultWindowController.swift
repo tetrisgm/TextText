@@ -706,7 +706,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
-        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "recoveryList" || method == "recoveryAssetRead"
+        let replacementOperation = method == "replacementRead" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "recoveryList" || method == "recoveryAssetRead"
         if replacementOperation && params["workspaceRoot"] as? String != root.path {
             reply(id, result: .failure(CancellationError())); return
         }
@@ -714,7 +714,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         let recoveryAccount = credentials()
         io.async { [weak self] in
             let result: Result<[String: Any], Error> = Result {
-                if replacementOperation {
+                func requireRecoveryScope() throws {
                     let valid = DispatchQueue.main.sync {
                         guard let self, self.root == root, self.connection === recoveryConnection else { return false }
                         let current = self.credentials()
@@ -722,6 +722,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     }
                     guard valid else { throw CancellationError() }
                 }
+                if replacementOperation { try requireRecoveryScope() }
                 let store = LocalVaultDocumentStore(root: root)
                 switch method {
                 case "list": return try Self.list(root: root)
@@ -749,7 +750,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let page = try store.recoveryList(path: params["path"] as? String)
                     let assets = try store.recoveryAssets()
                     return ["entries": page.entries.map { ["id": $0.id, "path": $0.path, "kind": $0.kind, "savedAt": $0.savedAt, "hash": $0.hash] }, "truncated": page.truncated,
-                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": $0.displacedHash, "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
+                        "replacements": replacements.map { ["id": $0.id, "path": $0.path, "itemId": $0.itemId, "kind": $0.kind, "captured": $0.captured, "resolutionBlocked": ($0.resolutionBlocked as Any?) ?? NSNull(), "currentPresent": $0.currentPresent, "currentHash": ($0.currentHash as Any?) ?? NSNull(), "preparedHash": $0.preparedHash, "displacedHash": ($0.displacedHash as Any?) ?? NSNull(), "savedAt": $0.savedAt, "resolved": $0.resolved] as [String: Any] },
                         "assets": assets.entries.map { ["id": $0.id, "filename": $0.filename, "byteLength": $0.byteLength, "hash": $0.hash, "savedAt": $0.savedAt, "entryPath": ($0.entryPath as Any?) ?? NSNull(), "itemPath": ($0.itemPath as Any?) ?? NSNull(), "provenanceError": ($0.provenanceError as Any?) ?? NSNull()] as [String: Any] }, "assetsTruncated": assets.truncated]
                 case "recoveryAssetRead":
                     let hash = try Self.string(params, "hash")
@@ -774,7 +775,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                           kind == "replacement" || kind == "removal",
                           present || (kind == "removal" && params["currentHash"] is NSNull) else { throw VaultBridgeError("The inspected file changed. Reopen Recovery before continuing.") }
                     try store.resolveReplacement(id: Self.string(params, "id"), path: Self.string(params, "path"), itemId: Self.string(params, "itemId"),
-                        currentHash: present ? Self.string(params, "currentHash") : nil, preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"), kind: kind, currentPresent: present)
+                        currentHash: present ? Self.string(params, "currentHash") : nil, preparedHash: Self.string(params, "preparedHash"), displacedHash: Self.string(params, "displacedHash"), kind: kind, currentPresent: present, beforeAcknowledge: requireRecoveryScope)
+                    return ["resolved": true]
+                case "cancelUncapturedDeletion":
+                    let present = params["currentPresent"] as? Bool ?? true
+                    guard params["currentPresent"] is Bool,
+                          present || params["currentHash"] is NSNull else { throw VaultBridgeError("The inspected file changed. Reopen Recovery before continuing.") }
+                    try store.cancelUncapturedDeletion(id: Self.string(params, "id"), path: Self.string(params, "path"), itemId: Self.string(params, "itemId"),
+                        preparedHash: Self.string(params, "preparedHash"), currentPresent: present, currentHash: present ? Self.string(params, "currentHash") : nil, beforeAcknowledge: requireRecoveryScope)
                     return ["resolved": true]
                 case "recoveryRead":
                     let recovered = try store.recoveryRead(id: Self.string(params, "id"))
@@ -901,7 +909,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 let decorated = result.map { value in
                     method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
                 }
-                if method == "resolveReplacement", case .success = decorated { self?.connection?.schedule() }
+                if method == "resolveReplacement" || method == "cancelUncapturedDeletion", case .success = decorated { self?.connection?.schedule() }
                 self?.reply(id, result: decorated, current: conflictCurrent)
             }
         }

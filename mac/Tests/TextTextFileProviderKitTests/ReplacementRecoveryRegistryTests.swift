@@ -105,9 +105,9 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         let (operation, prepared, _) = try stagedConflict()
         let shown = try XCTUnwrap(store.replacementRecoveryList().first)
         XCTAssertThrowsError(try registry.resolve(operation: operation, visible: target, itemId: shown.itemId,
-            observed: .init(visibleHash: shown.currentHash, preparedHash: shown.preparedHash, displacedHash: shown.displacedHash)) { stage in
+            observed: .init(visibleHash: shown.currentHash, preparedHash: shown.preparedHash, displacedHash: XCTUnwrap(shown.displacedHash)), observe: { stage in
                 if stage == "resolutionPreserved" { throw Interrupted.stopped }
-            })
+            }))
         let persisted = try XCTUnwrap(registry.entries().first)
         XCTAssertNotNil(persisted.resolution)
         XCTAssertEqual(try registry.inspect(persisted).recovery.record.state, .conflict)

@@ -13,7 +13,10 @@ struct ReplacementRecoveryRegistry {
     private static let cache = EntryCache()
     private static func requireKnownFields(_ bytes: Data) throws {
         guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled"])) else { throw Failure.invalidRegistry }
+              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy"])) else { throw Failure.invalidRegistry }
+        if let value = fields["explicitCancellation"], !(value is NSNull) {
+            guard let receipt = value as? [String: Any], Set(receipt.keys).isSubset(of: Set(["preparedHash", "currentHash", "currentPresent"])) else { throw Failure.invalidRegistry }
+        }
         if let value = fields["resolution"], !(value is NSNull) {
             guard let resolution = value as? [String: Any],
                   Set(resolution.keys).isSubset(of: Set(["visibleHash", "preparedHash", "displacedHash", "preparedFingerprint", "displacedFingerprint", "currentPresent"])) else { throw Failure.invalidRegistry }
@@ -34,6 +37,13 @@ struct ReplacementRecoveryRegistry {
         var userDeletion: Bool? = nil
         var deletionMarkerPublished: Bool? = nil
         var deletionIntentCancelled: Bool? = nil
+        var explicitCancellation: ExplicitCancellation? = nil
+        var supersededBy: UUID? = nil
+    }
+    struct ExplicitCancellation: Codable, Equatable {
+        let preparedHash: String
+        let currentHash: String?
+        let currentPresent: Bool
     }
     struct Resolution: Codable, Equatable {
         let visibleHash: String?
@@ -103,7 +113,13 @@ struct ReplacementRecoveryRegistry {
         guard entry.userDeletion != true || entry.kind == "removal",
               entry.deletionMarkerPublished != true || (entry.kind == "removal" && entry.userDeletion == true),
               entry.deletionIntentCancelled != true || (entry.kind == "removal" && entry.userDeletion == true),
+              entry.supersededBy == nil || (entry.kind == "removal" && entry.userDeletion == true && entry.deletionIntentCancelled == true && entry.supersededBy != entry.operation),
               entry.kind != "removal" || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
+        if let receipt = entry.explicitCancellation {
+            guard entry.kind == "removal", entry.deletionIntentCancelled == true, entry.resolution == nil,
+                  receipt.preparedHash == entry.preparedHash,
+                  (receipt.currentPresent ? receipt.currentHash.map(registry.validHash) == true : receipt.currentHash == nil) else { throw Failure.invalidRegistry }
+        }
         _ = try registry.target(entry)
         guard entry.ownerHash == registry.digest(Data("unowned-local-workspace".utf8)) || entry.ownerHash == principal else { throw LocalVaultAccountRootOwnership.Failure.account }
         if entry.ownerHash == principal { return (original, false) }
@@ -112,6 +128,9 @@ struct ReplacementRecoveryRegistry {
         entry.ownerHash = principal
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         return (try encoder.encode(entry), true)
+    }
+    func captureLease(operation: UUID) -> URL {
+        LocalVaultDeviceState.directory(root: root).appendingPathComponent("replacement-capture-leases/" + operation.uuidString + ".lock")
     }
     func recoveryRoot(path: String) -> URL {
         root.appendingPathComponent(".texttext/retained-replacements/" + digest(Data(path.utf8)), isDirectory: true)
@@ -258,9 +277,15 @@ struct ReplacementRecoveryRegistry {
                   validHash(entry.expectedHash), validHash(entry.preparedHash) else { throw Failure.invalidRegistry }
             guard entry.userDeletion != true || entry.kind == "removal",
                   entry.deletionMarkerPublished != true || (entry.kind == "removal" && entry.userDeletion == true),
-              entry.deletionIntentCancelled != true || (entry.kind == "removal" && entry.userDeletion == true),
+                  entry.deletionIntentCancelled != true || (entry.kind == "removal" && entry.userDeletion == true),
+                  entry.supersededBy == nil || (entry.kind == "removal" && entry.userDeletion == true && entry.deletionIntentCancelled == true && entry.supersededBy != entry.operation),
                   entry.kind != "removal" || entry.expectedHash == entry.preparedHash else { throw Failure.invalidRegistry }
             if validatedTargets.insert(entry.path + "\0" + (entry.recoveryPath ?? entry.path)).inserted { _ = try target(entry) }
+            if let receipt = entry.explicitCancellation {
+                guard entry.kind == "removal", entry.deletionIntentCancelled == true, entry.resolution == nil,
+                      receipt.preparedHash == entry.preparedHash,
+                      (receipt.currentPresent ? receipt.currentHash.map(validHash) == true : receipt.currentHash == nil) else { throw Failure.invalidRegistry }
+            }
             if let resolution = entry.resolution {
                 guard (resolution.currentPresent != false || entry.kind == "removal"), ((resolution.currentPresent ?? true) ? resolution.visibleHash.map(validHash) == true : resolution.visibleHash == nil), validHash(resolution.preparedHash), validHash(resolution.displacedHash) else { throw Failure.invalidRegistry }
             }
@@ -335,6 +360,15 @@ struct ReplacementRecoveryRegistry {
         return Inspection(entry: entry, recovery: recovery, prepared: prepared,
                           displaced: try StableFileSnapshot.read(recovery.displaced))
     }
+    func inspectUncaptured(_ entry: Entry) throws -> (recovery: RetainedFileReplacement.Recovery, prepared: Data) {
+        let retained = try recovery(entry, persistRelocation: false)
+        guard entry.kind == "removal", retained.record.state == .pending || retained.record.state == .cancelled else { throw Failure.invalidRegistry }
+        var info = stat()
+        guard lstat(retained.displaced.path, &info) != 0, errno == ENOENT else { throw Failure.invalidRegistry }
+        let prepared = try StableFileSnapshot.read(retained.prepared)
+        guard digest(prepared) == entry.preparedHash else { throw Failure.invalidRegistry }
+        return (retained, prepared)
+    }
     func removalHasCapturedInode(_ entry: Entry) throws -> Bool {
         let retained = try recovery(entry, persistRelocation: false)
         var info = stat()
@@ -353,6 +387,7 @@ struct ReplacementRecoveryRegistry {
         if entry.kind == "removal", retained.record.state == .pending {
             var info = stat()
             if lstat(retained.displaced.path, &info) != 0, errno == ENOENT {
+                if entry.explicitCancellation != nil { return true }
                 return try visibleMatches(visibleClassificationTarget(entry, retained), hash: entry.expectedHash, present: true)
             }
         }
@@ -413,15 +448,15 @@ struct ReplacementRecoveryRegistry {
         guard var entry = try entries(itemId: itemId).first(where: { $0.operation == operation }),
               entry.kind == "removal", entry.userDeletion == true, entry.path == path,
               entry.expectedHash == hash else { throw Failure.invalidRegistry }
+        let retained = try recovery(entry)
+        guard retained.record.state == .completed, try isReadableWithoutMutation(entry) else { throw Failure.invalidRegistry }
         if entry.deletionMarkerPublished == true { return }
         entry.deletionMarkerPublished = true
         try save(entry, creating: false)
     }
-    private func restoreDeletionMarker(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery, observe: ((String) throws -> Void)? = nil) throws {
-        guard entry.kind == "removal", entry.userDeletion == true, entry.deletionMarkerPublished != true, entry.deletionIntentCancelled != true else { return }
+    private func removalWasRestored(_ entry: Entry) throws -> Bool {
         let visible = root.appendingPathComponent(entry.path)
-        let restored: Bool
-        if let _ = try? StableFileSnapshot.read(visible) { restored = true }
+        if let _ = try? StableFileSnapshot.read(visible) { return true }
         else {
             let store = LocalVaultDocumentStore(root: root)
             let paths = try store.list()
@@ -433,18 +468,23 @@ struct ReplacementRecoveryRegistry {
                 if MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId == entry.itemId { matches += 1 }
             }
             guard matches <= 1 else { throw Failure.invalidRegistry }
-            restored = matches == 1
+            return matches == 1
         }
+    }
+    private func restoreDeletionMarker(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery, observe: ((String) throws -> Void)? = nil) throws {
+        guard entry.kind == "removal", entry.userDeletion == true, entry.deletionMarkerPublished != true, entry.deletionIntentCancelled != true else { return }
+        let visible = root.appendingPathComponent(entry.path)
+        let restored = try removalWasRestored(entry)
         if restored {
+            try observe?("restorationObserved")
             try LocalVaultDeviceState.withDeletionPublication {
                 guard var latest = try entries(itemId: entry.itemId).first(where: { $0.operation == entry.operation }),
-                      latest.deletionMarkerPublished != true, latest.deletionIntentCancelled != true else { return }
+                      latest.deletionMarkerPublished != true, latest.deletionIntentCancelled != true,
+                      try removalWasRestored(latest) else { return }
                 latest.deletionIntentCancelled = true
                 try save(latest, creating: false)
-                if try LocalVaultDeviceState.hasDeletion(root: root, itemId: entry.itemId, path: entry.path, hash: entry.expectedHash),
-                   let snapshot = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: entry.itemId) {
-                    try LocalVaultDeviceState.clearDeletion(root: root, itemId: entry.itemId, matching: snapshot)
-                }
+                try LocalVaultDeviceState.clearDeletion(root: root, itemId: entry.itemId, operation: entry.operation,
+                    path: entry.path, hash: entry.expectedHash)
             }
             return
         }
@@ -457,6 +497,20 @@ struct ReplacementRecoveryRegistry {
             // normal reader may already have completed this publication.
             guard let latest = try entries(itemId: entry.itemId).first(where: { $0.operation == entry.operation }), latest.deletionMarkerPublished != true, latest.deletionIntentCancelled != true else { return }
             guard try visibleMatches(visible, hash: nil, present: false) else { return }
+            if let bound = try LocalVaultDeviceState.boundDeletion(root: root, itemId: entry.itemId), bound.operation != entry.operation {
+                guard let other = try entries(itemId: entry.itemId).first(where: { $0.operation == bound.operation }),
+                      other.kind == "removal", other.userDeletion == true, other.path == bound.path, other.expectedHash == bound.hash,
+                      other.deletionMarkerPublished == true,
+                      try visibleMatches(root.appendingPathComponent(other.path), hash: nil, present: false) else { throw Failure.invalidRegistry }
+                let proof = try recovery(other)
+                guard proof.record.state == .completed,
+                      try isReadableWithoutMutation(other) else { throw Failure.invalidRegistry }
+                var superseded = latest
+                superseded.deletionIntentCancelled = true
+                superseded.supersededBy = other.operation
+                try save(superseded, creating: false)
+                return
+            }
             let inspection = try inspect(latest)
             let trash = root.appendingPathComponent(".texttext/trash", isDirectory: true)
             try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
@@ -513,7 +567,17 @@ struct ReplacementRecoveryRegistry {
                 try restoreDeletionMarker(entry, retained, observe: observeDeletionPublication)
                 continue
             }
-            let classified = try cancelRenamedUncaptured(entry, retained) ?? RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained))
+            let classified: RetainedFileReplacement.Recovery
+            if entry.kind == "removal", retained.record.state == .pending {
+                classified = try RetainedFileRemoval.withLease(at: captureLease(operation: entry.operation)) {
+                    let fresh = try recovery(entry, validatedTarget: location.0, layout: location.1)
+                    if entry.explicitCancellation != nil {
+                        _ = try inspectUncaptured(entry)
+                        return try RetainedFileRemoval.cancelAfterInspection(fresh)
+                    }
+                    return try cancelRenamedUncaptured(entry, fresh) ?? RetainedFileReplacement.classify(fresh, target: visibleClassificationTarget(entry, fresh))
+                }
+            } else { classified = try RetainedFileReplacement.classify(retained, target: visibleClassificationTarget(entry, retained)) }
             guard classified.record.state == .completed || classified.record.state == .cancelled else { throw Failure.unresolved(entry.operation) }
             try restoreDeletionMarker(entry, classified, observe: observeDeletionPublication)
         }
@@ -545,9 +609,38 @@ struct ReplacementRecoveryRegistry {
         guard present, info.st_mode & S_IFMT == S_IFREG, let hash else { return false }
         return digest(try StableFileSnapshot.read(visible)) == hash
     }
+    func cancelUncaptured(operation: UUID, itemId: String, path: String, preparedHash: String,
+                          current: Data?, validateCurrent: () throws -> Void,
+                          beforeAcknowledge: (() throws -> Void)? = nil) throws {
+        try RetainedFileRemoval.withLease(at: captureLease(operation: operation)) {
+            guard var entry = try entries(itemId: itemId).first(where: { $0.operation == operation }),
+                  entry.kind == "removal", entry.path == path, entry.preparedHash == preparedHash else { throw Failure.invalidRegistry }
+            let inspection = try inspectUncaptured(entry)
+            try validateCurrent()
+            let folder = root.appendingPathComponent(".texttext/conflicts/" + operation.uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            guard folder.resolvingSymlinksInPath().path == folder.path else { throw Failure.invalidRegistry }
+            for bytes in [inspection.prepared] + (current.map { [$0] } ?? []) {
+                let copy = folder.appendingPathComponent(digest(bytes) + ".textpack")
+                if FileManager.default.fileExists(atPath: copy.path) {
+                    guard try StableFileSnapshot.read(copy) == bytes else { throw Failure.observedVersionChanged }
+                } else { try RetainedFileReplacement.create(bytes, at: copy) }
+            }
+            try RetainedFileReplacement.flushDirectory(folder)
+            try RetainedFileReplacement.flushDirectory(folder.deletingLastPathComponent())
+            _ = try inspectUncaptured(entry)
+            try validateCurrent()
+            try beforeAcknowledge?()
+            entry.explicitCancellation = .init(preparedHash: preparedHash, currentHash: current.map(digest), currentPresent: current != nil)
+            entry.deletionIntentCancelled = true
+            try save(entry, creating: false)
+            _ = try RetainedFileRemoval.cancelAfterInspection(inspection.recovery)
+            try LocalVaultDeviceState.clearDeletion(root: root, itemId: itemId, operation: operation, path: path, hash: entry.expectedHash)
+        }
+    }
     /// Explicit user acknowledgement retains both snapshots and never changes
     /// the visible projection. A later old-descriptor write reopens the fence.
-    func resolve(operation: UUID, visible: URL, itemId: String, observed: Resolution, observe: ((String) throws -> Void)? = nil) throws {
+    func resolve(operation: UUID, visible: URL, itemId: String, observed: Resolution, observe: ((String) throws -> Void)? = nil, beforeAcknowledge: (() throws -> Void)? = nil) throws {
         guard let physicalRoot else { throw Failure.invalidRegistry }
         var parentURL = visible.deletingLastPathComponent()
         while !FileManager.default.fileExists(atPath: parentURL.path), parentURL.path != root.path { parentURL.deleteLastPathComponent() }
@@ -567,6 +660,7 @@ struct ReplacementRecoveryRegistry {
               preparedStamp == (try RetainedFileReplacement.fingerprint(first.recovery.prepared)),
               displacedStamp == (try RetainedFileReplacement.fingerprint(first.recovery.displaced)),
               try visibleMatches(visible, hash: observed.visibleHash, present: observed.currentPresent ?? true) else { throw Failure.observedVersionChanged }
+        try beforeAcknowledge?()
         var acknowledged = observed
         acknowledged.preparedFingerprint = preparedStamp
         acknowledged.displacedFingerprint = displacedStamp

@@ -524,6 +524,7 @@ public struct LocalVaultDocumentStore: Sendable {
             outcome = Result {
                 let current = try readUncoordinated(path: path, url: coordinated)
                 guard current.hash == expectedHash, let itemId = MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId else { throw Failure.changed }
+                if recordDeletion { try LocalVaultDeviceState.clearPriorDeletionForRestoredFile(root: root, itemId: itemId, path: path, expectedHash: expectedHash) }
                 let state = LocalVaultDeviceState.directory(root: root)
                 if FileManager.default.fileExists(atPath: state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path) {
                     try RetainedReplacementProfile.prepare(root: root)
@@ -534,7 +535,7 @@ public struct LocalVaultDocumentStore: Sendable {
                 let history = root.appendingPathComponent(".texttext/history/" + expectedHash + ".textpack")
                 guard try StableFileSnapshot.read(history) == historyBytes else { throw Failure.changed }
                 let registry = ReplacementRecoveryRegistry(root: root), operation = UUID()
-                _ = try RetainedFileRemoval.capture(coordinated, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path), operation: operation) { stage in
+                _ = try RetainedFileRemoval.capture(coordinated, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path), operation: operation, lease: registry.captureLease(operation: operation)) { stage in
                     if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
                         expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "removal", userDeletion: recordDeletion) }
                     try writeObservationForTesting?(stage == "prepared" ? "removalPrepared" : stage)

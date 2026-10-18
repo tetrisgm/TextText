@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import TextTextWorkspaceCore
 
 /// Sync cursors, upload outbox and live-edit journals belong to this Mac, not
 /// to an iCloud/Dropbox/OneDrive-synchronized workspace folder.
@@ -108,6 +109,33 @@ public enum LocalVaultDeviceState {
         lock.lock(); defer { lock.unlock() }
         let target = try deletionURL(root: root, itemId: itemId)
         guard FileManager.default.fileExists(atPath: target.path), try Data(contentsOf: target) == snapshot else { return }
+        try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
+        guard try Data(contentsOf: target) == snapshot else { return }
+        try FileManager.default.removeItem(at: target)
+    }
+
+    static func boundDeletion(root: URL, itemId: String) throws -> (operation: UUID, path: String, hash: String)? {
+        lock.lock(); defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        guard FileManager.default.fileExists(atPath: target.path) else { return nil }
+        let intent = try JSONDecoder().decode(DeletionIntent.self, from: Data(contentsOf: target))
+        guard intent.itemId == itemId, let operation = intent.operationId else { throw ReplacementRecoveryRegistry.Failure.invalidRegistry }
+        return (operation, intent.path, intent.hash)
+    }
+    static func clearPriorDeletionForRestoredFile(root: URL, itemId: String, path: String, expectedHash: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard let intent = try boundDeletion(root: root, itemId: itemId) else { return }
+        let file = try LocalVaultDocumentStore(root: root).url(for: path)
+        guard TextTextStableDigest.sha256Hex(try StableFileSnapshot.read(file)) == expectedHash else { throw ReplacementRecoveryRegistry.Failure.observedVersionChanged }
+        try clearDeletion(root: root, itemId: itemId, operation: intent.operation, path: intent.path, hash: intent.hash)
+    }
+    static func clearDeletion(root: URL, itemId: String, operation: UUID, path: String, hash: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        let target = try deletionURL(root: root, itemId: itemId)
+        guard FileManager.default.fileExists(atPath: target.path) else { return }
+        let snapshot = try Data(contentsOf: target)
+        let intent = try JSONDecoder().decode(DeletionIntent.self, from: snapshot)
+        guard intent.operationId == operation, intent.itemId == itemId, intent.path == path, intent.hash == hash else { return }
         try acknowledgeDeletionPublication(root: root, itemId: itemId, bytes: snapshot)
         guard try Data(contentsOf: target) == snapshot else { return }
         try FileManager.default.removeItem(at: target)
