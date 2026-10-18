@@ -1,3 +1,4 @@
+import {validateLeafMove,leafRequest,qualifyLeafConfig,inspectOwnedLeaf,observeOwnedLeaf,moveOwnedLeaf,compareLeafProof} from './leaf-move.mjs';
 import {folderRequest,inspectOwnedFolder,observeOwnedFolder,moveOwnedFolder,compareFolderProof} from './folder-case.mjs';
 import { installMalformed, observeMalformed, repairMalformed } from './malformed-repair.mjs';
 import { validateWriteSequence, applyWriteSequence } from './file-write-sequence.mjs';
@@ -54,13 +55,13 @@ export function validateActorConfig(raw) {
     if (typeof v !== 'string' || !isAbsolute(v)) fail(`${k} must be an absolute path`);
   }
   if (typeof title !== 'string' || !title.startsWith(TITLE_PREFIX) || title.length > 200) fail('title must start with "Six-client acceptance "');
-  if (extname(file) !== '.textpack' || basename(file, '.textpack') !== title) fail('file must be <title>.textpack');
+  if(raw.leafMove!==undefined){qualifyLeafConfig(raw);}else if (extname(file) !== '.textpack' || basename(file, '.textpack') !== title) fail('file must be <title>.textpack');
   if (typeof workspaceId !== 'string' || !IDENTITY.test(workspaceId)) fail('workspaceId is required');
   if (typeof itemId !== 'string' || !IDENTITY.test(itemId)) fail('itemId is required');
   const observeMaxMs = raw.observeMaxMs ?? OBSERVE.maxMs;
   if (!Number.isInteger(observeMaxMs) || observeMaxMs < 100 || observeMaxMs > OBSERVE.maxMs) fail(`observeMaxMs must be 100..${OBSERVE.maxMs}`);
   for (const name of ['identityReceipt', 'workspaceRoot', 'ownerBindingPath']) if (raw[name] !== undefined && (typeof raw[name] !== 'string' || !isAbsolute(raw[name]))) fail(`${name} must be an absolute path`);
-  return { role, file, workspaceId, itemId, title, receiptDir, observeMaxMs, ...Object.fromEntries(['identityReceipt', 'workspaceRoot', 'ownerBindingPath'].filter(name => raw[name] !== undefined).map(name => [name, raw[name]])) };
+  return { role, file, workspaceId, itemId, title, receiptDir, observeMaxMs, ...(raw.leafMove!==undefined?{leafMove:validateLeafMove(raw.leafMove)}:{}), ...Object.fromEntries(['identityReceipt', 'workspaceRoot', 'ownerBindingPath'].filter(name => raw[name] !== undefined).map(name => [name, raw[name]])) };
 }
 
 export function loadActorConfig(path) {
@@ -409,7 +410,20 @@ export function createActor(config, { platform = process.platform, machineId = h
       const proof=moveOwnedFolder(config,request,{guard:requireRun,runDir:state.runDir,afterGuard:()=>{config.file=resolve(config.workspaceRoot,request.scenario.destination,config.title+'.textpack');requireRun();}});
       journal({event:'folder-moved',round:m.round,...proof});return {type:'folder-moved',round:m.round,...proof};
     },
+    async leafMove(m) {
+      requireRun();if(!state.ownerGuard)throw new ActorError('leaf-move','Leaf mutation requires sealed owner binding');const request=leafRequest(m.leafMove);
+      if(request.phase!=='before'||config.role!==request.scenario.role||!state.leafBaseline||canonicalJSON(inspectOwnedLeaf(config,request))!==canonicalJSON(state.leafBaseline))throw new ActorError('leaf-move','Leaf mutation lacks unchanged observed baseline');
+      const receipt=moveOwnedLeaf(config,request,{guard:requireRun,runDir:state.runDir});config.file=resolve(config.workspaceRoot,receipt.after.relativePath);requireRun();journal({event:'leaf-moved',round:m.round,...receipt});return{type:'leaf-moved',round:m.round,...receipt};
+    },
     async observe(m) {
+      let leafMoveProof,leafMovePending=false;
+      if(m.leafMove){
+        if(!state.runId)throw new ActorError('protocol','hello must come first');const request=leafRequest(m.leafMove);
+        if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new ActorError('leaf-move','Scenario differs from sealed actor configuration');
+        const observed=observeOwnedLeaf(config,request);leafMoveProof=observed.proof;leafMovePending=observed.pending;
+        if(request.phase==='before'){requireRun();state.leafBaseline=leafMoveProof;}
+        else if(!leafMovePending){if(state.leafBaseline){if(state.leafBaseline.operationId!==request.operationId)throw new ActorError('leaf-move','Operation changed');if(!state.leafRetargeted)compareLeafProof(state.leafBaseline,leafMoveProof);}else if(resolve(config.file)!==resolve(config.workspaceRoot,leafMoveProof.relativePath))throw new ActorError('leaf-move','Reopen requires final configured leaf');config.file=resolve(config.workspaceRoot,leafMoveProof.relativePath);state.leafRetargeted=true;}
+      }
       let folderCaseProof,folderCasePending=false;
       if(m.folderCase){
         if(!state.runId)throw new ActorError('protocol','hello must come first');
@@ -426,7 +440,7 @@ export function createActor(config, { platform = process.platform, machineId = h
       requireRun();
       journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
       const documentSnapshot = o.documentSnapshot;
-      return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+      return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
   };

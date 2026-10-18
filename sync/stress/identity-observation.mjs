@@ -21,9 +21,9 @@ export function boundedFile(path, limit = 1024 * 1024) {
 export function fixedDriverFiles(role) {
   const here = dirname(fileURLToPath(import.meta.url));
   const files = { driver: join(here, role.endsWith('-cli') ? 'file-adapter.mjs' : 'browser-adapter.mjs'),
-    folderCase: join(here, 'folder-case.mjs'), fields: join(here, 'multi-field.mjs'), fieldInput: join(here, 'multi-field-input.mjs'), history: join(here, 'undo-redo.mjs'), identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
-    node: realpathSync(process.execPath) };
-  if (role.endsWith('-cli')) { files.fileWrites = join(here, 'file-write-sequence.mjs'); files.malformedRepair = join(here, 'malformed-repair.mjs'); files.fieldPack = join(here, 'multi-field-pack.mjs'); files.fflate = fileURLToPath(import.meta.resolve('fflate')); }
+    folderCase: join(here, 'folder-case.mjs'), leafMove:join(here,'leaf-move.mjs'), fields: join(here, 'multi-field.mjs'), fieldInput: join(here, 'multi-field-input.mjs'), history: join(here, 'undo-redo.mjs'), identity: join(here, 'identity.mjs'), observation: fileURLToPath(import.meta.url),
+    fflate:fileURLToPath(import.meta.resolve('fflate')), node: realpathSync(process.execPath) };
+  if (role.endsWith('-cli')) { files.leafMoveOS=join(here,'leaf-move-os.py'); files.leafMoveWindows=join(here,'leaf-move-os.ps1'); files.fileWrites = join(here, 'file-write-sequence.mjs'); files.malformedRepair = join(here, 'malformed-repair.mjs'); files.fieldPack = join(here, 'multi-field-pack.mjs'); }
   else Object.assign(files, { lifecycle: join(here, 'browser-lifecycle.mjs'), fieldPage: join(here, 'multi-field-page.mjs'), session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
     readiness: resolve(here, '../../windows/scripts/live-browser-ready.mjs') });
   return files;

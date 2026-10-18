@@ -98,3 +98,5 @@ test('diagnostics strip urls and credential-like fragments', () => {
   assert.doesNotMatch(m, /abc|zzz/);
   assert.ok(safeMessage('x'.repeat(1000)).length <= 300);
 });
+
+test('browser leaf observation config preserves exact declared scenario without changing item title',()=>{const parent='Six-client acceptance folder 11111111-1111-4111-8111-111111111111',leafMove={role:'mac-cli',round:1,source:parent+'/'+config.title+'.textpack',destination:parent+'/'+config.title+' moved.textpack'};assert.deepEqual(validateConfig({...config,leafMove}).leafMove,leafMove);assert.throws(()=>validateConfig({...config,leafMove:{...leafMove,destination:'Other/arbitrary.textpack'}}));});

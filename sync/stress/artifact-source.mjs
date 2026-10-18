@@ -140,9 +140,9 @@ export function fixedArtifactPaths(role, sourceRoot) {
     return files;
   }
   const base = join(root, 'sync/stress');
-  const files = { driver: join(base, role.endsWith('-cli') ? 'file-adapter.mjs' : 'browser-adapter.mjs'), folderCase: join(base, 'folder-case.mjs'),
-    fields: join(base, 'multi-field.mjs'), fieldInput: join(base, 'multi-field-input.mjs'), history: join(base, 'undo-redo.mjs'), identity: join(base, 'identity.mjs'), observation: join(base, 'identity-observation.mjs'), node: realpathSync(process.execPath) };
-  if (role.endsWith('-cli')) { files.fileWrites = join(base, 'file-write-sequence.mjs'); files.malformedRepair = join(base, 'malformed-repair.mjs'); files.fieldPack = join(base, 'multi-field-pack.mjs'); files.fflate = join(root, 'node_modules/fflate/esm/index.mjs'); }
+  const files = { driver: join(base, role.endsWith('-cli') ? 'file-adapter.mjs' : 'browser-adapter.mjs'), folderCase: join(base, 'folder-case.mjs'), leafMove:join(base,'leaf-move.mjs'),
+    fields: join(base, 'multi-field.mjs'), fieldInput: join(base, 'multi-field-input.mjs'), history: join(base, 'undo-redo.mjs'), identity: join(base, 'identity.mjs'), observation: join(base, 'identity-observation.mjs'), fflate:join(root,'node_modules/fflate/esm/index.mjs'), node: realpathSync(process.execPath) };
+  if (role.endsWith('-cli')) { files.leafMoveOS=join(base,'leaf-move-os.py'); files.leafMoveWindows=join(base,'leaf-move-os.ps1'); files.fileWrites = join(base, 'file-write-sequence.mjs'); files.malformedRepair = join(base, 'malformed-repair.mjs'); files.fieldPack = join(base, 'multi-field-pack.mjs'); }
   else Object.assign(files, { lifecycle: join(base, 'browser-lifecycle.mjs'), fieldPage: join(base, 'multi-field-page.mjs'), session: join(base, 'browser-session.mjs'), input: join(base, 'input-sequence.mjs'), history: join(base, 'undo-redo.mjs'), readiness: join(root, 'windows/scripts/live-browser-ready.mjs') });
   return files;
 }

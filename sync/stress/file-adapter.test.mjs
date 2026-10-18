@@ -300,3 +300,11 @@ test('folder mutation refuses an unsealed actor before inspecting or renaming an
  const result=await actor.handle({type:'folderMove',round:1,folderCase:{}});
  assert.equal(result.type,'error');assert.match(result.message,/sealed workspace owner/);assert.ok(readFileSync(file).equals(before));
 });
+
+test('leaf-only reopen config permits declared destination while retaining immutable original title',()=>{
+ const parent='Six-client acceptance folder 11111111-1111-4111-8111-111111111111',source=parent+'/'+TITLE+'.textpack',destination=parent+'/'+TITLE+' moved.textpack';
+ const raw={role:'mac-cli',workspaceRoot:'/private/tmp/owned',file:'/private/tmp/owned/'+destination,workspaceId:WS,itemId:ITEM,title:TITLE,receiptDir:'/private/tmp/receipts',leafMove:{role:'mac-cli',round:1,source,destination}};
+ assert.equal(validateActorConfig(raw).title,TITLE);assert.deepEqual(validateActorConfig(raw).leafMove,raw.leafMove);assert.throws(()=>validateActorConfig({...raw,leafMove:undefined}));assert.throws(()=>validateActorConfig({...raw,file:'/private/tmp/owned/arbitrary.textpack'}));assert.throws(()=>validateActorConfig({...raw,title:TITLE+' moved'}));
+});
+
+test('leaf mutation refuses unsealed actor without touching archive',async()=>{const {file,config}=fixture(),before=readFileSync(file),actor=createActor(config,{platform:'darwin'});await actor.handle({type:'hello',runId:'leaf-unsealed',role:'mac-cli',mode:'real',fixture:{workspaceId:WS,itemId:ITEM}});const result=await actor.handle({type:'leafMove',round:1,leafMove:{}});assert.equal(result.type,'error');assert.match(result.message,/sealed owner/);assert.ok(readFileSync(file).equals(before));});

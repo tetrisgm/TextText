@@ -1,9 +1,10 @@
+import {validateLeafMove,leafRequest,observeManifestLeaf} from './leaf-move.mjs';
 import {folderRequest,observeManifestFolder} from './folder-case.mjs';
 import { crashOwnedBrowser, closeOwnedBrowser, retainGuardedBrowser, observeOwnedBrowser } from './browser-lifecycle.mjs';
 import { readLiveFieldDocument } from './multi-field-page.mjs';
 import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
 import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
-import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
+import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver, sha256, canonicalJSON } from './identity-observation.mjs';
 import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // Real browser adapter for the six-client stress coordinator (roles mac-web / pc-web).
 // Drives a visible installed Chrome (darwin) or Edge (win32) through Playwright against
@@ -60,7 +61,7 @@ export function validateConfig(config) {
   if (typeof config.title !== 'string' || !config.title.startsWith(TITLE_PREFIX) || config.title.length > 200) fail(`title must start with "${TITLE_PREFIX}"`);
   if (config.identityReceipt !== undefined && (typeof config.identityReceipt !== 'string' || !isAbsolute(config.identityReceipt))) fail('identityReceipt must be an absolute path');
   const auth = validateAuthMode(config.auth);
-  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth, ...(config.identityReceipt ? { identityReceipt: config.identityReceipt } : {}) };
+  return { profile: config.profile, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title, auth, ...(config.leafMove!==undefined?{leafMove:validateLeafMove(config.leafMove)}:{}), ...(config.identityReceipt ? { identityReceipt: config.identityReceipt } : {}) };
 }
 
 // Hello must name this machine's web role, real mode, and the configured fixture.
@@ -364,6 +365,18 @@ async function main() {
       }
       if (await page.evaluate(continuityRemoved)) throw new StageError('continuity', 'original editor node was removed');
       const text = samples[samples.length - 1];
+      let leafMoveProof,leafMovePending=false,leafMoveReviewVisible=false;
+      if(m.leafMove){
+        const request=leafRequest(m.leafMove);if(!config.leafMove||canonicalJSON(config.leafMove)!==canonicalJSON(request.scenario))throw new StageError('leaf-move','Scenario differs from actor configuration');const base=`${ORIGIN}/api/vault/${encodeURIComponent(config.workspaceId)}/items`;
+        const response=await context.request.get(base+'?leafMove='+request.operationId,{headers:{'Cache-Control':'no-cache'},timeout:10000});
+        if(!response.ok())throw new StageError('leaf-move','Authenticated manifest unavailable');
+        const pack=await context.request.get(base+'/'+encodeURIComponent(config.itemId),{headers:{'Cache-Control':'no-cache'},timeout:10000});
+        if(!pack.ok()||Number(pack.headers()['content-length']??0)>64*1024*1024)throw new StageError('leaf-move','Authenticated pack unavailable');
+        const observed=observeManifestLeaf(config,request,await response.json(),await pack.body());leafMoveProof=observed.proof;leafMovePending=observed.pending;
+        if(decodeURIComponent(pack.headers()['x-texttext-path']??'')!==leafMoveProof.relativePath||pack.headers().etag!==`"${leafMoveProof.archiveSha256}"`)throw new StageError('leaf-move','Pack path/revision changed during manifest read');
+        await assertOnItem();if(leafMoveProof.documentSha256!==sha256(canonicalJSON(await inspectDocument())))leafMovePending=true;
+        leafMoveReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
+      }
       let folderCaseProof,folderCasePending=false,folderCaseReviewVisible=false;
       if(m.folderCase){
         const request=folderRequest(m.folderCase);
@@ -372,7 +385,7 @@ async function main() {
         const observed=observeManifestFolder(config,request,await response.json());folderCaseProof=observed.proof;folderCasePending=observed.pending;
         await assertOnItem();folderCaseReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
       }
-      out({ type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
+      out({ type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending,leafMoveReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length });
     },
     async shutdown() {
       if (retainedFailure) return;

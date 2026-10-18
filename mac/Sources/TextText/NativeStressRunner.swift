@@ -65,6 +65,7 @@ enum NativeStressActor {
         let title: String
         let totalMinutes: Int?
         let identityReceipt: String?
+        let leafMove: NativeStressLeafMove.Scenario?
     }
 
     struct Validated {
@@ -76,6 +77,7 @@ enum NativeStressActor {
         let title: String
         let totalMinutes: Int
         let identityReceipt: String?
+        let leafMove: NativeStressLeafMove.Scenario?
     }
 
     struct Failure: LocalizedError {
@@ -118,7 +120,7 @@ enum NativeStressActor {
         let fileURL = URL(fileURLWithPath: config.file)
         let stem = fileURL.deletingPathExtension().lastPathComponent
         guard config.file.hasPrefix("/"), fileURL.pathExtension.lowercased() == "textpack",
-              config.title.hasPrefix(titlePrefix), config.title.count <= 200, stem == config.title,
+              config.title.hasPrefix(titlePrefix), config.title.count <= 200, (stem == config.title || config.leafMove != nil),
               UUID(uuidString: config.itemId) != nil,
               config.workspaceId.range(of: "^[a-zA-Z0-9_-]{1,80}$", options: .regularExpression) != nil,
               (1...120).contains(totalMinutes) else {
@@ -145,12 +147,15 @@ enum NativeStressActor {
             throw Failure("Configured workspace root is not bound to the fixture workspace.")
         }
         let relativePath = String(filePath.dropFirst(rootPath.count))
+        if let leafMove = config.leafMove {
+            guard leafMove.qualifies(title: config.title, relativePath: relativePath) else { throw Failure("The leaf move config must bind its original title and exact declared old/new path.") }
+        }
         let document = try LocalVaultDocumentStore(root: root).read(path: relativePath)
         guard MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId.lowercased() == config.itemId.lowercased() else {
             throw Failure("Test file identity mismatch.")
         }
         return Validated(fileURL: fileURL, relativePath: relativePath, root: root, itemId: config.itemId,
-                         workspaceId: config.workspaceId, title: config.title, totalMinutes: totalMinutes, identityReceipt: config.identityReceipt)
+                         workspaceId: config.workspaceId, title: config.title, totalMinutes: totalMinutes, identityReceipt: config.identityReceipt, leafMove: config.leafMove)
     }
 
     /// Two native editors on one device journal would corrupt the acceptance
@@ -529,6 +534,21 @@ final class NativeStressRunner {
                 let dialogVisible = try await evaluate("!!document.querySelector('dialog[open]')") == "true"
                 response["folderCaseReviewVisible"] = controller.window?.attachedSheet != nil || dialogVisible
                 try await requireSelected()
+            }
+            if let leaf = request["leafMove"] as? [String: Any] {
+                _ = try requireActorAccount()
+                try await requireSelected()
+                let selectedPath = try await controller.stressSharedSessionPath(itemId: config.itemId, expectedRoot: config.root)
+                let observed = try NativeStressLeafMove.observe(root: config.root, workspaceId: config.workspaceId, itemId: config.itemId, title: config.title,
+                    relativePath: config.relativePath, configured: config.leafMove, selectedItemId: config.itemId, selectedPath: selectedPath, request: leaf)
+                guard selectedPath == (try await controller.stressSharedSessionPath(itemId: config.itemId, expectedRoot: config.root)) else {
+                    throw NativeStressActor.Failure("The selected shared path changed during leaf observation. Retry observation.")
+                }
+                _ = try requireActorAccount()
+                try await requireSelected()
+                response["leafMoveProof"] = observed.proof; response["leafMovePending"] = observed.pending
+                let dialogVisible = try await evaluate("!!document.querySelector('dialog[open]')") == "true"
+                response["leafMoveReviewVisible"] = controller.window?.attachedSheet != nil || dialogVisible
             }
             return response
         default:

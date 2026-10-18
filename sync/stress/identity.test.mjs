@@ -137,3 +137,10 @@ test('browser normal-close independent reopen binds exact browser role and decla
  assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));
  for(const changed of [{...config,browserClose:undefined},{...config,browserClose:{...browserClose,role:'pc-web'}},{...config,browserClose:{...browserClose,round:2}}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
 });
+
+test('leaf independent reopen binds full document and immutable exact old/new path scenario',()=>{
+ const roles=['mac-app','mac-web','mac-cli','pc-app','pc-web','pc-cli'],leafMove={role:'mac-cli',round:1,source:'Owned/Original.textpack',destination:'Owned/Moved.textpack'};
+ const config={fixture:{workspaceId:'workspace',itemId:'item'},expectedBaselineHash:H,leafMove,expectedDocumentHash:'d'.repeat(64),expectedIdentities:Object.fromEntries(roles.map(role=>[role,pin(role)]))};
+ const receipt={mode:'real',status:'passed',acceptance:'six-client-external-leaf-move',roundsCompleted:1,fixture:config.fixture,finalHash:H,finalDocumentHash:config.expectedDocumentHash,scenario:{leafMove},attestations:Object.fromEntries(roles.map(role=>[role,{identity:checkIdentity(identity(role),pin(role),role)}]))};
+ assert.doesNotThrow(()=>verifyReopenIdentity(receipt,config));for(const changed of [{...config,leafMove:undefined},{...config,leafMove:{...leafMove,destination:'Owned/Other.textpack'}},{...config,expectedDocumentHash:'e'.repeat(64)}])assert.throws(()=>verifyReopenIdentity(receipt,changed),/field pins/);
+});

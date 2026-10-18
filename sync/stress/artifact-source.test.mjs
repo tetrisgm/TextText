@@ -45,7 +45,7 @@ test('artifact mapping is fixed per role and receipts are create-only',()=>{
   assert.match(fixedArtifactPaths('mac-app',dir).nativeExecutable,/mac\/build\/TextText.app\/Contents\/MacOS\/TextText$/);
   assert.match(fixedArtifactPaths('pc-app',dir).core,/windows\/build\/stress-actor\/TextText.Core.dll$/);
   assert.throws(()=>fixedArtifactPaths('wrong-role',dir),/Unknown/);
-  for(const role of ['mac-cli','pc-cli','mac-web','pc-web']) assert.equal(fixedArtifactPaths(role,dir).folderCase,join(dir,'sync/stress/folder-case.mjs'));
+  for(const role of ['mac-cli','pc-cli','mac-web','pc-web']) {const paths=fixedArtifactPaths(role,dir);assert.equal(paths.folderCase,join(dir,'sync/stress/folder-case.mjs'));assert.equal(paths.leafMove,join(dir,'sync/stress/leaf-move.mjs'));assert.equal(paths.fflate,join(dir,'node_modules/fflate/esm/index.mjs'));if(role.endsWith('-cli')){assert.equal(paths.leafMoveOS,join(dir,'sync/stress/leaf-move-os.py'));assert.equal(paths.leafMoveWindows,join(dir,'sync/stress/leaf-move-os.ps1'));}}
   const receipt=join(dir,'receipt.json');createOnlyJSON(receipt,{status:'first'});
   assert.throws(()=>createOnlyJSON(receipt,{status:'second'}),/exist/i);
   assert.equal(JSON.parse(readFileSync(receipt)).status,'first');
@@ -67,7 +67,7 @@ test('sealer refuses changed produced artifacts and writes one immutable trusted
   if(process.platform!=='darwin') return;
   const {dir,repo}=sourceFixture(),here=new URL('./',import.meta.url);
   mkdirSync(join(repo,'sync/stress'),{recursive:true});
-  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','folder-case.mjs','file-adapter.mjs','file-write-sequence.mjs','malformed-repair.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
+  for(const name of ['build-private-actor.mjs','seal-artifacts.mjs','artifact-source.mjs','identity-observation.mjs','identity.mjs','folder-case.mjs','leaf-move.mjs','leaf-move-os.py','leaf-move-os.ps1','file-adapter.mjs','file-write-sequence.mjs','malformed-repair.mjs','multi-field-page.mjs','multi-field.mjs','multi-field-input.mjs','multi-field-pack.mjs','undo-redo.mjs']) copyFileSync(new URL(name,here),join(repo,'sync/stress',name));
   command('git',['add','sync'],repo,{capture:true});command('git',['-c','user.name=Source proof fixture','-c','user.email=source-proof@example.invalid','commit','--quiet','-m','wrapper fixture'],repo,{capture:true});
   const prepared=preparePristineSource(repo,'HEAD',join(dir,'candidate'));
   mkdirSync(join(prepared.sourceRoot,'node_modules/fflate/esm'),{recursive:true});writeFileSync(join(prepared.sourceRoot,'node_modules/fflate/esm/index.mjs'),'fixture dependency bytes');

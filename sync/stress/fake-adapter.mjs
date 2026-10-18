@@ -1,3 +1,4 @@
+import {sha256,canonicalJSON} from './identity-observation.mjs';
 // Simulated adapter for tests and dry runs. Always attests mode "simulated"; it never claims real acceptance.
 // Six processes share one directory of edit files as a stand-in for the sync server.
 // Faults (STRESS_FAKE_FAULT): fail-round:<n> | drop-edit | hang | stale-ready | dup-ready | reload | restart-fail | wrong-fixture | claim-real
@@ -11,8 +12,9 @@ let shared = sharedRoot; // scoped per run on hello so repeated runs start empty
 const fault = process.env.STRESS_FAKE_FAULT ?? '';
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let role = 'unknown';
-let fixtureItemId;
+let fixtureItemId,fixtureWorkspaceId;
 const folderProof=(request,phase=request.phase)=>{const s=request.scenario,name=phase==='before'?s.source:s.destination;return {version:1,kind:role.endsWith('-web')?'manifest':'filesystem',operationId:request.operationId,phase,source:s.source,destination:s.destination,itemId:fixtureItemId,relativePath:name+'/Six-client acceptance simulated fixture.textpack',folderIdentity:role.endsWith('-web')?null:'1:123',archiveSha256:'a'.repeat(64),folders:[name,...s.emptyDescendants.map(p=>name+'/'+p)].sort()};};
+const leafProof=(request,phase=request.phase)=>{const s=request.scenario,path=phase==='before'?s.source:s.destination;return {version:1,kind:role.endsWith('-web')?'manifest':'filesystem',operationId:request.operationId,phase,workspaceId:fixtureWorkspaceId,itemId:fixtureItemId,source:s.source,destination:s.destination,relativePath:path,sourcePresent:phase==='before',destinationPresent:phase==='after',fileIdentity:role.endsWith('-web')?null:'1:123',archiveSha256:'a'.repeat(64),documentSha256:sha256(canonicalJSON(document().documentSnapshot)),assetHashes:{'assets/data.bin':'a'.repeat(64)},selectedItemId:fixtureItemId,selectedPath:role.endsWith('-app')?path:null};};
 let generation = 1;
 let sessionId = `editor-${process.pid}-${generation}`;
 let reloads = 0;
@@ -39,7 +41,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line);
   switch (m.type) {
     case 'hello': {
-      role = m.role; fixtureItemId=m.fixture.itemId;
+      role = m.role; fixtureItemId=m.fixture.itemId;fixtureWorkspaceId=m.fixture.workspaceId;
       shared = join(sharedRoot, m.runId); mkdirSync(shared, { recursive: true });
       const fixture = fault === 'wrong-fixture' ? { workspaceId: 'other-workspace', itemId: m.fixture.itemId } : m.fixture;
       out({ type: 'attest', round: 0, mode: fault === 'claim-real' ? 'real' : 'simulated', adapter: 'fake-adapter', ...fixture,
@@ -129,6 +131,10 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       return out({type:'malformed-repaired',round:m.round,proof:{...malformed,heldMs:performance.now()-malformed.started,repaired:true,cleanup:m.cleanup===true,repairSha256:fault==='malformed-repair-hash'?'e'.repeat(64):malformed.originalSha256,repairFileIdentity:'d'.repeat(64)}});
     case 'perturb':
       return out({ type: 'perturb', round: m.round, repaired: true });
+    case 'leafMove': {
+      const before=leafProof(m.leafMove,'before'),after=leafProof(m.leafMove,'after');writeFileSync(join(shared,'leaf-moved.flag'),m.leafMove.operationId);
+      return out({type:'leaf-moved',round:m.round,operationId:m.leafMove.operationId,before,after,retainedEvidence:true});
+    }
     case 'folderMove': {
       const before=folderProof(m.folderCase,'before'),after=folderProof(m.folderCase,'after');
       writeFileSync(join(shared,'folder-moved.flag'),m.folderCase.operationId);
@@ -149,6 +155,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         if (fault === 'sample-duplicate-id' && observations === 3) state.editIds.push(state.editIds[0]);
         if (fault === 'sample-missing' && observations === 3) return;
         if (!m.documentSnapshot || fault === 'field-missing-document') delete state.documentSnapshot;
+        if(m.leafMove){
+          const moved=readdirSync(shared).includes('leaf-moved.flag')&&fault!=='leaf-stuck',pending=m.leafMove.phase==='after'&&!moved;
+          state.leafMoveProof=leafProof(m.leafMove,pending?'before':m.leafMove.phase);state.leafMovePending=pending;state.leafMoveReviewVisible=fault==='leaf-dialog';
+          if(m.leafMove.phase==='after'&&!pending){if(fault==='leaf-bytes')state.leafMoveProof.documentSha256='b'.repeat(64);if(fault==='leaf-identity')state.leafMoveProof.fileIdentity='1:124';if(fault==='leaf-path')state.leafMoveProof.selectedPath=m.leafMove.scenario.source;}
+        }
         if(m.folderCase){
           const moved=readdirSync(shared).includes('folder-moved.flag')&&fault!=='folder-stuck';
           const pending=m.folderCase.phase==='after'&&!moved;

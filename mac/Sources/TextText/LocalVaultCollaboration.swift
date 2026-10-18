@@ -62,6 +62,24 @@ final class LocalVaultCollaboration {
     private var localSessions: [String: (itemId: String, engine: LocalVaultSync, account: LocalVaultAccountCredential?)] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
     private var retired = false
+#if TEXTTEXT_STRESS_ACTOR
+    // Actual live checkpoint routing, not a filesystem lookup or expected path.
+    func stressSharedSessionPath(itemId: String) async throws -> String {
+        let matches = localSessions.filter { $0.value.itemId == itemId }
+        guard !retired, matches.count == 1, let (token, active) = matches.first,
+              active.account?.accountId != nil, matchesLifetime(credentials()), owns(active.account, current: credentials()) else {
+            throw LocalVaultCollaborationError(code: "actor_session", message: "The private actor requires one current verified editing session.")
+        }
+        let path = await active.engine.sharedSessionPath(sessionToken: token, itemId: itemId)
+        guard !retired, let current = localSessions[token], current.itemId == itemId,
+              current.engine === active.engine, localSessions.filter({ $0.value.itemId == itemId }).count == 1,
+              owns(active.account, current: credentials()), owns(active.account, current: current.account),
+              matchesLifetime(credentials()), let path else {
+            throw LocalVaultCollaborationError(code: "actor_session", message: "The private actor's editing session changed during inspection.")
+        }
+        return path
+    }
+#endif
     init(credentials: @escaping () -> (origin: URL, token: String)? = { nil }, verifiedCredentials: (() -> LocalVaultAccountCredential?)? = nil, expectedLifetime: LocalVaultCredentialLifetime = .uncaptured, session: URLSession? = nil, engine: @escaping () -> LocalVaultSync? = { nil }, didRelease: @escaping () -> Void = {}) {
         self.credentials = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
         self.expectedLifetime = expectedLifetime

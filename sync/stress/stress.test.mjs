@@ -604,3 +604,10 @@ test('folder case scenario refuses lost bytes, directory identity, empty descend
   const result=await new Coordinator(config).run();assert.equal(result.status,'failed',fault);assert.equal(result.acceptance,'none');
  }
 });
+
+const leafScenario={role:'mac-cli',round:1,source:'Six-client acceptance folder 12345678-1234-1234-1234-123456789abc/Six-client acceptance simulated fixture.textpack',destination:'Six-client acceptance folder 12345678-1234-1234-1234-123456789abc/Six-client acceptance simulated fixture moved.textpack'};
+test('leaf scenario moves before six normal edits, accounts separate move and final paths without physical claim',async()=>{
+ const result=await new Coordinator({...makeConfig({rounds:1}),leafMove:leafScenario}).run();assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.acceptance,'none');assert.equal(result.roundsCompleted,1);assert.equal(result.leafMoveEvidence.stableSamples,3);const events=readFileSync(join(result.outputDir,'results.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.equal(events.filter(e=>e.type==='leaf-move').length,1);assert.equal(events.filter(e=>e.type==='leaf-move-final').length,1);assert.ok(events.findIndex(e=>e.type==='leaf-move')<events.findIndex(e=>e.type==='convergence-sample'));assert.equal(Object.keys(result.leafMoveEvidence.final).length,6);
+});
+test('leaf scenario refuses changed snapshot, identity, stale live path and review dialog',async()=>{for(const fault of ['leaf-bytes','leaf-identity','leaf-path','leaf-dialog']){const result=await new Coordinator({...makeConfig({rounds:1,faults:{'mac-app':fault}}),leafMove:leafScenario}).run();assert.equal(result.status,'failed',fault);assert.equal(result.acceptance,'none');}});
+test('leaf scenario never combines faults or broadens independent reopen evidence',()=>{for(const patch of [{rounds:2},{folderCaseMove:folderScenario},{browserClose:{role:'mac-web',round:1}},{multiField:true},{rounds:0}])assert.throws(()=>validateConfig({...makeConfig({rounds:1}),leafMove:leafScenario,...patch}));});

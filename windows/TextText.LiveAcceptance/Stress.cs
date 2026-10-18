@@ -34,7 +34,7 @@ static class Stress
         public bool Online { get => Volatile.Read(ref online) != 0; set => Volatile.Write(ref online, value ? 1 : 0); }
     }
 
-    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20, string? IdentityReceipt = null);
+    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20, string? IdentityReceipt = null, JsonElement? LeafMove = null);
     const int MaxRequestBytes = 256 * 1024, MaxText = 64 * 1024, MaxEditText = 1024;
     static readonly TimeSpan ObserveBound = TimeSpan.FromSeconds(30), EditBound = TimeSpan.FromSeconds(15);
     static readonly Regex MarkerPattern = new(@"\[(mac|pc)-(app|web|cli) r(\d+) [a-z]+\d+\]", RegexOptions.Compiled);
@@ -146,10 +146,11 @@ static class Stress
     {
         if (!Path.IsPathFullyQualified(config.File) || !config.File.EndsWith(".textpack", StringComparison.OrdinalIgnoreCase)
             || !config.Title.StartsWith("Six-client acceptance ", StringComparison.Ordinal)
-            || Path.GetFileNameWithoutExtension(config.File) != config.Title
+            || (config.LeafMove is null && Path.GetFileNameWithoutExtension(config.File) != config.Title)
             || !Guid.TryParse(config.ItemId, out _) || !IdPattern.IsMatch(config.WorkspaceId)
             || config.TotalMinutes is < 1 or > 120)
             throw new Exception("Invalid stress config: absolute .textpack File, Guid ItemId, WorkspaceId, Title starting 'Six-client acceptance ' equal to the file name, TotalMinutes 1..120.");
+        if(config.LeafMove is {} leafMove)LeafMoveObservation.ValidateConfig(config.File,config.Title,leafMove);
         if (TextPackStore.Identity(File.ReadAllBytes(config.File)) != config.ItemId) throw new Exception("Test file identity mismatch.");
     }
 
@@ -365,7 +366,17 @@ static class Stress
                         folderCaseReviewVisible=window.OwnedWindows.Count>0||await view.ExecuteScriptAsync("!!document.querySelector('dialog[open]')")=="true";
                         await RequireSelected(ct);
                     }
-                    return new { type = "state", round, text, editIds, documentSnapshot, folderCaseProof, folderCasePending, folderCaseReviewVisible, editor = new { sessionId, reloads } };
+                    object? leafMoveProof=null;bool? leafMovePending=null;bool? leafMoveReviewVisible=null;
+                    if(request.TryGetProperty("leafMove",out var leaf)) {
+                        if(config.LeafMove is not {} configuredLeaf)throw new IOException("Leaf observations require an explicit scenario config.");
+                        RequireActorScope();var bridge=Program.Field(window,"bridge")??throw new IOException("Selected native bridge missing.");
+                        var selectedPath=await LeafMoveObservation.SelectedPath(bridge,config.ItemId,ct);
+                        var observed=LeafMoveObservation.Observe(capturedRoot!,config.WorkspaceId,config.ItemId,config.Title,config.File,configuredLeaf,leaf,selectedPath);
+                        leafMoveProof=observed.Proof;leafMovePending=observed.Pending;
+                        leafMoveReviewVisible=window.OwnedWindows.Count>0||await view.ExecuteScriptAsync("!!document.querySelector('dialog[open]')")=="true";
+                        RequireActorScope();await RequireSelected(ct);
+                    }
+                    return new { type = "state", round, text, editIds, documentSnapshot, folderCaseProof, folderCasePending, folderCaseReviewVisible, leafMoveProof,leafMovePending,leafMoveReviewVisible, editor = new { sessionId, reloads } };
                 }
                 case "close-probe":
                 {
