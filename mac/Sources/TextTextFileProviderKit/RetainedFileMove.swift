@@ -7,7 +7,30 @@ import TextTextWorkspaceCore
 /// prevent that different inode from being acknowledged as the expected file.
 enum RetainedFileMove {
     private static func digest(_ bytes: Data) -> String { TextTextStableDigest.sha256Hex(bytes) }
-    private static func readIfPresent(_ target: URL) throws -> Data? {
+    static func exactLeafExists(_ target: URL) throws -> Bool {
+        var parent = stat()
+        let directory = target.deletingLastPathComponent()
+        if lstat(directory.path, &parent) != 0 {
+            guard errno == ENOENT else { throw RetainedFileReplacement.Failure.invalidJournal }
+            return false
+        }
+        guard parent.st_mode & S_IFMT == S_IFDIR else { throw RetainedFileReplacement.Failure.invalidJournal }
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        guard names.count <= 100_000 else { throw LocalVaultDocumentStore.Failure.tooLarge }
+        return names.contains(target.lastPathComponent)
+    }
+    static func caseOnlyAlias(_ source: URL, _ destination: URL) throws -> Bool {
+        guard source.deletingLastPathComponent().standardizedFileURL == destination.deletingLastPathComponent().standardizedFileURL,
+              source.lastPathComponent != destination.lastPathComponent,
+              source.lastPathComponent.lowercased() == destination.lastPathComponent.lowercased(),
+              try exactLeafExists(source), try !exactLeafExists(destination) else { return false }
+        var original = stat(), alias = stat()
+        return lstat(source.path, &original) == 0 && lstat(destination.path, &alias) == 0 &&
+            original.st_mode & S_IFMT == S_IFREG && alias.st_mode & S_IFMT == S_IFREG &&
+            original.st_dev == alias.st_dev && original.st_ino == alias.st_ino
+    }
+    private static func readIfPresent(_ target: URL, exactLeaf: Bool = false) throws -> Data? {
+        if exactLeaf, try !exactLeafExists(target) { return nil }
         var info = stat()
         if lstat(target.path, &info) != 0 {
             guard errno == ENOENT else { throw RetainedFileReplacement.Failure.invalidJournal }
@@ -37,7 +60,7 @@ enum RetainedFileMove {
         }
         if recovery.record.state == .cancelled { return recovery }
         if recovery.record.state == .conflict { return recovery }
-        let original = try readIfPresent(source), current = try readIfPresent(destination)
+        let original = try readIfPresent(source, exactLeaf: recovery.record.caseOnly == true), current = try readIfPresent(destination, exactLeaf: recovery.record.caseOnly == true)
         var record = recovery.record
         var displaced = try readIfPresent(recovery.displaced)
         if displaced == nil, original.map(digest) == record.expectedHash, current == nil {
@@ -66,13 +89,14 @@ enum RetainedFileMove {
             _ = try store(record, recovery: recovery)
         }
     }
-    static func move(_ source: URL, to destination: URL, expectedHash: String, recoveryRoot: URL, operation: UUID, lease: URL,
+    static func move(_ source: URL, to destination: URL, expectedHash: String, recoveryRoot: URL, operation: UUID, lease: URL, caseOnly: Bool = false,
                      observe: ((String) throws -> Void)? = nil) throws -> RetainedFileReplacement.Recovery {
         try RetainedFileRemoval.withLease(at: lease) {
             let sourcePath = try RetainedFileReplacement.physicalPath(source)
             let destinationPath = try RetainedFileReplacement.physicalPath(destination)
-            guard let before = try readIfPresent(source), digest(before) == expectedHash else { throw LocalVaultDocumentStore.Failure.changed }
-            guard try readIfPresent(destination) == nil else { throw CocoaError(.fileWriteFileExists) }
+            if caseOnly { guard try caseOnlyAlias(source, destination) else { throw LocalVaultDocumentStore.Failure.changed } }
+            guard let before = try readIfPresent(source, exactLeaf: caseOnly), digest(before) == expectedHash else { throw LocalVaultDocumentStore.Failure.changed }
+            guard try readIfPresent(destination, exactLeaf: caseOnly) == nil else { throw CocoaError(.fileWriteFileExists) }
             guard try RetainedFileReplacement.available(source) >= Int64(before.count) * 2 + 64 * 1024 * 1024 else { throw RetainedFileReplacement.Failure.insufficientSpace }
             let storageTarget = recoveryRoot.appendingPathComponent(source.lastPathComponent)
             let directory = RetainedFileReplacement.operationDirectory(target: storageTarget, operation: operation)
@@ -85,12 +109,13 @@ enum RetainedFileMove {
             var record = RetainedFileReplacement.Record(version: 1, operation: operation, filename: source.lastPathComponent,
                 expectedHash: expectedHash, preparedHash: expectedHash, state: .pending)
             record.kind = "move"
+            record.caseOnly = caseOnly ? true : nil
             try RetainedFileReplacement.create(before, at: directory.appendingPathComponent("prepared"))
             try RetainedFileReplacement.save(record, in: directory)
             try RetainedFileReplacement.flushDirectory(directory.deletingLastPathComponent())
             try RetainedFileReplacement.flushDirectory(directory.deletingLastPathComponent().deletingLastPathComponent())
             try observe?("prepared")
-            guard try readIfPresent(source).map(digest) == expectedHash else { throw RetainedFileReplacement.Failure.unresolved(directory) }
+            guard try readIfPresent(source, exactLeaf: caseOnly).map(digest) == expectedHash else { throw RetainedFileReplacement.Failure.unresolved(directory) }
             try observe?("beforeRename")
             guard renamex_np(sourcePath, destinationPath, UInt32(RENAME_EXCL | RENAME_NOFOLLOW_ANY)) == 0 else {
                 if errno == EEXIST { throw CocoaError(.fileWriteFileExists) }

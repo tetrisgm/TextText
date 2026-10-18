@@ -341,13 +341,22 @@ public struct LocalVaultDocumentStore: Sendable {
     }
 
     public func rename(path: String, expectedHash: String, newPath: String) throws -> Document {
-        let source = try url(for: path), destination = try url(for: newPath)
+        var source = try url(for: path), destination = try url(for: newPath)
+        let leafCaseRequest = path != newPath && (path as NSString).deletingLastPathComponent == (newPath as NSString).deletingLastPathComponent &&
+            (path as NSString).lastPathComponent.lowercased() == (newPath as NSString).lastPathComponent.lowercased()
+        if leafCaseRequest {
+            // Validation above still binds both paths to this root. Preserve
+            // requested leaf spelling; realpath resolves aliases to old case.
+            source = root.appendingPathComponent(path).standardizedFileURL
+            destination = root.appendingPathComponent(newPath).standardizedFileURL
+        }
         if source == destination {
             let current = try read(path: path)
             guard current.hash == expectedHash else { throw Failure.changed }
             return current
         }
-        if !FileManager.default.fileExists(atPath: source.path), FileManager.default.fileExists(atPath: destination.path) {
+        let sourcePresent = leafCaseRequest ? try RetainedFileMove.exactLeafExists(source) : FileManager.default.fileExists(atPath: source.path)
+        if !sourcePresent, FileManager.default.fileExists(atPath: destination.path) {
             let registry = ReplacementRecoveryRegistry(root: root)
             let candidates = try registry.entries().filter { $0.kind == "move" && $0.path == path && $0.destinationPath == newPath && $0.expectedHash == expectedHash }
             guard !candidates.isEmpty else { throw Failure.changed }
@@ -375,10 +384,11 @@ public struct LocalVaultDocumentStore: Sendable {
                     try RetainedReplacementProfile.prepare(root: root)
                 }
                 let registry = ReplacementRecoveryRegistry(root: root), operation = UUID()
+                let caseOnly = try RetainedFileMove.caseOnlyAlias(from, to)
                 _ = try RetainedFileMove.move(from, to: to, expectedHash: expectedHash, recoveryRoot: registry.recoveryRoot(path: path),
-                    operation: operation, lease: registry.captureLease(operation: operation)) { stage in
+                    operation: operation, lease: registry.captureLease(operation: operation), caseOnly: caseOnly) { stage in
                     if stage == "prepared" { try registry.register(operation: operation, itemId: itemId, path: path,
-                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "move", destinationPath: newPath) }
+                        expectedHash: expectedHash, preparedHash: expectedHash, workspaceStaging: true, kind: "move", destinationPath: newPath, caseOnly: caseOnly) }
                     try writeObservationForTesting?(stage == "prepared" ? "movePrepared" : stage)
                 }
                 try writeObservationForTesting?("renamed")

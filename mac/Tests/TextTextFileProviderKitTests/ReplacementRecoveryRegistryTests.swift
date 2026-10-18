@@ -235,6 +235,41 @@ final class ReplacementRecoveryRegistryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: target), opaque)
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Moved.textpack")), opaque)
     }
+    func testCaseOnlyMovePreservesRequestedLeafAndAllowsLaterSave() throws {
+        let original = try pack("baseline"), later = try pack("later save")
+        try original.write(to: target)
+        let result = try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack")
+        XCTAssertEqual(result.path, "original.textpack"); XCTAssertEqual(result.hash, hash(original))
+        let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        XCTAssertTrue(names.contains("original.textpack")); XCTAssertFalse(names.contains("Original.textpack"))
+        XCTAssertEqual(try store.replaceExact(path: "original.textpack", expectedHash: hash(original), bytes: later).hash, hash(later))
+        XCTAssertEqual(try store.read(path: "original.textpack").hash, hash(later))
+        XCTAssertTrue(try store.replacementRecoveryList().isEmpty)
+    }
+    func testCaseOnlyMoveLostReplyUsesExactLeafPresence() throws {
+        let original = try pack("baseline")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "moveCaptured" { throw Interrupted.stopped } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack"))
+        XCTAssertEqual(try store.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack").hash, hash(original))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { !$0.hasPrefix(".") }, ["original.textpack"])
+    }
+    func testCaseOnlyMoveFinalGapPreservesForeignVersionAndExactRecoveryPresence() throws {
+        let original = try pack("baseline"), foreign = try pack("foreign at boundary", itemId: "other-item")
+        try original.write(to: target)
+        var writer = store
+        writer.writeObservationForTesting = { if $0 == "beforeRename" { try foreign.write(to: self.target, options: .atomic) } }
+        XCTAssertThrowsError(try writer.rename(path: "Original.textpack", expectedHash: hash(original), newPath: "original.textpack"))
+        XCTAssertThrowsError(try store.read(path: "original.textpack"))
+        let row = try XCTUnwrap(store.replacementRecoveryList().first)
+        XCTAssertEqual(row.sourcePath, "Original.textpack"); XCTAssertEqual(row.path, "original.textpack")
+        XCTAssertEqual(row.sourcePresent, false); XCTAssertTrue(row.currentPresent)
+        XCTAssertTrue(try store.replacementRecoveryRead(id: row.id, version: "source").absent)
+        XCTAssertEqual(try store.replacementRecoveryRead(id: row.id, version: "displaced").data, foreign)
+        try acceptMove(row)
+        XCTAssertEqual(try store.read(path: "original.textpack").hash, hash(foreign))
+    }
     func testRenamedCandidateCannotBypassReadOrLostReplyFence() throws {
         let (_, prepared, _) = try stagedConflict()
         let renamed = root.appendingPathComponent("renamed.textpack")

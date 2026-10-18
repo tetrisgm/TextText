@@ -13,7 +13,7 @@ struct ReplacementRecoveryRegistry {
     private static let cache = EntryCache()
     private static func requireKnownFields(_ bytes: Data) throws {
         guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy", "destinationPath", "moveResolution"])) else { throw Failure.invalidRegistry }
+              Set(fields.keys).isSubset(of: Set(["version", "operation", "workspaceRootHash", "ownerHash", "itemId", "path", "expectedHash", "preparedHash", "recoveryPath", "resolution", "kind", "userDeletion", "deletionMarkerPublished", "deletionIntentCancelled", "explicitCancellation", "supersededBy", "destinationPath", "moveResolution", "caseOnly"])) else { throw Failure.invalidRegistry }
         if let value = fields["moveResolution"], !(value is NSNull) {
             guard let receipt = value as? [String: Any], Set(receipt.keys).isSubset(of: Set(["preparedHash", "displacedHash", "captured", "currentHash", "currentPresent", "sourceHash", "sourcePresent"])) else { throw Failure.invalidRegistry }
         }
@@ -42,6 +42,7 @@ struct ReplacementRecoveryRegistry {
         var deletionIntentCancelled: Bool? = nil
         var explicitCancellation: ExplicitCancellation? = nil
         var supersededBy: UUID? = nil
+        var caseOnly: Bool? = nil
         var destinationPath: String? = nil
         var moveResolution: MoveResolution? = nil
     }
@@ -157,7 +158,16 @@ struct ReplacementRecoveryRegistry {
         return try target(visible)
     }
     private func validateMove(_ entry: Entry) throws {
-        if entry.kind == "move" { _ = try moveDestination(entry) }
+        guard entry.caseOnly != true || entry.kind == "move" else { throw Failure.invalidRegistry }
+        if entry.kind == "move" {
+            _ = try moveDestination(entry)
+            if entry.caseOnly == true {
+                guard let destination = entry.destinationPath,
+                      (entry.path as NSString).deletingLastPathComponent == (destination as NSString).deletingLastPathComponent,
+                      (entry.path as NSString).lastPathComponent != (destination as NSString).lastPathComponent,
+                      (entry.path as NSString).lastPathComponent.lowercased() == (destination as NSString).lastPathComponent.lowercased() else { throw Failure.invalidRegistry }
+            }
+        }
         else { guard entry.destinationPath == nil, entry.moveResolution == nil else { throw Failure.invalidRegistry } }
         if let receipt = entry.moveResolution {
             guard entry.kind == "move", receipt.preparedHash == entry.preparedHash, entry.resolution == nil, entry.explicitCancellation == nil,
@@ -335,11 +345,12 @@ struct ReplacementRecoveryRegistry {
     }
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.
-    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil) throws {
+    func register(operation: UUID, itemId: String, path: String, expectedHash: String, preparedHash: String, workspaceStaging: Bool = false, kind: String? = nil, userDeletion: Bool = false, destinationPath: String? = nil, caseOnly: Bool = false) throws {
         var entry = Entry(version: 1, operation: operation, workspaceRootHash: digest(Data(root.path.utf8)), ownerHash: try ownerHash(), itemId: itemId, path: path,
                           expectedHash: expectedHash, preparedHash: preparedHash, resolution: nil)
         entry.kind = kind
         entry.destinationPath = destinationPath
+        entry.caseOnly = caseOnly ? true : nil
         try validateMove(entry)
         entry.userDeletion = userDeletion ? true : nil
         guard kind == nil || kind == "removal" || kind == "move" else { throw Failure.invalidRegistry }
@@ -387,7 +398,7 @@ struct ReplacementRecoveryRegistry {
             if persistRelocation { try save(updated, creating: false) }
         }
         guard recovery.record.expectedHash == entry.expectedHash,
-              recovery.record.preparedHash == entry.preparedHash, recovery.record.kind == entry.kind else { throw Failure.unresolved(entry.operation) }
+              recovery.record.preparedHash == entry.preparedHash, recovery.record.kind == entry.kind, recovery.record.caseOnly == entry.caseOnly else { throw Failure.unresolved(entry.operation) }
         return recovery
     }
     private func visibleClassificationTarget(_ entry: Entry, _ retained: RetainedFileReplacement.Recovery) -> URL {

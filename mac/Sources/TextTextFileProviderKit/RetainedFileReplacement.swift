@@ -26,6 +26,7 @@ enum RetainedFileReplacement {
         var displacedFingerprint: String? = nil
         var acknowledgedDisplacedHash: String? = nil
         var kind: String? = nil
+        var caseOnly: Bool? = nil
     }
     struct Recovery {
         let directory: URL
@@ -202,6 +203,7 @@ enum RetainedFileReplacement {
                   validHash(record.expectedHash), validHash(record.preparedHash),
                   record.acknowledgedDisplacedHash.map(validHash) ?? true,
                   (record.kind == nil || record.kind == "removal" || record.kind == "move"),
+                  (record.caseOnly != true || record.kind == "move"),
                   (record.state != .cancelled || record.kind == "removal" || record.kind == "move") else { throw Failure.invalidJournal }
             let result = Recovery(directory: directory, record: record, storageTarget: layout.canonicalTarget)
             cache.lock.lock()

@@ -85,6 +85,7 @@ extension LocalVaultDocumentStore {
         for (index, part) in parts.enumerated() {
             location.appendPathComponent(String(part))
             if missing { continue }
+            if entry.caseOnly == true, index == parts.count - 1, try !RetainedFileMove.exactLeafExists(location) { missing = true; continue }
             var info = stat()
             if lstat(location.path, &info) != 0 {
                 guard errno == ENOENT else { throw Failure.invalidPath }
