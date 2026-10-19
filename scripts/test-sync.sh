@@ -28,6 +28,33 @@ for suite in DocumentCreation RemoteDocumentStore StableFileSnapshot Replacement
   }
 done
 
+# BEGIN required private readonly native asset observation gate
+# A file actor has no schema authority. Exercise the actual product validator
+# in a fresh controlled page; never reuse an old fixture or normal app profile.
+asset_fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/texttext-native-asset-inspection.XXXXXX")
+asset_fixture="$asset_fixture_root/schema"
+node --import tsx sync/stress/build-native-asset-inspection-fixture.mts "$asset_fixture"
+TEXTTEXT_ASSET_INSPECTION_FIXTURE="$asset_fixture" TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 \
+  -Xswiftc -DTEXTTEXT_STRESS_ACTOR \
+  --filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests' 2>&1 | tee "$test_log"
+for suite in NativeStressAssetProofTests LocalVaultStressObservationTests; do
+  grep -Eq "Test Suite '${suite}' passed" "$test_log" || {
+    echo "Required readonly asset observation suite did not pass: $suite" >&2
+    exit 1
+  }
+done
+for method in testStrictRequestBeforeReads testActualBytesAssetsAndNoSchemaDuplication testMalformedUTF8ArchiveNamesRefuseBeforeIdentity testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics testReadonlyReadRefusesLinksAndPreservesBytes testActualWKProductSchemaRejectsHiddenInvalidFields testAbsentPrivateDirectoryStaysAbsent testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease testGenuineProfilePublicationNeverRepairsOrCreatesLease testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords testActualSessionTokenAndReadonlyProtection; do
+  grep -Eq "Test Case '.*${method}.*' passed" "$test_log" || {
+    echo "Required readonly asset observation method did not pass: $method" >&2
+    exit 1
+  }
+done
+if grep -Eq "Test Case '.*(NativeStressAssetProofTests|LocalVaultStressObservationTests).*' skipped" "$test_log"; then
+  echo 'Required readonly asset observation cases must not skip.' >&2
+  exit 1
+fi
+# END required private readonly native asset observation gate
+
 # The Windows file/sync core is portable .NET. Run its algorithm and journal
 # regressions on the Mac gate as well as the actual Windows candidate build.
 dotnet run --project windows/TextText.Core.Tests/TextText.Core.Tests.csproj \

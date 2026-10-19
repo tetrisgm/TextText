@@ -94,6 +94,12 @@ struct FolderCaseRename {
             }
             guard name.hasSuffix(".json"), let id = UUID(uuidString: String(name.dropLast(5))) else { throw Failure.invalid }
             let bytes = try StableFileSnapshot.read(directory.appendingPathComponent(name), maximumBytes: 16_384)
+            let record = try decodeRecord(bytes, id: id, principal: principal)
+            try body(record)
+        }
+        if let enumerationError { throw enumerationError }
+    }
+    private func decodeRecord(_ bytes: Data, id: UUID, principal: String) throws -> Record {
             guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
                   Set(object.keys).isSubset(of: Set(["version","operation","rootHash","ownerHash","sourcePath","destinationPath","sourceIdentity","parentIdentity","state","explicitResolution"])) else { throw Failure.invalid }
             for key in ["sourceIdentity", "parentIdentity"] {
@@ -112,10 +118,37 @@ struct FolderCaseRename {
                   source.lastPathComponent != destination.lastPathComponent,
                   source.lastPathComponent.lowercased() == destination.lastPathComponent.lowercased(),
                   record.explicitResolution == nil || record.state == "completed" else { throw Failure.invalid }
-            try body(record)
-        }
-        if let enumerationError { throw enumerationError }
+        return record
     }
+#if TEXTTEXT_STRESS_ACTOR
+    func stressCompletedHistory(principalHash: String) throws -> [String: String] {
+        guard principalHash.range(of: "\\A[0-9a-f]{64}\\z", options: .regularExpression) != nil else { throw Failure.invalid }
+        func snapshot() throws -> [String: String] {
+            var info = stat()
+            if lstat(directory.path, &info) != 0 { guard errno == ENOENT else { throw Failure.invalid }; return [:] }
+            guard info.st_mode & S_IFMT == S_IFDIR, directory.resolvingSymlinksInPath().path == directory.path else { throw Failure.invalid }
+            var enumerationError: Error?
+            guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
+                options: [.skipsSubdirectoryDescendants, .skipsPackageDescendants], errorHandler: { _, error in enumerationError = error; return false }) else { throw Failure.invalid }
+            var result = ["present": "1"], count = 0, total = 0
+            for case let file as URL in files {
+                count += 1
+                guard count <= 1000, file.lastPathComponent.hasSuffix(".json"),
+                      let id = UUID(uuidString: String(file.lastPathComponent.dropLast(5))),
+                      file.lastPathComponent == id.uuidString + ".json" else { throw Failure.invalid }
+                let bytes = try StableFileSnapshot.read(file, maximumBytes: 16_384)
+                try LocalVaultSharedRename.validateStateBytes(bytes)
+                total += bytes.count; guard total <= 16 * 1024 * 1024 else { throw Failure.invalid }
+                let record = try decodeRecord(bytes, id: id, principal: principalHash)
+                guard record.state == "completed" else { throw Failure.unresolved }
+                result[file.lastPathComponent] = digest(bytes)
+            }
+            if let enumerationError { throw enumerationError }
+            return result
+        }
+        let first = try snapshot(); guard try snapshot() == first else { throw Failure.invalid }; return first
+    }
+#endif
     private func endpoint(_ path: String) throws -> Endpoint {
         let components = path.split(separator: "/")
         var current = root

@@ -76,6 +76,40 @@ internal sealed class FolderCaseRename(TextPackStore store)
         VerifyExistingProfile();RetainedFileReplacement.CheckPath(DirectoryPath);if(!Directory.Exists(DirectoryPath))yield break;
         var owner=Owner();foreach(var file in Directory.EnumerateFiles(DirectoryPath,"*.json")){if(!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file),"D",out var id)||Path.GetFileName(file)!=id.ToString("D")+".json")throw new InvalidDataException("Unknown folder journal.");yield return Read(id,owner);}
     }
+    // Private read-only attestation; no Owner/Entries/Lease/classification calls.
+    Dictionary<string,string> ReadCompletedHistory(string principalHash)
+    {
+        if(!RetainedFileReplacement.ValidHash(principalHash))throw new InvalidDataException("Invalid attested principal.");
+        Dictionary<string,string> Snapshot()
+        {
+            RetainedFileReplacement.CheckPath(DirectoryPath);
+            var result=new Dictionary<string,string>(StringComparer.Ordinal);
+            if(!Directory.Exists(DirectoryPath)){if(File.Exists(DirectoryPath))throw new InvalidDataException("Invalid folder history directory.");return result;}
+            result["present"]="1";var count=0;var total=0;var consents=new HashSet<string>(StringComparer.Ordinal);
+            foreach(var file in Directory.EnumerateFileSystemEntries(DirectoryPath)) {
+                if(++count>1000)throw new InvalidDataException("Folder history limit exceeded.");
+                if(Path.GetFileName(file)=="consents") {RetainedFileReplacement.CheckPath(file);if(!Directory.Exists(file))throw new InvalidDataException("Invalid folder consent directory.");result["consents/present"]="1";continue;}
+                var name=Path.GetFileName(file);
+                if(!Guid.TryParseExact(Path.GetFileNameWithoutExtension(name),"D",out var id)||name!=id.ToString("D")+".json")throw new InvalidDataException("Unknown folder metadata.");
+                var bytes=RetainedFileReplacement.Read(file,16384);ProtectedSavedRename.ValidateStateBytes(bytes);total+=bytes.Length;
+                if(total>16*1024*1024)throw new InvalidDataException("Folder history limit exceeded.");
+                // Read reuses the exact production schema/path/principal/consent validator.
+                var intent=Read(id,principalHash);
+                if(intent.State!="completed"||!bytes.SequenceEqual(RetainedFileReplacement.Read(file,16384)))throw new InvalidDataException("Folder history is not completed and stable.");
+                result[name]=TextPackStore.Hash(bytes);
+                if(intent.ConsentHash is not null){var path=ConsentFor(id);var consent=RetainedFileReplacement.Read(path,16384);total+=consent.Length;if(total>16*1024*1024)throw new InvalidDataException("Folder history limit exceeded.");consents.Add(path);result["consents/"+name]=TextPackStore.Hash(consent);}
+            }
+            var consentDirectory=Path.Combine(DirectoryPath,"consents");
+            if(Directory.Exists(consentDirectory))foreach(var file in Directory.EnumerateFileSystemEntries(consentDirectory)) {
+                if(++count>1000||!consents.Remove(file))throw new InvalidDataException("Unknown or over-bound folder consent history.");RetainedFileReplacement.CheckPath(file);
+            }
+            if(consents.Count!=0)throw new InvalidDataException("Missing folder consent history.");
+            return result;
+        }
+        var first=Snapshot();var second=Snapshot();
+        if(first.Count!=second.Count||first.Any(p=>!second.TryGetValue(p.Key,out var value)||value!=p.Value))throw new InvalidDataException("Folder history changed during observation.");
+        return first;
+    }
     void Save(Intent intent)=>TextPackStore.AtomicWrite(PathFor(intent.Operation),JsonSerializer.SerializeToUtf8Bytes(intent));
     Endpoint Probe(string relative){var path=store.Resolve(relative);if(!ExactPathExists(store.Root,path))return new(false,null);return new(true,Identity(path));}
     internal void AssertReadable()

@@ -189,6 +189,49 @@ public sealed partial class ReplacementRecoveryRegistry
         RetainedFileReplacement.SaveJson(Path.Combine(directory, operation.ToString("D") + ".json"), entry, creating: true);
         Invalidate();
     }
+    // Private diagnostic seam: caller has already attested exact owner/root.
+    // Existing production validation remains owner-verifying by default.
+    Dictionary<string,string> ReadCompletedHistory(string principalHash)
+    {
+        if(!RetainedFileReplacement.ValidHash(principalHash))throw new InvalidDataException("Invalid attested principal.");
+        Dictionary<string,string> Snapshot()
+        {
+            RetainedFileReplacement.CheckPath(directory);
+            var result=new Dictionary<string,string>(StringComparer.Ordinal);
+            if(!Directory.Exists(directory)){if(File.Exists(directory))throw new InvalidDataException("Invalid recovery directory.");return result;}
+            result["present"]="1";
+            var count=0;var total=0;var verified=new HashSet<string>(StringComparer.Ordinal);
+            foreach(var file in Directory.EnumerateFileSystemEntries(directory)) {
+                if(++count>1000)throw new InvalidDataException("Recovery metadata limit exceeded.");
+                var name=Path.GetFileName(file);
+                if(!Guid.TryParseExact(Path.GetFileNameWithoutExtension(name),"D",out var id)||name!=id.ToString("D")+".json")throw new InvalidDataException("Unknown recovery metadata.");
+                var bytes=RetainedFileReplacement.Read(file,16384);ProtectedSavedRename.ValidateStateBytes(bytes);total+=bytes.Length;
+                if(total>16*1024*1024)throw new InvalidDataException("Recovery metadata limit exceeded.");
+                CheckFields(bytes);var entry=JsonSerializer.Deserialize<Entry>(bytes)??throw new InvalidDataException("Invalid recovery metadata.");
+                Validate(entry,verifyOwner:false,verified:verified);
+                if(entry.Operation!=id||entry.OwnerHash!=principalHash)throw new InvalidDataException("Recovery principal changed.");
+                var original=Target(entry,verified);
+                var exact=entry.RecoveryPath is not null?RecoveryLocation(entry,verified):RetainedFileReplacement.OperationDirectory(original,id);
+                // Never call RecoveryFor: its missing-pointer branch searches for relocation.
+                var retained=RetainedFileReplacement.InspectDirectory(exact,Path.GetFileName(entry.Path),id,verified,allowCaseAlias:entry.RecoveryPath is not null);
+                var prepared=RetainedFileReplacement.Fingerprint(retained.Prepared);
+                var displaced=RetainedFileReplacement.Fingerprint(retained.Displaced);
+                if(retained.Record.State!="completed"||retained.Record.ExpectedHash!=entry.ExpectedHash||retained.Record.PreparedHash!=entry.PreparedHash||
+                    retained.Record.Kind!=entry.Kind||retained.Record.CaseOnly!=entry.CaseOnly||retained.Record.SourcePath!=entry.SourcePath||
+                    prepared is null||displaced is null||retained.Record.PreparedStamp!=prepared||retained.Record.DisplacedStamp!=displaced)
+                    throw new InvalidDataException("Recovery history is not already completed and stable.");
+                if(entry.Resolution is {} resolution&&(resolution.PreparedStamp!=prepared||resolution.DisplacedStamp!=displaced))throw new InvalidDataException("Recovery resolution changed.");
+                var manifest=RetainedFileReplacement.Read(Path.Combine(exact,"manifest.json"),16384);ProtectedSavedRename.ValidateStateBytes(manifest);total+=manifest.Length;
+                if(total>16*1024*1024)throw new InvalidDataException("Recovery metadata limit exceeded.");
+                var prefix=id.ToString("D");result[prefix+"/index"]=TextPackStore.Hash(bytes);result[prefix+"/manifest"]=TextPackStore.Hash(manifest);
+                result[prefix+"/prepared"]=TextPackStore.Hash(JsonSerializer.SerializeToUtf8Bytes(prepared));result[prefix+"/displaced"]=TextPackStore.Hash(JsonSerializer.SerializeToUtf8Bytes(displaced));
+            }
+            return result;
+        }
+        var first=Snapshot();var second=Snapshot();
+        if(first.Count!=second.Count||first.Any(p=>!second.TryGetValue(p.Key,out var value)||value!=p.Value))throw new InvalidDataException("Recovery history changed during observation.");
+        return first;
+    }
     public Inspection Inspect(Entry entry)
     {
         Validate(entry);

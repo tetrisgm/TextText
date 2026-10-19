@@ -1,4 +1,7 @@
 import Foundation
+#if TEXTTEXT_STRESS_ACTOR
+import Darwin
+#endif
 import CoreFoundation
 import ZIPFoundation
 import TextTextWorkspaceCore
@@ -125,13 +128,15 @@ struct LocalVaultSharedEditingStore: Sendable {
         var assetHash: String?
     }
     struct ProtectionSnapshot: Equatable, Sendable { let fingerprints: [String: String]; let protected: Bool }
-    /// No recovery, account adoption, projection following, or acknowledgement.
-    /// Callers compare this exact evidence again after a suspended policy RPC.
+    /// Reads fixed retained files after standard store admission. That admission
+    /// may finish earlier recovery; private observers use stressProtectionSnapshot.
     func protectionSnapshot(itemId: String) throws -> ProtectionSnapshot {
-        let directory = try itemDirectory(itemId)
+        try fixedProtectionSnapshot(itemId: itemId, directory: itemDirectory(itemId), load: { try read($0, limit: $1) })
+    }
+    private func fixedProtectionSnapshot(itemId: String, directory: URL, load: (URL, Int) throws -> Data?) throws -> ProtectionSnapshot {
         var fingerprints: [String: String] = [:], protected = false
         for name in ["checkpoint.json", "intent.json", "move-intent.json", "binary-intent.json"] {
-            guard let bytes = try read(directory.appendingPathComponent(name), limit: 9 * 1024 * 1024) else { continue }
+            guard let bytes = try load(directory.appendingPathComponent(name), 9 * 1024 * 1024) else { continue }
             guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
             if let version = object["version"], !(version is NSNull), (version as? Int != 1 || CFGetTypeID(version as CFTypeRef) == CFBooleanGetTypeID()) { throw LocalVaultSharedFailure.invalid }
             if name == "checkpoint.json" {
@@ -155,6 +160,55 @@ struct LocalVaultSharedEditingStore: Sendable {
         }
         return .init(fingerprints: fingerprints, protected: protected)
     }
+#if TEXTTEXT_STRESS_ACTOR
+    /// Private observation must not enter assertReadable: that API may finish
+    /// retained transactions. Only already-completed history can be attested.
+    func stressProtectionSnapshot(itemId: String, principalHash: String? = nil) throws -> ProtectionSnapshot {
+        func directory() throws -> URL {
+            guard Self.identifier(itemId) else { throw LocalVaultSharedFailure.invalid }
+            try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
+            let state = LocalVaultDeviceState.directory(root: root)
+            guard state.resolvingSymlinksInPath().path == state.path else { throw LocalVaultSharedFailure.invalid }
+            var result = state
+            for component in ["shared-editing", itemId] {
+                result.appendPathComponent(component, isDirectory: true)
+                guard result.resolvingSymlinksInPath().path == result.path else { throw LocalVaultSharedFailure.invalid }
+                var info = stat()
+                if lstat(result.path, &info) == 0 { guard info.st_mode & S_IFMT == S_IFDIR else { throw LocalVaultSharedFailure.invalid } }
+                else if errno != ENOENT { throw LocalVaultSharedFailure.invalid }
+            }
+            return result
+        }
+        func history() throws -> [String: String] {
+            let state = LocalVaultDeviceState.directory(root: root)
+            var present = false
+            for name in ["replacement-index", "folder-case-renames"] {
+                var info = stat()
+                if lstat(state.appendingPathComponent(name).path, &info) == 0 { present = true }
+                else if errno != ENOENT { throw LocalVaultSharedFailure.invalid }
+            }
+            guard present else { return [:] }
+            guard let principalHash else { throw LocalVaultSharedFailure.protected }
+            let registry = try ReplacementRecoveryRegistry(root: root).stressCompletedHistory(principalHash: principalHash)
+            let folders = try FolderCaseRename(root: root).stressCompletedHistory(principalHash: principalHash)
+            var result = [String: String]()
+            for (key, value) in registry { result["history/registry/" + key] = value }
+            for (key, value) in folders { result["history/folder/" + key] = value }
+            return result
+        }
+        let historyBefore = try history()
+        let selected = try directory()
+        let value = try fixedProtectionSnapshot(itemId: itemId, directory: selected) { url, limit in
+            var info = stat()
+            if lstat(url.path, &info) != 0 { guard errno == ENOENT else { throw LocalVaultSharedFailure.invalid }; return nil }
+            return try StableFileSnapshot.read(url, maximumBytes: limit)
+        }
+        guard try directory() == selected, try history() == historyBefore else { throw LocalVaultSharedFailure.invalid }
+        var fingerprints = value.fingerprints
+        for (key, entry) in historyBefore { guard fingerprints[key] == nil else { throw LocalVaultSharedFailure.invalid }; fingerprints[key] = entry }
+        return ProtectionSnapshot(fingerprints: fingerprints, protected: value.protected)
+    }
+#endif
 
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)

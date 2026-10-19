@@ -260,3 +260,25 @@ test('native and hosted file mutation handoff regressions are required and finge
     assert.ok(source.includes('file-mutation-handoff'), config);
   }
 });
+
+
+test('manual native gate requires genuine readonly asset fixture and both flag suites', async () => {
+  const script = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
+  assert.ok(script.includes('node --import tsx sync/stress/build-native-asset-inspection-fixture.mts "$asset_fixture"'));
+  assert.ok(script.includes('asset_fixture="$asset_fixture_root/schema"'));
+  assert.ok(script.includes('TEXTTEXT_ASSET_INSPECTION_FIXTURE="$asset_fixture" TEXTTEXT_STORE=1 swift test'));
+  assert.ok(script.includes('-Xswiftc -DTEXTTEXT_STRESS_ACTOR'));
+  assert.ok(script.includes("--filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests'"));
+  for (const method of ['testStrictRequestBeforeReads', 'testActualBytesAssetsAndNoSchemaDuplication', 'testMalformedUTF8ArchiveNamesRefuseBeforeIdentity', 'testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics', 'testReadonlyReadRefusesLinksAndPreservesBytes', 'testActualWKProductSchemaRejectsHiddenInvalidFields', 'testAbsentPrivateDirectoryStaysAbsent', 'testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease', 'testGenuineProfilePublicationNeverRepairsOrCreatesLease', 'testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords', 'testActualSessionTokenAndReadonlyProtection']) assert.ok(script.includes(method), method);
+  assert.ok(script.includes('required private readonly native asset observation gate'));
+  assert.ok(script.includes('Required readonly asset observation cases must not skip.'));
+  assert.ok(script.includes('cp "$lock_copy" mac/Package.resolved'));
+  assert.ok(inputs.includes('scripts/test-sync.sh') && inputs.includes('sync') && inputs.includes('mac/Sources') && inputs.includes('mac/Tests'));
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-native-asset-registration-'));
+  const names = ['scripts/test-sync.sh', 'sync/stress/build-native-asset-inspection-fixture.mts', 'mac/Tests/TextTextTests/NativeStressAssetProofTests.swift', 'mac/Tests/TextTextFileProviderKitTests/LocalVaultStressObservationTests.swift'];
+  try {
+    for (const name of names) {await fs.mkdir(path.dirname(path.join(temporary,name)),{recursive:true});await fs.writeFile(path.join(temporary,name),'original');}
+    const original = await fingerprint(temporary,names);
+    for (const name of names) {const target=path.join(temporary,name);await fs.writeFile(target,'changed');assert.notEqual(await fingerprint(temporary,names),original,name);await fs.writeFile(target,'original');}
+  } finally {await fs.rm(temporary,{recursive:true,force:true});}
+});

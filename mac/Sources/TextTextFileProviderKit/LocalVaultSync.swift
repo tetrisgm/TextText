@@ -424,6 +424,46 @@ public actor LocalVaultSync {
         guard let session = sharedSessions[itemId], session.token == sessionToken, !session.retired else { return nil }
         return session.path
     }
+#if TEXTTEXT_STRESS_ACTOR
+    public struct StressSessionObservation: Equatable, Sendable {
+        public let engine: LocalVaultSync
+        public let token: String
+        public let path: String
+        public let accountId: String
+        public let fingerprints: [String: String]
+        public static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.engine === rhs.engine && lhs.token == rhs.token && lhs.path == rhs.path &&
+                lhs.accountId == rhs.accountId && lhs.fingerprints == rhs.fingerprints
+        }
+    }
+    /// Fixed-file readonly inspection. No open, follow, recovery, or directory creation.
+    public func stressSessionObservation(sessionToken: String, itemId: String) throws -> StressSessionObservation {
+        guard let accountId, let session = sharedSessions[itemId], session.token == sessionToken,
+              !session.retired else { throw LocalVaultSharedFailure.invalid }
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
+        let ownerURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let expected = LocalVaultAccountRootOwnership.Owner(version: 1, binding: try PortableWorkspaceBinding.normalized(state.binding),
+            accountId: accountId, rootHash: TextTextStableDigest.sha256Hex(Data(root.standardizedFileURL.resolvingSymlinksInPath().path.utf8)))
+        let owner = try StableFileSnapshot.read(ownerURL, maximumBytes: 4096)
+        guard let fields = try JSONSerialization.jsonObject(with: owner) as? [String: Any],
+              Set(fields.keys) == ["version", "binding", "accountId", "rootHash"],
+              let rawBinding = fields["binding"] as? [String: Any], Set(rawBinding.keys) == ["origin", "workspaceId"] else { throw LocalVaultSharedFailure.invalid }
+        var actual = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: owner)
+        let profile = try RetainedReplacementProfile.stressObservation(stateDirectory: ownerURL.deletingLastPathComponent(), owner: actual, expectedRootHash: expected.rootHash)
+        guard actual.version == 1 || actual.version == 2 else { throw LocalVaultSharedFailure.invalid }
+        actual.version = 1
+        guard actual == expected else { throw LocalVaultSharedFailure.account }
+        let protection = try sharedStore.stressProtectionSnapshot(itemId: itemId, principalHash: try RetainedReplacementProfile.principalHash(actual))
+        guard !protection.protected,
+              try StableFileSnapshot.read(ownerURL, maximumBytes: 4096) == owner,
+              try RetainedReplacementProfile.stressObservation(stateDirectory: ownerURL.deletingLastPathComponent(), owner: JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: owner), expectedRootHash: expected.rootHash) == profile else { throw LocalVaultSharedFailure.invalid }
+        var fingerprints = protection.fingerprints
+        fingerprints["account-owner.json"] = TextTextStableDigest.sha256Hex(owner)
+        for (key, value) in profile { fingerprints["profile/" + key] = value }
+        return StressSessionObservation(engine: self, token: session.token, path: session.path, accountId: accountId,
+                                        fingerprints: fingerprints)
+    }
+#endif
     /// The single TextPack, other than `source`, that carries `itemId`. The
     /// index is not consulted: an outside copy or move can leave a path indexed
     /// under another item while its bytes now carry this one, so every listed

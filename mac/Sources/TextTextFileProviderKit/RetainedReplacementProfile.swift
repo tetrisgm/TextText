@@ -74,6 +74,55 @@ enum RetainedReplacementProfile {
             }
         }
     }
+#if TEXTTEXT_STRESS_ACTOR
+    /// No migration lease, publication, classify, acknowledge, or repair. Only
+    /// already-completed stable profile records can attest a private observer.
+    static func stressObservation(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws -> [String: String] {
+        let target = stateDirectory.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let profile = stateDirectory.appendingPathComponent("retained-replacement-profile/profile.json")
+        func snapshot() throws -> [String: String] {
+            var result = [String: String]()
+            if owner.version == 1 && hasRetainedProfile(stateDirectory: stateDirectory) { throw Failure.invalidProfile }
+            if owner.version == 2 {
+                try verifyContents(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
+                for name in ["profile.json", "owner-v1.json", "profile-v1.json", "profile-v2.json", "profile-v3.json", "profile-v4.json"] {
+                    let url = stateDirectory.appendingPathComponent("retained-replacement-profile/" + name)
+                    var info = stat()
+                    if lstat(url.path, &info) != 0 { guard errno == ENOENT else { throw Failure.invalidProfile }; continue }
+                    result[name] = digest(try StableFileSnapshot.read(url, maximumBytes: 4096))
+                }
+            } else if hasRetainedProfile(stateDirectory: stateDirectory) { throw Failure.invalidProfile }
+            for inspected in [target, profile] {
+                if !FileManager.default.fileExists(atPath: inspected.deletingLastPathComponent().path) { continue }
+                let layout = try RetainedFileReplacement.layout(target: inspected)
+                let base = URL(fileURLWithPath: layout.basePath)
+                if FileManager.default.fileExists(atPath: base.path) {
+                    // layout.basePath already uses C realpath. Foundation may
+                    // map /private/var back to /var; compare physical spellings
+                    // using the same existing C convention, never follow a link.
+                    var info = stat()
+                    guard lstat(base.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
+                          let physical = realpath(base.path, nil) else { throw Failure.invalidProfile }
+                    defer { free(physical) }
+                    guard String(cString: physical) == layout.basePath,
+                          try FileManager.default.contentsOfDirectory(atPath: base.path).count <= 64 else { throw Failure.invalidProfile }
+                }
+                for operation in try RetainedFileReplacement.inspect(inspected) {
+                    guard operation.record.state == .completed,
+                          let prepared = operation.record.preparedFingerprint, let displaced = operation.record.displacedFingerprint,
+                          prepared == (try RetainedFileReplacement.fingerprint(operation.prepared)),
+                          displaced == (try RetainedFileReplacement.fingerprint(operation.displaced)) else { throw Failure.invalidProfile }
+                    let key = inspected.lastPathComponent + "/" + operation.record.operation.uuidString
+                    result[key] = digest(try StableFileSnapshot.read(operation.directory.appendingPathComponent("manifest.json"), maximumBytes: 32 * 1024))
+                }
+            }
+            return result
+        }
+        let first = try snapshot()
+        guard try snapshot() == first else { throw Failure.invalidProfile }
+        return first
+    }
+#endif
     private static func verifyUnlocked(stateDirectory: URL, owner: LocalVaultAccountRootOwnership.Owner, expectedRootHash rootHash: String) throws {
         try verifyContents(stateDirectory: stateDirectory, owner: owner, expectedRootHash: rootHash)
         let target = stateDirectory.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)

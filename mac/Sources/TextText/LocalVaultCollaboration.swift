@@ -64,6 +64,21 @@ final class LocalVaultCollaboration {
     private var tasks: [String: Task<Void, Never>] = [:]
     private var retired = false
 #if TEXTTEXT_STRESS_ACTOR
+    func stressAssetSession(itemId: String) async throws -> LocalVaultSync.StressSessionObservation {
+        let matches = localSessions.filter { $0.value.itemId == itemId }
+        guard !retired, matches.count == 1, let (token, active) = matches.first,
+              active.account?.accountId != nil, matchesLifetime(credentials()), owns(active.account, current: credentials()) else {
+            throw LocalVaultCollaborationError(code: "actor_session", message: "Verified private session unavailable.")
+        }
+        let observation = try await active.engine.stressSessionObservation(sessionToken: token, itemId: itemId)
+        guard !retired, let current = localSessions[token], current.itemId == itemId,
+              current.engine === active.engine, localSessions.filter({ $0.value.itemId == itemId }).count == 1,
+              owns(active.account, current: current.account), owns(active.account, current: credentials()),
+              matchesLifetime(credentials()), observation.accountId == active.account?.accountId else {
+            throw LocalVaultCollaborationError(code: "actor_session", message: "Private session changed during observation.")
+        }
+        return observation
+    }
     // Actual live checkpoint routing, not a filesystem lookup or expected path.
     func stressSharedSessionPath(itemId: String) async throws -> String {
         let matches = localSessions.filter { $0.value.itemId == itemId }

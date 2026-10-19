@@ -36,6 +36,9 @@ static class Program
     Console.WriteLine("smoke: controlled packaged policy, not the full desktop suite");
     await MirrorPolicyTests.RunAsync(temp,timeout.Token);result=0;return;
    }
+   if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "asset-inspection") {
+    await NativeStressAssetProofTests.RunAsync(view,temp,args[1],timeout.Token);result=0;return;
+   }
    if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "document-inspection") {
     await NativeStressDocumentInspectionTests.RunAsync(view,temp,args[1],timeout.Token);result=0;return;
    }

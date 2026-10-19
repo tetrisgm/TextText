@@ -315,6 +315,8 @@ final class NativeStressRunner {
     private var historyProgress: [String: Any]?
     private var inputProgress: [String: Any]?
     private var windowGeneration = 1
+    private let assetNavigationCounter = NativeStressAssetProof.NavigationCounter()
+    private var assetNavigationObservation: NSKeyValueObservation?
     private var soakRunId: String?
     private var normalWindowClosed = false
     private var lastAcceptedOwnEdit: (id: String, text: String)?
@@ -340,6 +342,10 @@ final class NativeStressRunner {
         let version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")
             + "+" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
         self.adapterName = "native-localvault/\(version)"
+        let counter = assetNavigationCounter
+        assetNavigationObservation = webView.observe(\.isLoading, options: [.new]) { _, change in
+            if change.newValue == true { counter.changed() }
+        }
     }
 
     // MARK: Logging and replies (never credentials, never file paths from the config)
@@ -452,6 +458,10 @@ final class NativeStressRunner {
 
     private func handle(type: String, round: Int, request: [String: Any]) async throws -> [String: Any] {
         _ = try requireActorAccount()
+        if let raw = request["assetProof"] {
+            guard type == "observe" else { throw NativeStressAssetProof.refusal() }
+            _ = try NativeStressAssetProof.request(raw)
+        }
         if request["soakSample"] != nil && type != "observe" { throw NativeStressActor.Failure("Soak sample only supports readonly observe.") }
         switch type {
         case "hello":
@@ -620,6 +630,55 @@ final class NativeStressRunner {
                 response["leafMoveProof"] = observed.proof; response["leafMovePending"] = observed.pending
                 let dialogVisible = try await evaluate("!!document.querySelector('dialog[open]')") == "true"
                 response["leafMoveReviewVisible"] = controller.window?.attachedSheet != nil || dialogVisible
+            }
+            if let raw = request["assetProof"] {
+                let sample = try NativeStressAssetProof.request(raw)
+                guard UUID(uuidString: config.itemId)?.uuidString.lowercased() == config.itemId,
+                      UUID(uuidString: config.workspaceId)?.uuidString.lowercased() == config.workspaceId else { throw NativeStressAssetProof.refusal() }
+                let initialIdentity = try observedIdentity()
+                let identityBytes = try JSONSerialization.data(withJSONObject: initialIdentity, options: [.sortedKeys])
+                let initial = try await controller.stressAssetSession(itemId: config.itemId, expectedRoot: config.root)
+                let initialReloads = reloads, initialWindowGeneration = windowGeneration
+                let navigation = assetNavigationCounter.snapshot()
+                guard !webView.isLoading else { throw NativeStressAssetProof.refusal() }
+                func unchanged() async throws {
+                    try await requireSelected()
+                    guard initialReloads == reloads,
+                          try JSONSerialization.data(withJSONObject: observedIdentity(), options: [.sortedKeys]) == identityBytes,
+                          try await controller.stressAssetSession(itemId: config.itemId, expectedRoot: config.root) == initial,
+                          try await evaluate("window.texttextStressContinuity?.removed === false && window.texttextStressSession === \(Self.json(sessionId))") == "true" else {
+                        throw NativeStressAssetProof.refusal()
+                    }
+                    // Finish each suspended capture with synchronous UI/source/account
+                    // fences; navigation is tracked independently of periodic observes.
+                    _ = try requireActorAccount()
+                    guard initialWindowGeneration == windowGeneration, !webView.isLoading,
+                          navigation == assetNavigationCounter.snapshot(),
+                          try JSONSerialization.data(withJSONObject: observedIdentity(), options: [.sortedKeys]) == identityBytes else {
+                        throw NativeStressAssetProof.refusal()
+                    }
+                }
+                try await unchanged()
+                let first = try await inspectDocument()
+                try await unchanged()
+                try NativeStressAssetProof.requireUnique(root: config.root, itemId: config.itemId, relativePath: initial.path)
+                let bytes = try NativeStressAssetProof.read(root: config.root, relativePath: initial.path)
+                let pack = try NativeStressAssetProof.inspect(bytes, itemId: config.itemId)
+                try await unchanged()
+                let last = try await inspectDocument()
+                try await unchanged()
+                let firstCanonical = try NativeStressLeafMove.canonicalDocument(JSONSerialization.data(withJSONObject: first))
+                let lastCanonical = try NativeStressLeafMove.canonicalDocument(JSONSerialization.data(withJSONObject: last))
+                guard firstCanonical == pack.canonicalDocument, lastCanonical == pack.canonicalDocument,
+                      try NativeStressAssetProof.read(root: config.root, relativePath: initial.path) == bytes,
+                      let scope = initialIdentity["principalScopeHash"] as? String else { throw NativeStressAssetProof.refusal() }
+                try NativeStressAssetProof.requireUnique(root: config.root, itemId: config.itemId, relativePath: initial.path)
+                response["documentSnapshot"] = last
+                response["assetProofRequiresValidatedLiveSnapshot"] = false
+                response["assetProof"] = ["version": 1, "sampleId": sample, "source": "native-local-pack", "scopeHash": scope,
+                    "workspaceId": config.workspaceId, "itemId": config.itemId, "relativePath": initial.path,
+                    "archiveSha256": pack.archiveHash, "documentSha256": NativeStressAssetProof.hash(pack.canonicalDocument),
+                    "assetHashes": pack.assets, "selectedItemId": config.itemId, "selectedPath": initial.path]
             }
             if let soakSample { response["soakSample"] = soakSample }
             return response

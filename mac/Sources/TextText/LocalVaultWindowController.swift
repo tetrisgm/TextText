@@ -73,6 +73,16 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         return current
     }
+    func stressAssetSession(itemId: String, expectedRoot: URL) async throws -> LocalVaultSync.StressSessionObservation {
+        let account = try stressVerifiedAccount(expectedRoot: expectedRoot)
+        guard let collaboration else { throw VaultBridgeError("The private actor has no live shared editor.") }
+        let observed = try await collaboration.stressAssetSession(itemId: itemId)
+        guard account.sameAccount(as: try stressVerifiedAccount(expectedRoot: expectedRoot)),
+              self.collaboration === collaboration, observed.accountId == account.accountId else {
+            throw VaultBridgeError("The private actor's selected editor changed during inspection.")
+        }
+        return observed
+    }
     func stressSharedSessionPath(itemId: String, expectedRoot: URL) async throws -> String {
         let account = try stressVerifiedAccount(expectedRoot: expectedRoot)
         guard let collaboration else { throw VaultBridgeError("The private actor has no live shared editor.") }

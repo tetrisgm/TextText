@@ -190,6 +190,7 @@ static class Stress
         string expectedSession => JsonSerializer.Serialize(sessionId);
         bool? flushed;
         int reloads;
+        long assetNavigationGeneration;
         int sawKeepEditing;
         readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -258,6 +259,10 @@ static class Stress
         {
             if (request.TryGetProperty("soakSample", out _) && type != "observe") throw new InvalidDataException("Soak sample only supports readonly observe.");
             if (type != "hello") RequireActorScope();
+            if (request.TryGetProperty("assetProof", out var assetOnly)) {
+                if (request.GetProperty("type").GetString() != "observe") throw new IOException("Asset proof only supports readonly observe.");
+                AssetProofObservation.Request(assetOnly);
+            }
             switch (type)
             {
                 case "hello":
@@ -371,6 +376,7 @@ static class Stress
                 }
                 case "observe":
                 {
+                    if (request.TryGetProperty("assetProof", out var assetRequest)) AssetProofObservation.Request(assetRequest);
                     JsonElement? soakSample = request.TryGetProperty("soakSample",out var sample) ? SoakSample.Validate(sample,soakRunId) : null;
                     await RequireSelected(ct);
                     var expected = request.TryGetProperty("expectedEditIds", out var ids) && ids.ValueKind == JsonValueKind.Array
@@ -399,7 +405,61 @@ static class Stress
                         leafMoveReviewVisible=window.OwnedWindows.Count>0||await view.ExecuteScriptAsync("!!document.querySelector('dialog[open]')")=="true";
                         RequireActorScope();await RequireSelected(ct);
                     }
-                    return new { type = "state", round, text, editIds, documentSnapshot, soakSample, folderCaseProof, folderCasePending, folderCaseReviewVisible, leafMoveProof,leafMovePending,leafMoveReviewVisible, editor = new { sessionId, reloads } };
+                    object? assetProof = null; bool? assetProofRequiresValidatedLiveSnapshot = null;
+                    if (request.TryGetProperty("assetProof", out var assetRaw)) {
+                        var sampleId = AssetProofObservation.Request(assetRaw);
+                        if (!Guid.TryParseExact(config.ItemId, "D", out var itemUuid) || itemUuid.ToString("D") != config.ItemId ||
+                            !Guid.TryParseExact(config.WorkspaceId, "D", out var workspaceUuid) || workspaceUuid.ToString("D") != config.WorkspaceId)
+                            throw new IOException("Canonical asset proof identity required.");
+                        RequireActorScope();
+                        var sourceIdentity = JsonSerializer.SerializeToElement(ObservedIdentity());
+                        var sourcePin = sourceIdentity.GetRawText();
+                        var initialReloads = reloads;
+                        var initialNavigation = Interlocked.Read(ref assetNavigationGeneration);
+                        var initialView = view;
+                        var bridge = Program.Field(window, "bridge") ?? throw new IOException("Selected native bridge unavailable.");
+                        var accountId = capturedAccount?.AccountId ?? throw new IOException("Verified account unavailable.");
+                        var initial = await AssetProofObservation.CaptureSession(bridge, config.ItemId, accountId, config.WorkspaceId, new Uri("https://texttext.app"), capturedRoot!, ct);
+                        async Task Unchanged() {
+                            RequireActorScope(); await RequireSelected(ct); RequireActorScope();
+                            if (reloads != initialReloads || JsonSerializer.Serialize(ObservedIdentity()) != sourcePin ||
+                                await view!.ExecuteScriptAsync("window.texttextStressContinuity?.removed === false && window.texttextStressSession === " + expectedSession) != "true")
+                                throw new IOException("Readonly asset authority changed.");
+                            AssetProofObservation.Unchanged(initial, await AssetProofObservation.CaptureSession(bridge, config.ItemId, accountId, config.WorkspaceId, new Uri("https://texttext.app"), capturedRoot!, ct));
+                            RequireActorScope();
+                            if (!ReferenceEquals(initialView, view) || initialNavigation != Interlocked.Read(ref assetNavigationGeneration) ||
+                                JsonSerializer.Serialize(ObservedIdentity()) != sourcePin) throw new IOException("Native view/source changed during observation.");
+                        }
+                        async Task<string> Canonical(string raw) {
+                            var encoded = await view!.ExecuteScriptAsync(AssetProofObservation.CanonicalScript(raw));
+                            if (Encoding.UTF8.GetByteCount(encoded) > 2 * 262144) throw new IOException("Canonical document exceeds bound.");
+                            return JsonSerializer.Deserialize<string>(encoded) ?? throw new IOException("Canonical document unavailable.");
+                        }
+                        await Unchanged();
+                        var first = await InspectDocument(ct); await Unchanged();
+                        AssetProofObservation.RequireUnique(capturedRoot!, config.ItemId, initial.Path);
+                        var bytes = AssetProofObservation.Read(capturedRoot!, initial.Path);
+                        var pack = AssetProofObservation.Inspect(bytes, config.ItemId); await Unchanged();
+                        var last = await InspectDocument(ct); await Unchanged();
+                        var canonical = await Canonical(pack.RawDocument); await Unchanged();
+                        var firstCanonical = await Canonical(first.GetRawText()); await Unchanged();
+                        var lastCanonical = await Canonical(last.GetRawText()); await Unchanged();
+                        if (canonical != firstCanonical || canonical != lastCanonical ||
+                            !AssetProofObservation.Read(capturedRoot!, initial.Path).SequenceEqual(bytes)) throw new IOException("Pack differs from validated live document.");
+                        AssetProofObservation.RequireUnique(capturedRoot!, config.ItemId, initial.Path);
+                        documentSnapshot = last; assetProofRequiresValidatedLiveSnapshot = false;
+                        assetProof = new { version = 1, sampleId, source = "native-local-pack",
+                            scopeHash = sourceIdentity.GetProperty("principalScopeHash").GetString(), workspaceId = config.WorkspaceId,
+                            itemId = config.ItemId, relativePath = initial.Path, archiveSha256 = pack.ArchiveHash,
+                            documentSha256 = TextPackStore.Hash(Encoding.UTF8.GetBytes(canonical)), assetHashes = pack.Assets,
+                            selectedItemId = config.ItemId, selectedPath = initial.Path };
+                    }
+                    var ordinary = new { type = "state", round, text, editIds, documentSnapshot, soakSample, folderCaseProof, folderCasePending, folderCaseReviewVisible, leafMoveProof,leafMovePending,leafMoveReviewVisible, editor = new { sessionId, reloads } };
+                    if (assetProof is null) return ordinary;
+                    var enriched = JsonSerializer.SerializeToElement(ordinary).EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+                    enriched["assetProof"] = assetProof;
+                    enriched["assetProofRequiresValidatedLiveSnapshot"] = assetProofRequiresValidatedLiveSnapshot;
+                    return enriched;
                 }
                 case "close-probe":
                 {
@@ -497,6 +557,7 @@ static class Stress
                 view = Program.Field(window, "web") as WebView2;
                 return view?.CoreWebView2 is not null && await view.ExecuteScriptAsync("typeof window.texttextOpenFile === 'function'") == "true";
             }, ct, "Production desktop did not become ready with its saved sign-in.");
+            view!.CoreWebView2.NavigationStarting += (_, _) => Interlocked.Increment(ref assetNavigationGeneration);
             log(new { kind = "workspace-ready" });
             // Record only bridge error codes, never messages, document bytes or
             // authentication payloads. A late checkpoint refusal can explain a
