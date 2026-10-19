@@ -22,6 +22,8 @@ static class Test
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--clean-close-path"})){var cleanCloseBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&cleanCloseBase.StartsWith("/var/"))cleanCloseBase="/private"+cleanCloseBase;var cleanCloseTemp=Path.Combine(cleanCloseBase,"texttext-clean-close-path-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(cleanCloseTemp);await LocalRenameTests.CleanCloseBeforePathAck(cleanCloseTemp,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+cleanCloseTemp);return;}
+
  if(args.SequenceEqual(new[]{"--tombstone-fixtures"})) {var tombstoneBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&tombstoneBase.StartsWith("/var/"))tombstoneBase="/private"+tombstoneBase;var tombstone=Path.Combine(tombstoneBase,"texttext-tombstone-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(tombstone);await MirrorPolicyTests.Run(Assert);await MirrorTombstoneIntegrationTests.Run(tombstone,Assert);return;}
  if(args.SequenceEqual(new[]{"--shared-path-fixtures"})) {var sharedBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&sharedBase.StartsWith("/var/"))sharedBase="/private"+sharedBase;var shared=Path.Combine(sharedBase,"texttext-shared-path-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(shared);await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(shared,Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-recovery-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-recovery-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCaseRecoveryTests.Run(folder,Assert);return;}
@@ -454,6 +456,7 @@ static class Test
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await LocalRenameTests.Run(temp,Assert);
+  await LocalRenameTests.CleanCloseBeforePathAck(temp,Assert);
  await ExternalCheckpointRaceTests.Run(temp,Assert);
  StableFileStoreTests.Run(temp,Assert);
  await CheckpointAccountTests.Run(temp,Assert);

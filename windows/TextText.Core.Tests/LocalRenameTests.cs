@@ -23,6 +23,35 @@ static class LocalRenameTests
     static SharedCheckpoint Retained(TextPackStore files) => JsonSerializer.Deserialize<SharedCheckpoint>(
         File.ReadAllText(Path.Combine(files.StateDirectory, "shared-editing", Identity, "checkpoint.json")))!;
 
+
+    public static async Task CleanCloseBeforePathAck(string temp,Action<bool,string> assert) {
+        temp=Path.Combine(temp,"clean-close-path");
+        var files=Test.OwnedPathStore(Path.Combine(temp,"root"),Path.Combine(temp,"state"));
+        var bytes=Pack("clean unchanged text");var original=files.Write("Original.textpack",bytes);
+        var remote=new Test.Fake();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote);
+        var statePath=Path.Combine(files.StateDirectory,"sync.json");
+        SyncEngine.State State()=>JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!;
+        SharedCheckpoint Clean(string path,long generation) {
+            var cp=Checkpoint(path,original.Hash,bytes,generation);
+            var json=System.Text.Json.Nodes.JsonNode.Parse(cp.Journal)!;json["pending"]=new System.Text.Json.Nodes.JsonArray();json["batch"]=null;
+            return cp with{Pending=false,Journal=json.ToJsonString()};
+        }
+        using(var editing=new SharedEditingStore(files,sync,Test.PathAccount)) {
+            var opened=await editing.OpenAsync(Identity,original.Path,original.Hash);
+            await editing.CheckpointAsync(opened.SessionToken,original.Hash,bytes,Clean(original.Path,1));
+            files.Rename(original.Path,"Moved.textpack",original.Hash);
+            var followed=await editing.CheckpointAsync(opened.SessionToken,original.Hash,bytes,Clean(original.Path,2));
+            assert(followed.Path=="Moved.textpack"&&Retained(files).Path=="Moved.textpack"&&!Retained(files).Pending,"production clean checkpoint follows supported local rename before remote path ACK");
+            assert(remote.Item!.RelativePath==original.Path,"server path remains old before any sync dispatch");
+            editing.Close(opened.SessionToken);
+            assert(State().Items[Identity].Path==original.Path,"closing clean editor preserves old acknowledged baseline path");
+        }
+        await sync.SyncAsync();
+        assert(remote.Item!.RelativePath=="Moved.textpack"&&State().Items[Identity].Path=="Moved.textpack","ordinary sync announces local move after clean close instead of reverting it");
+        await sync.SyncAsync();sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();
+        assert(files.Read("Moved.textpack").SequenceEqual(bytes)&&!File.Exists(files.Resolve(original.Path))&&remote.Item!.RelativePath=="Moved.textpack","clean-close local path and exact bytes persist through repeated sync and restart");
+    }
+
     public static async Task Run(string temp, Action<bool, string> assert)
     {
         var files = Test.OwnedPathStore(Path.Combine(temp, "local-rename"), Path.Combine(temp, "local-rename-state"));
