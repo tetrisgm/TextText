@@ -13,7 +13,7 @@ const reasons = {
   lifecycle: "This item changed or was deleted. Keep its recovery copies while reviewing its current state.",
   unavailable: "The current local or server file could not be checked. Try inspecting again when it is available.",
   permission: "Your current access does not allow this move.",
-  checkpoint: "Wait for the current edits to finish saving, then inspect again.",
+  checkpoint: "The saved edits are not ready for this move. Review the editor’s saving or recovery status, then inspect again.",
   recovery: "Another recovery step must finish before this move can continue.",
   ambiguous: "The outcome of this move is not yet confirmed. Its saved request and current files are retained.",
   stale: "The file changed during inspection. Inspect it again before continuing.",

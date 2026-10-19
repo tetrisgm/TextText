@@ -5,6 +5,7 @@ it("accepts only the independently permitted recovery action for each phase", ()
   expect(validateSavedFileMoveRecovery(row)).toEqual(row);
   expect(validateSavedFileMoveRecovery({...row,state:"terminal-rejected",retryAllowed:false,keepNamesAllowed:true})).toMatchObject({keepNamesAllowed:true});
   expect(validateSavedFileMoveRecovery({...row,state:"stopped",retryAllowed:false})).toMatchObject({state:"stopped"});
+  expect(validateSavedFileMoveRecovery({...row,inspection:null,retryAllowed:false,remotePath:null})).toMatchObject({state:"pending",retryAllowed:false});
   expect(validateSavedFileMoveRecovery({...row,state:"review",requestHash:null,inspection:null,retryAllowed:false,blockedReason:"ambiguous"})).toMatchObject({state:"review"});
 });
 it("rejects malformed identity, paths, tokens, unknown reasons and phase action escalation", () => {
