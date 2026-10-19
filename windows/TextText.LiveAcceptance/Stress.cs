@@ -610,14 +610,12 @@ static class Stress
         async Task<JsonElement> InspectDocument(CancellationToken ct)
         {
             await RequireSelected(ct);
-            var script = "(()=>{const es=document.querySelectorAll('[aria-label=\"Edit item\"][data-ai-item-id]');if(es.length!==1)return null;const e=es[0],k=e.dataset.aiItemId;if(k!==" + expectedItem + "&&!k?.endsWith(':'+" + JsonSerializer.Serialize(config.WorkspaceId) + "+':'+" + expectedItem + "))return null;const api=window.texttextDocumentInspection;const d=api?.version===1?api.read(k):null;const s=e.querySelector('textarea[aria-label=\"Subtitle\"]'),b=e.querySelector('[aria-label=\"Document body\"]');return d&&s&&d.content.subtitle===s.value&&d.content.body===b?.textContent?d:null})()";
+            var script = NativeStressDocumentInspection.Script(config.ItemId,config.WorkspaceId);
             var raw = await view!.ExecuteScriptAsync(script);
             if (Encoding.UTF8.GetByteCount(raw) > 262144) throw new Exception("Full live document exceeds bound.");
             using var parsed = JsonDocument.Parse(raw);
             var doc = parsed.RootElement;
-            if (doc.ValueKind != JsonValueKind.Object || doc.GetProperty("content").GetProperty("title").GetString() != config.Title
-                || doc.GetProperty("content").GetProperty("subtitle").ValueKind != JsonValueKind.String
-                || doc.GetProperty("presentation").GetProperty("template").GetProperty("id").GetString() != "texttext.article") throw new Exception("Actual live article snapshot or existing subtitle unavailable.");
+            NativeStressDocumentInspection.Validate(doc,config.Title);
             return doc.Clone();
         }
 
@@ -638,7 +636,7 @@ static class Stress
             for (var index = 0; index < 2; index++)
             {
                 var edit = edits[index]; var field = edit.GetProperty("field").GetString()!; var marker = edit.GetProperty("text").GetString()!; var editId = edit.GetProperty("id").GetString()!;
-                if (preserved.GetProperty(field).GetString()!.Contains(marker)) throw new Exception("Field marker already present.");
+                if (NativeStressDocumentInspection.Field(preserved,field).Contains(marker)) throw new Exception("Field marker already present.");
                 if (index > 0) await Task.Delay(1, ct);
                 fieldProgress = new { role = "pc-app", fields = progress.ToArray(), attemptedField = editId };
                 if (field == "body") await Insert(editId, marker, false, false, ct, clock);
@@ -652,13 +650,13 @@ static class Stress
                 {
                     if (clock.ElapsedMilliseconds > 15000) throw new Exception("Field visibility or preservation deadline exceeded.");
                     var current = (await InspectDocument(ct)).GetProperty("content");
-                    if (current.GetProperty(field).GetString()!.Split(marker, StringSplitOptions.None).Length == 2)
+                    if (NativeStressDocumentInspection.Field(current,field).Split(marker, StringSplitOptions.None).Length == 2)
                     {
                         var intact = true;
                         foreach (var key in new[] { "body", "subtitle" })
                         {
-                            var observed = current.GetProperty(key).GetString()!; if (key == field) observed = observed.Replace(marker, "", StringComparison.Ordinal);
-                            var prior = preserved.GetProperty(key).GetString()!.EnumerateRunes().ToArray(); var offset = 0;
+                            var observed = NativeStressDocumentInspection.Field(current,key); if (key == field) observed = observed.Replace(marker, "", StringComparison.Ordinal);
+                            var prior = NativeStressDocumentInspection.Field(preserved,key).EnumerateRunes().ToArray(); var offset = 0;
                             foreach (var rune in observed.EnumerateRunes()) if (offset < prior.Length && rune == prior[offset]) offset++;
                             if (offset != prior.Length) intact = false;
                         }
