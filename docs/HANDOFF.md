@@ -16,10 +16,10 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 
 | Surface | Verified state |
 | --- | --- |
-| Mac | Canonical `/Applications/TextText.app`, **0.204 (1270)**, sourcea0413982. Official gates/installer/runtime health pass; actual new title/body save and normal Quit/reopen match hosted readback. Prior note/comment preserved. [Scope and limits](verification/2026-10-19-mac-1270-installed.md). |
+| Mac | Canonical `/Applications/TextText.app`, **0.204 (1271)**, sourceb4b74765. Full fresh gates/signing/health pass; ordinary title/body save and normal Quit/reopen pass. Real image write succeeds but reset checkpoints an already-closed native session; supported recovery preserved both versions and normal Quit succeeded. App stopped; targeted fix in progress. [Evidence](verification/2026-10-19-mac-1271-installed-recovery.md). |
 | Windows | Exactb4b74765 installed, EXE3ad4b23f. Official and supplemental current-policy gates pass. Normal47484/session1 displayed saved-work review; Cancel preserved state and normal close exited without force. Fresh backups preserve a041 app and exact1110-file unbound legacy state. No adoption or normal-root editing claim. [Evidence](verification/2026-10-19-windows-b4b74765-installed.md). |
 | Oracle | `texttext-oracle-20261019T021551274Z-4eca8353-1c86ff`, public/loopback identity and13 authenticated smoke checks pass. New validated backup; unrelated services preserved. [Evidence](verification/2026-10-18-web-4eca8353-delivered.md). |
-| CLI | Signed sourcea0413982; shim targets `~/.local/share/texttext-cli/source-a0413982/texttext`. Strict signature/arm64/help, 115 canonical Notes paths and exact hosted UUID readback pass. Previous shim/4eca/558 binaries preserved. [Evidence](verification/2026-10-19-cli-a0413982-installed.md). |
+| CLI | Signed sourceb4b74765; shim targets `~/.local/share/texttext-cli/source-b4b74765/texttext`. Strict signature/arm64/help,121 canonical Notes paths and exact owned UUID readback pass. Previous a041 shim and older binaries preserved. [Evidence](verification/2026-10-19-cli-b4b74765-installed.md). |
 
 ## Unresolved failures and preserved work
 
