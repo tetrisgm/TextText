@@ -60,6 +60,30 @@ final class LocalHandoffBridgeTests: XCTestCase {
             XCTFail("Migration unexpectedly acquired an exclusive lease")
         } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "handoff_not_open") }
         XCTAssertEqual(try Data(contentsOf: profile), prior)
+        // A contended profile does not establish the retained principal. A
+        // different or unreadable owner must never receive a no-open certificate.
+        let ownerURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let ownerBytes = try Data(contentsOf: ownerURL)
+        var foreignOwner = try XCTUnwrap(JSONSerialization.jsonObject(with: ownerBytes) as? [String: Any])
+        foreignOwner["accountId"] = "account-b"
+        let foreignBytes = try JSONSerialization.data(withJSONObject: foreignOwner, options: [.sortedKeys])
+        XCTAssertEqual(flock(migrationFD, LOCK_EX | LOCK_NB), 0)
+        do {
+            _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "localHandoffVersion": 1], root)
+            XCTFail("Exclusive profile lease unexpectedly allowed native open")
+        } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "handoff_not_open") }
+        XCTAssertEqual(try Data(contentsOf: ownerURL), ownerBytes)
+        for refusedOwner in [foreignBytes, Data("invalid-owner".utf8)] {
+            try refusedOwner.write(to: ownerURL)
+            do {
+                _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "localHandoffVersion": 1], root)
+                XCTFail("Accepted an unverified retained principal")
+            } catch let error as LocalVaultCollaborationError { XCTAssertNotEqual(error.code, "handoff_not_open") }
+            catch { }
+            XCTAssertEqual(try Data(contentsOf: ownerURL), refusedOwner)
+            XCTAssertEqual(try Data(contentsOf: profile), prior)
+        }
+        try ownerBytes.write(to: ownerURL)
         XCTAssertEqual(flock(migrationFD, LOCK_UN), 0)
         // A failed native open still proves publication precedes lease acquisition.
         do { _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": String(repeating: "0", count: 64), "localHandoffVersion": 1], root); XCTFail("Accepted stale projection") } catch { }

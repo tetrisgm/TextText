@@ -539,6 +539,7 @@ final class LocalVaultCollaboration {
                     guard LocalVaultDeviceState.isLocalHandoffPreparationBusy(error),
                           owns(owner, current: credentials()), !Task.isCancelled,
                           !localSessions.values.contains(where: { $0.itemId == itemId }) else { throw error }
+                    try LocalVaultDeviceState.requireLocalHandoffPrincipal(root: root, binding: binding, accountId: accountId)
                     throw LocalVaultCollaborationError(code: "handoff_not_open", message: "Shared editing has not opened. Try connecting again.")
                 }
             }

@@ -59,6 +59,31 @@ public enum LocalVaultDeviceState {
         try LocalVaultAccountRootOwnership.open(root: canonical, binding: owner.binding, accountId: owner.accountId)
         return true
     }
+    /// A no-open certificate needs the retained principal even when the profile
+    /// lease is busy. This reads existing private ownership only, without adoption
+    /// or profile verification/publication.
+    public static func requireLocalHandoffPrincipal(root: URL, binding: LocalVaultSyncBinding, accountId: String) throws {
+        _ = try LocalVaultAccountIdentity.validate(accountId)
+        lock.lock(); let base = configuredBase; lock.unlock()
+        guard let base else { throw LocalVaultAccountRootOwnership.Failure.future }
+        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+        guard base.path != canonical.path, !base.path.hasPrefix(canonical.path + "/"), !isCloudManaged(root: base) else {
+            throw LocalVaultAccountRootOwnership.Failure.future
+        }
+        let state = directory(root: canonical, base: base)
+        guard state.resolvingSymlinksInPath().path == state.path else { throw LocalVaultDocumentStore.Failure.invalidPath }
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: canonical)
+        let bytes = try StableFileSnapshot.read(state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName), maximumBytes: 4096)
+        guard let fields = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(fields.keys) == Set(["version", "binding", "accountId", "rootHash"]) else { throw LocalVaultAccountRootOwnership.Failure.future }
+        var actual = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: bytes)
+        guard actual.version == 1 || actual.version == 2 else { throw LocalVaultAccountRootOwnership.Failure.future }
+        actual.version = 1
+        let expected = LocalVaultAccountRootOwnership.Owner(version: 1, binding: try PortableWorkspaceBinding.normalized(binding), accountId: accountId,
+            rootHash: TextTextStableDigest.sha256Hex(Data(canonical.path.utf8)))
+        guard actual == expected else { throw LocalVaultAccountRootOwnership.Failure.account }
+    }
+
     /// Only the typed migration-lease refusal, never a generic filesystem error.
     public static func isLocalHandoffPreparationBusy(_ error: Error) -> Bool {
         guard let failure = error as? RetainedReplacementProfile.Failure else { return false }
