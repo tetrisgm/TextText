@@ -93,11 +93,31 @@ public static class AccountStateAdoption
             if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0||Directory.Exists(file)||!Allowed(relative))throw new InvalidDataException("Unsupported retained replacement entry.");
             paths.Add(relative);if(paths.Count>2048)throw new InvalidDataException("Too many records for one adoption.");
         }
-        var shared=Safe(store.StateDirectory,"shared-editing");
+        var shared=Safe(store.StateDirectory,"shared-editing");var retainedEntries=0;long archivedBytes=0;
         if(Directory.Exists(shared))foreach(var item in Directory.EnumerateFileSystemEntries(shared)) {
             if((File.GetAttributes(item)&FileAttributes.ReparsePoint)!=0||!Directory.Exists(item))throw new InvalidDataException("Unsupported retained state directory.");
             foreach(var file in Directory.EnumerateFileSystemEntries(item)) {
-                if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0||Directory.Exists(file))throw new InvalidDataException("Unsupported retained state entry.");
+                if(++retainedEntries>2048)throw new InvalidDataException("Too many records for one adoption.");
+                if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Unsupported retained state entry.");
+                if(Directory.Exists(file)) {
+                    // RecoverAsync keeps these inactive original records. They
+                    // are preserved, never rebound or used as replay authority.
+                    if(!Regex.IsMatch(Path.GetFileName(file),@"\Aarchive-[0-9a-f]{32}\z"))throw new InvalidDataException("Unsupported retained state entry.");
+                    var archived=Directory.GetFileSystemEntries(file);
+                    if(archived.Length>5)throw new InvalidDataException("Unsupported retained recovery archive.");
+                    long total=0;
+                    foreach(var entry in archived) {
+                        var relativeArchive=Path.GetRelativePath(store.StateDirectory,entry).Replace('\\','/');
+                        if(Directory.Exists(entry)||(File.GetAttributes(entry)&FileAttributes.ReparsePoint)!=0||
+                            !new[]{"checkpoint.json","intent.json","move-intent.json","acknowledge.json","recovered.json"}.Contains(Path.GetFileName(entry),StringComparer.Ordinal))
+                            throw new InvalidDataException("Unsupported retained recovery archive.");
+                        var size=Read(Safe(store.StateDirectory,relativeArchive)).Length;
+                        total+=size;archivedBytes+=size;
+                        if(total>Limit)throw new InvalidDataException("Retained recovery archive exceeds its limit.");
+                        if(archivedBytes>256L*1024*1024)throw new InvalidDataException("Retained recovery archives exceed their limit.");
+                    }
+                    continue;
+                }
                 if(!Path.GetExtension(file).Equals(".json",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(file).StartsWith("archived-",StringComparison.Ordinal))continue;
                 var relative=Path.GetRelativePath(store.StateDirectory,file).Replace('\\','/');
                 if(!Allowed(relative))throw new InvalidDataException("An unsupported retained record needs manual recovery.");

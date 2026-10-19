@@ -91,7 +91,39 @@ static class AccountStateAdoptionTests
             assert(f.Remote.Operations.Last()==f.Operation&&f.Store.Read(f.Path).SequenceEqual(f.Pending),"real disk-full adoption resumes original pending work");
         } finally {if(!released){stream.SetLength(0);stream.Flush(true);}}
     }
+    static async Task RecoveryArchives(string temporary,Action<bool,string> assert) {
+        foreach(var variant in new[]{"native-archive","unknown-directory","unknown-archive-entry"}) {
+            var f=await Create(temporary,"adoption-"+variant);
+            using(var editing=new SharedEditingStore(f.Store,Test.NewSync(f.Store,f.Remote))) {
+                var opened=await editing.OpenAsync("adoption-shared","Notes/Shared.textpack",TextPackStore.Hash(f.Projection));
+                var recovery=f.Store.Write("Notes/Recovered.textpack",Pack("adoption-recovered","Original recovery copy"));
+                await editing.RecoverAsync(opened.SessionToken,recovery.Path,recovery.Hash);
+            }
+            var item=Path.Combine(f.Store.StateDirectory,"shared-editing","adoption-shared");
+            var archive=Directory.GetDirectories(item,"archive-*").Single();
+            if(variant=="unknown-directory")Directory.CreateDirectory(Path.Combine(item,"future-history"));
+            if(variant=="unknown-archive-entry")File.WriteAllText(Path.Combine(archive,"future.json"),"{}");
+            var before=Directory.GetFiles(f.Store.StateDirectory,"*",SearchOption.AllDirectories)
+                .Where(path=>!path.EndsWith(".lock",StringComparison.Ordinal)).ToDictionary(path=>path,File.ReadAllBytes);
+            if(variant!="native-archive") {
+                var refused=false;try{AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a");}catch(InvalidDataException){refused=true;}
+                assert(refused&&before.All(pair=>File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value))&&
+                    !File.Exists(Path.Combine(f.Store.StateDirectory,AccountRootOwnership.FileName))&&
+                    !File.Exists(Path.Combine(f.Store.StateDirectory,AccountRootOwnership.PendingAdoption)),
+                    variant+" refuses adoption without changing retained work");
+                continue;
+            }
+            var result=AccountStateAdoption.AdoptAfterExplicitReview(f.Store,new Uri("https://texttext.test"),"workspace","account-a");
+            var state=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(f.Store.StateDirectory,"sync.json")))!;
+            assert(result.RecoveryDirectory is not null&&state.AccountId=="account-a"&&state.Outbox.Single().Id==f.Operation,
+                "native recovery archive permits reviewed adoption with original pending operation");
+            assert(before.Where(pair=>pair.Key.StartsWith(archive+Path.DirectorySeparatorChar,StringComparison.Ordinal)).All(pair=>File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value))&&
+                f.Store.Read(f.Path).SequenceEqual(f.Pending)&&f.Store.Read("Notes/Shared.textpack").SequenceEqual(f.Projection),
+                "reviewed adoption preserves native recovery archive and original packs exactly");
+        }
+    }
     public static async Task Run(string temporary,Action<bool,string> assert) {
+        await RecoveryArchives(temporary,assert);
         var origin=new Uri("https://texttext.test");
         await SeparateProcess(temporary,assert);
         await NoSpace(assert);

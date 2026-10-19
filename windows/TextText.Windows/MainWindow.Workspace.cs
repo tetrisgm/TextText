@@ -108,11 +108,11 @@ public sealed partial class MainWindow
                 if (!ReferenceEquals(account, identity)) throw new InvalidOperationException("Account changed.");
             });
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
             // The old folder and its durable journal remain intact on every failure.
             // OpenWorkspace prepares the replacement before retiring the current view.
-            MessageBox.Show(this, "This folder could not be opened. Your previous workspace files have been kept.", "Open workspace folder");
+            MessageBox.Show(this, "This folder's saved work could not be connected. Your original files and recovery records have been kept.", "Open workspace folder");
         }
         finally { transitioning = false; if (web is not null) web.IsEnabled = true; }
     }
