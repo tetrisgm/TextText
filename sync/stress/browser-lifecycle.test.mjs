@@ -42,3 +42,30 @@ test('beforeunload refusal retains actual live page/context and returns bounded 
  await assert.rejects(closeOwnedBrowser({browser:()=>browser,close:async()=>{contextCloses++;}},page,actual,{signal:()=>{signals++;}}),error=>{assert.equal(error.retention.browserPid,345678);assert.equal(error.retention.driverPid,process.pid);assert.equal(error.retention.pageRetained,true);assert.equal(error.retention.contextRetained,true);return /beforeunload refused/.test(error.message);});
  assert.equal(dismissed,1);assert.equal(contextCloses,0);assert.equal(signals,0);assert.equal(page.isClosed(),false);
 });
+
+async function normalAutoExitFixture() {
+ const {mkdtempSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const actual=mkdtempSync(join(tmpdir(),'texttext-browser-autoexit-unit-'));
+ const browser=new EventEmitter();browser.connected=true;browser.isConnected=()=>browser.connected;
+ browser.newBrowserCDPSession=async()=>({send:async method=>method==='SystemInfo.getProcessInfo'?{processInfo:[{type:'browser',id:345678}]}:{arguments:['--user-data-dir='+actual]},detach:async()=>{}});
+ const page=new EventEmitter();page.closed=false;page.isClosed=()=>page.closed;page.close=async options=>{assert.deepEqual(options,{runBeforeUnload:true});page.closed=true;page.emit('close');};
+ return {actual,browser,page};
+}
+const alreadyClosedMessage='browserContext.close: Target page, context or browser has been closed';
+test('natural persistent Edge autoexit tolerates only the redundant already-closed context error',async()=>{
+ const {closeOwnedBrowser}=await import('./browser-lifecycle.mjs');const {actual,browser,page}=await normalAutoExitFixture();let closes=0,probes=0;
+ const proof=await closeOwnedBrowser({browser:()=>browser,close:async()=>{closes++;browser.connected=false;throw new Error(alreadyClosedMessage);}},page,actual,{signal:(_pid,kind)=>{assert.equal(kind,0);probes++;throw Object.assign(new Error(),{code:'ESRCH'});}});
+ assert.equal(proof.exited,true);assert.equal(proof.contextAlreadyClosed,true);assert.equal(closes,1);assert.equal(probes,1);
+});
+test('arbitrary context errors and an already-closed claim while still connected refuse',async()=>{
+ const {closeOwnedBrowser}=await import('./browser-lifecycle.mjs');
+ for(const [message,disconnect]of [['unrelated failure',true],[alreadyClosedMessage,false]]){
+  const {actual,browser,page}=await normalAutoExitFixture();let probes=0;
+  await assert.rejects(closeOwnedBrowser({browser:()=>browser,close:async()=>{if(disconnect)browser.connected=false;throw new Error(message);}},page,actual,{signal:()=>{probes++;}}),error=>error.message===message);
+  assert.equal(probes,0);
+ }
+});
+test('already-closed context plus disconnect still requires exact owned process disappearance',async()=>{
+ const {closeOwnedBrowser}=await import('./browser-lifecycle.mjs');const {actual,browser,page}=await normalAutoExitFixture();let clock=0,probes=0;
+ await assert.rejects(closeOwnedBrowser({browser:()=>browser,close:async()=>{browser.connected=false;throw new Error(alreadyClosedMessage);}},page,actual,{signal:(_pid,kind)=>{assert.equal(kind,0);probes++;},now:()=>clock,sleep:async ms=>{clock+=ms;}}),/exit was not observed/);
+ assert.ok(clock>=10000);assert.ok(probes>0);
+});

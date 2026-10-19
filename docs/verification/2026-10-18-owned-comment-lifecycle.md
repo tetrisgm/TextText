@@ -7,3 +7,9 @@ The authenticated author/resolver account matches the existing owner; actor type
 Create/read/retry/resolve evidence and per-file hashes: `/private/tmp/texttext-owned-comments-1269-20261018/receipt.json`, SHA-256 `a0084aba0135a2e8339732bb2f1721a123d5792643cdbc5390863e105096800c`.
 
 This is a real CLI command workflow, not UI comment parity, an audit-table query, hosted MCP acceptance or complete T19/T20 acceptance. No source, configuration or account changes were made.
+
+## Installed Mac UI follow-up
+
+On normal1269, actual Search and actions found `Gallery/8.textpack` by its exact title. Comments showed Open0/Resolved1, with the exact CLI-authored body, codex attribution and Agent marker. The normal UI Reopen action moved it to Open1/Resolved0; Resolve returned it to Open0/Resolved1. No new comment, reply, recipient or document-text edit was made. Native evidence in the same private directory: `native-resolved-ui.{txt,png}`, `native-reopened-ui.txt`, and `native-final-resolved-ui.{txt,png}`.
+
+Independent supported CLI `list_comments` with `state:all` then returned exactly the same comment ID resolved, revision `214a84ca380b89a804ecd88922a94e606ac5716eacb5158f02a28358b276ce6a`. A separate item read kept Markdown byte-identical to the original baseline. Final evidence: `after-native-comments-all.json` and `after-native-item.json`. An initial read used an incorrect argument name and was rejected without mutation; the default open-only query correctly returned no comments. Those raw attempts remain retained. This follow-up adds actual Mac UI state-transition coverage, not Windows/browser/MCP parity or an audit-table check.

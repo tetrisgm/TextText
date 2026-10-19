@@ -59,11 +59,19 @@ export async function closeOwnedBrowser(context,page,profile,{signal=(pid,kind)=
       await sleep(25);
     }
     if(blocked)throw new Error('Production beforeunload refused normal browser close');
-    await bounded(()=>context.close());
+    let contextAlreadyClosed=false;
+    try { await bounded(()=>context.close()); }
+    catch(error) {
+      // Closing the last persistent Edge page can close its context first.
+      // This known race still needs the independent exact-PID exit proof below.
+      if(error?.message!=='browserContext.close: Target page, context or browser has been closed'
+        ||blocked||!page.isClosed()||browser.isConnected())throw error;
+      contextAlreadyClosed=true;
+    }
     for(;;){
       let gone=false;
       try{signal(fresh.pid,0);}catch(error){if(error.code==='ESRCH')gone=true;else throw new Error('Normal owned browser exit could not be verified');}
-      if(gone&&!browser.isConnected())return{...fresh,method:'normal-close',runBeforeUnload:true,pageClosed:true,contextClosed:true,exited:true};
+      if(gone&&!browser.isConnected())return{...fresh,method:'normal-close',runBeforeUnload:true,pageClosed:true,contextClosed:true,...(contextAlreadyClosed?{contextAlreadyClosed:true}:{}),exited:true};
       if(now()>=deadline)throw new Error('Normal owned browser exit was not observed');
       await sleep(25);
     }
