@@ -1,0 +1,1106 @@
+{
+  "version": 1,
+  "context": {
+    "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "scope": {
+      "origin": "https://fixture.test",
+      "workspaceId": "workspace",
+      "accountId": "account"
+    }
+  },
+  "cases": [
+    {
+      "name": "pending",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": true
+    },
+    {
+      "name": "typed-terminal-conflict",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": null
+      },
+      "valid": true
+    },
+    {
+      "name": "stopped-with-known-generations",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "stopped",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": {
+          "localPath": "Notes/B.textpack",
+          "remotePath": "Notes/A.textpack",
+          "localLifecycle": "generation",
+          "remoteLifecycle": "generation"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "terminal-missing-current-revision-remains-review",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": null,
+          "deleted": false
+        },
+        "resolution": null
+      },
+      "valid": true
+    },
+    {
+      "name": "terminal-deleted-remains-review",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": true
+        },
+        "resolution": null
+      },
+      "valid": true
+    },
+    {
+      "name": "future-record",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null,
+        "future": true
+      },
+      "valid": false
+    },
+    {
+      "name": "future-request",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "future": true
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "future-scope",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account",
+          "future": true
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "future-receipt",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false,
+          "future": true
+        },
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "future-resolution",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "stopped",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": {
+          "localPath": "Notes/B.textpack",
+          "remotePath": "Notes/A.textpack",
+          "localLifecycle": "generation",
+          "remoteLifecycle": "generation",
+          "future": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "future-phase",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "future",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "future-version",
+      "record": {
+        "version": 2,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown-generation",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "foreign-root",
+      "record": {
+        "version": 1,
+        "rootHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "foreign-account",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "foreign"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown-account",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": null
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "traversal",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "../B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "wrong-operation",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "changed",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "wrong-base-revision",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "not-a-hash"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "pending-with-receipt",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "terminal-without-receipt",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "stopped-deleted",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "stopped",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": true
+        },
+        "resolution": {
+          "localPath": "Notes/B.textpack",
+          "remotePath": "Notes/A.textpack",
+          "localLifecycle": "generation",
+          "remoteLifecycle": "generation"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "stopped-without-current-revision",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "stopped",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": null,
+          "deleted": false
+        },
+        "resolution": {
+          "localPath": "Notes/B.textpack",
+          "remotePath": "Notes/A.textpack",
+          "localLifecycle": "generation",
+          "remoteLifecycle": "generation"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "stopped-generation-mismatch",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "stopped",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": {
+          "localPath": "Notes/B.textpack",
+          "remotePath": "Notes/A.textpack",
+          "localLifecycle": "generation",
+          "remoteLifecycle": "other"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "receipt-request-retarget",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/C.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "workspace",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "receipt-scope-change",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "terminal-rejected",
+        "receipt": {
+          "request": {
+            "operationId": "11111111-1111-4111-8111-111111111111",
+            "itemId": "item",
+            "source": "Notes/A.textpack",
+            "destination": "Notes/B.textpack",
+            "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "scope": {
+            "origin": "https://fixture.test",
+            "workspaceId": "foreign",
+            "accountId": "account"
+          },
+          "status": "conflict",
+          "relativePath": "Notes/A.textpack",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "deleted": false
+        },
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "inline-colon",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/A:B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "item-space",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item id",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "item-colon",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item:id",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "item-emoji",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item\ud83d\ude00",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "item-leading-dash",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "-item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    },
+    {
+      "name": "workspace-leading-underscore",
+      "record": {
+        "version": 1,
+        "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "request": {
+          "operationId": "11111111-1111-4111-8111-111111111111",
+          "itemId": "item",
+          "source": "Notes/A.textpack",
+          "destination": "Notes/B.textpack",
+          "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": {
+          "origin": "https://fixture.test",
+          "workspaceId": "_workspace",
+          "accountId": "account"
+        },
+        "baselineHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "lifecycle": "generation",
+        "phase": "pending",
+        "receipt": null,
+        "resolution": null
+      },
+      "valid": false
+    }
+  ],
+  "rawRecords": [
+    {
+      "name": "valid-raw-record",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": true
+    },
+    {
+      "name": "duplicate-version",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1,\"version\":1}",
+      "valid": false
+    },
+    {
+      "name": "escaped-duplicate-version",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1,\"\\u0076ersion\":1}",
+      "valid": false
+    },
+    {
+      "name": "duplicate-operation",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": false
+    },
+    {
+      "name": "duplicate-account",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": false
+    },
+    {
+      "name": "duplicate-terminal-status",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"terminal-rejected\",\"receipt\":{\"deleted\":false,\"relativePath\":\"Notes/A.textpack\",\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"revision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"status\":\"conflict\",\"status\":\"conflict\"},\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": false
+    },
+    {
+      "name": "duplicate-stopped-path",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"stopped\",\"receipt\":{\"deleted\":false,\"relativePath\":\"Notes/A.textpack\",\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"revision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"status\":\"conflict\"},\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":{\"localLifecycle\":\"generation\",\"localPath\":\"Notes/B.textpack\",\"localPath\":\"Notes/B.textpack\",\"remoteLifecycle\":\"generation\",\"remotePath\":\"Notes/A.textpack\"},\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": false
+    },
+    {
+      "name": "trailing-comma",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1,}",
+      "valid": false
+    },
+    {
+      "name": "unpaired-surrogate",
+      "json": "{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"\\ud800\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}",
+      "valid": false
+    }
+  ],
+  "rawMaps": [
+    {
+      "name": "valid-map",
+      "json": "{\"item\":{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}}",
+      "valid": true
+    },
+    {
+      "name": "duplicate-map-item",
+      "json": "{\"item\":{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1},\"item\":{\"baselineHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"lifecycle\":\"generation\",\"phase\":\"pending\",\"receipt\":null,\"request\":{\"baseRevision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"destination\":\"Notes/B.textpack\",\"itemId\":\"item\",\"operationId\":\"11111111-1111-4111-8111-111111111111\",\"source\":\"Notes/A.textpack\"},\"resolution\":null,\"rootHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"scope\":{\"accountId\":\"account\",\"origin\":\"https://fixture.test\",\"workspaceId\":\"workspace\"},\"version\":1}}",
+      "valid": false
+    }
+  ]
+}
