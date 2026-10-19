@@ -29,6 +29,7 @@ public sealed partial class ReplacementRecoveryRegistry
     static readonly Dictionary<string,(RetainedFileReplacement.Stamp Stamp,Entry Entry)> records = new(StringComparer.Ordinal);
     readonly string root, stateDirectory, directory, rootHash;
     readonly Action<string>? removalObservation;
+    internal Action<AccountRootOwnership.Owner,string>? VerifyProfile {get;init;}
     public ReplacementRecoveryRegistry(string root, string stateDirectory,Action<string>? removalObservation=null)
     {
         this.removalObservation=removalObservation;
@@ -50,7 +51,10 @@ public sealed partial class ReplacementRecoveryRegistry
         var bytes = RetainedFileReplacement.Read(owner, 8192);
         var parsed = JsonSerializer.Deserialize<AccountRootOwnership.Owner>(bytes) ?? throw new InvalidDataException("Invalid replacement ownership.");
         if (parsed.RootHash != rootHash) throw new InvalidDataException("Replacement ownership does not match this root.");
-        if (parsed.Version == 2 || parsed.Version==1&&RetainedReplacementProfile.HasPublishedMarker(stateDirectory)) RetainedReplacementProfile.Verify(stateDirectory, parsed, rootHash);
+        if (parsed.Version == 2 || parsed.Version==1&&RetainedReplacementProfile.HasPublishedMarker(stateDirectory)) {
+            if(VerifyProfile is {} verify)verify(parsed,rootHash);
+            else RetainedReplacementProfile.Verify(stateDirectory,parsed,rootHash);
+        }
         else if(parsed.Version != 1) throw new InvalidDataException("Unsupported replacement owner.");
         return RetainedReplacementProfile.PrincipalHash(parsed);
     }

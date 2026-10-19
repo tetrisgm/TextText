@@ -33,5 +33,42 @@ static class RetainedProfileConcurrencyTests
         })});
         assert(overlappingVerify&&noOpPrepare&&writerRefused,"stable verification permits readers and no-op preparation while excluding actual floor migration");
         assert(File.Exists(Path.Combine(store.StateDirectory,"retained-replacement-profile.lock"))&&!File.Exists(Path.Combine(store.Root,"retained-replacement-profile.lock")),"migration lease is device-private and subsequent prepare/verify have no nested lease deadlock");
+        InventoryScope(temp,assert);
+
     }
+    static void InventoryScope(string temp,Action<bool,string> assert)
+    {
+        var store=new TextPackStore(Path.Combine(temp,"inventory-profile-root"),Path.Combine(temp,"inventory-profile-state"));
+        AccountRootOwnership.Open(store,new Uri("https://texttext.test"),"inventory-workspace","inventory-account");
+        RetainedReplacementProfile.PrepareObservedAbsenceRename(store);
+        for(var i=0;i<1100;i++) {
+            using var output=new MemoryStream();
+            using(var zip=new System.IO.Compression.ZipArchive(output,System.IO.Compression.ZipArchiveMode.Create,true)) {
+                using var writer=new StreamWriter(zip.CreateEntry("text.md").Open());
+                writer.Write("---\ntextTextId: \"inventory-"+i+"\"\n---\n");
+            }
+            File.WriteAllBytes(Path.Combine(store.Root,"item-"+i+".textpack"),output.ToArray());
+        }
+        var hook=typeof(TextPackStore).GetProperty("InventoryObservationForTesting",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+        var starts=0;hook.SetValue(store,(Action<string>)(phase=>{if(phase=="profileVerified")starts++;}));
+        var timing=System.Diagnostics.Stopwatch.StartNew();var inventory=store.ScanInventory();
+        Console.WriteLine("INVENTORY_1100_FLOOR6_MS "+timing.ElapsedMilliseconds);
+        assert(inventory.Files.Count==1100&&starts==1,"large inventory shares one scan-scoped profile verification");
+        var profile=Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json");var original=File.ReadAllBytes(profile);
+        hook.SetValue(store,(Action<string>)(phase=>{if(phase=="scanned")File.WriteAllText(profile,"{}");}));
+        assert(Refuses(()=>store.ScanInventory()),"profile tampering during inventory refuses the whole result");
+        hook.SetValue(store,null);
+        assert(Refuses(()=>store.Describe("item-0.textpack")),"failed inventory cannot leak profile authority into standalone read");
+        File.WriteAllBytes(profile,original);
+        assert(store.ScanInventory().Files.Count==1100,"a fresh scan revalidates restored profile bytes");
+        File.WriteAllText(profile,"{}");
+        assert(Refuses(()=>store.ScanInventory()),"profile changed between scans is rejected");
+        File.WriteAllBytes(profile,original);
+        var ownerPath=Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);var owner=File.ReadAllBytes(ownerPath);
+        hook.SetValue(store,(Action<string>)(phase=>{if(phase=="scanned")File.WriteAllText(ownerPath,"{}");}));
+        assert(Refuses(()=>store.ScanInventory()),"owner tampering during inventory refuses the whole result");
+        hook.SetValue(store,null);File.WriteAllBytes(ownerPath,owner);
+        assert(store.Describe("item-0.textpack").ItemId=="inventory-0","standalone reads still validate successfully after scope disposal");
+    }
+
 }

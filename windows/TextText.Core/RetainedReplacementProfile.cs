@@ -38,6 +38,38 @@ public static class RetainedReplacementProfile
         VerifyUnlocked(state,owner,rootHash);
         observed?.Invoke();
     }
+    // Synchronous inventory only: publication stays excluded, and every scan
+    // verifies the actual owner/profile again before returning any inventory.
+    internal sealed class InventoryVerification : IDisposable
+    {
+        readonly string state, rootHash;
+        readonly byte[] ownerBytes;
+        readonly AccountRootOwnership.Owner owner;
+        readonly IDisposable lease;
+        internal InventoryVerification(string state, string rootHash)
+        {
+            this.state=state;this.rootHash=rootHash;
+            lease=MigrationLease(state,shared:true);
+            try {
+                AccountRootOwnership.RequireNoAdoption(state);
+                ownerBytes=RetainedFileReplacement.Read(Path.Combine(state,AccountRootOwnership.FileName),8192);
+                owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(ownerBytes)??throw new InvalidDataException("Invalid inventory owner.");
+                VerifyUnlocked(state,owner,rootHash);
+            } catch {lease.Dispose();throw;}
+        }
+        internal void Verify(AccountRootOwnership.Owner actual,string actualRootHash)
+        {
+            if(actual!=owner||actualRootHash!=rootHash)throw new InvalidDataException("Inventory ownership changed.");
+        }
+        public void Dispose()
+        {
+            try {
+                AccountRootOwnership.RequireNoAdoption(state);
+                if(!ownerBytes.SequenceEqual(RetainedFileReplacement.Read(Path.Combine(state,AccountRootOwnership.FileName),8192)))throw new InvalidDataException("Inventory ownership changed.");
+                VerifyUnlocked(state,owner,rootHash);
+            } finally {lease.Dispose();}
+        }
+    }
     internal static void VerifyUnlocked(string state, AccountRootOwnership.Owner owner, string rootHash)
     {
         var directory = DirectoryFor(state); RetainedFileReplacement.CheckPath(directory);

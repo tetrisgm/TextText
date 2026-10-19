@@ -52,14 +52,14 @@ internal sealed class FolderCaseRename(TextPackStore store)
         if(!RetainedReplacementProfile.HasPublishedMarker(store.StateDirectory))return;
         var path=Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);
         var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(path,8192))??throw new InvalidDataException("Folder account profile is unavailable.");
-        RetainedReplacementProfile.Verify(store.StateDirectory,owner,RootHash);
+        store.VerifyInventoryProfile(owner,RootHash);
     }
     string Owner()
     {
         AccountRootOwnership.RequireNoAdoption(store.StateDirectory);var path=Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);
         var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(path,8192))??throw new InvalidDataException("Missing folder account binding.");
         if(owner.Version!=2||owner.RootHash!=RootHash)throw new InvalidDataException("Folder account binding changed.");
-        RetainedReplacementProfile.Verify(store.StateDirectory,owner,RootHash);
+        store.VerifyInventoryProfile(owner,RootHash);
         var marker=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json"),8192))!;
         if(marker.Version is not (2 or 3 or 4 or 5 or 6))throw new InvalidDataException("Folder compatibility profile is unavailable.");return RetainedReplacementProfile.PrincipalHash(owner);
     }

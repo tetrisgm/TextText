@@ -22,6 +22,14 @@ public sealed partial class TextPackStore
     internal Action<string>? RemovalObservationForTesting { get; set; }
     internal Action<string>? MoveObservationForTesting { get; set; }
     readonly object gate = new();
+    RetainedReplacementProfile.InventoryVerification? inventoryVerification;
+    internal Action<string>? InventoryObservationForTesting {get;set;}
+    internal void VerifyInventoryProfile(AccountRootOwnership.Owner owner,string rootHash)
+    {
+        if(inventoryVerification is {} scope)scope.Verify(owner,rootHash);
+        else RetainedReplacementProfile.Verify(StateDirectory,owner,rootHash);
+    }
+
     internal T WithExclusiveMutation<T>(Func<T> action) { lock(gate) return action(); }
     public TextPackStore(string root, string? stateDirectory = null)
     {
@@ -231,11 +239,20 @@ public sealed partial class TextPackStore
                 }catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or DecoderFallbackException){Error(path,"File is invalid or temporarily unavailable. Its contents have been preserved.");}
             }
         }
-        lock(gate){FolderCases.VerifyExistingProfile();
-            if(noRecoveryItems is not {Count:>0})AssertFolderRenameReadable();
-            // Candidate reads validate fixed folder history without repair.
-            // Unrelated files retain their ordinary per-read recovery path.
-            CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
+        lock(gate){
+            using var verification=RetainedReplacementProfile.HasPublishedMarker(StateDirectory)
+                ?new RetainedReplacementProfile.InventoryVerification(StateDirectory,Hash(Encoding.UTF8.GetBytes(Root))):null;
+            inventoryVerification=verification;
+            try {
+                inventoryReplacements=Replacements;
+                InventoryObservationForTesting?.Invoke("profileVerified");
+                FolderCases.VerifyExistingProfile();
+                if(noRecoveryItems is not {Count:>0})AssertFolderRenameReadable();
+                // Per-entry recovery remains enabled; only the profile chain is
+                // shared within this synchronous, store-serialized scan.
+                CheckLinks(Root);Visit(Root);InventoryObservationForTesting?.Invoke("scanned");LastScanErrors=errors.ToArray();
+            } finally {inventoryVerification=null;inventoryReplacements=null;}
+        }return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
     }
 
     public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)

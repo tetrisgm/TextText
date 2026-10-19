@@ -2,7 +2,8 @@ namespace TextText.Core;
 
 public sealed partial class TextPackStore
 {
-    ReplacementRecoveryRegistry Replacements => new(Root, StateDirectory,RemovalObservationForTesting);
+    ReplacementRecoveryRegistry? inventoryReplacements;
+    ReplacementRecoveryRegistry Replacements => inventoryReplacements??new(Root, StateDirectory,RemovalObservationForTesting) {VerifyProfile=VerifyInventoryProfile};
     public void AssertReplacementReadable(string? itemId) { lock(gate) {AssertFolderRenameReadable();Replacements.AssertReadable(itemId);} }
     public void ValidateReplacementRegistry() { lock(gate) _=Replacements.Entries(); }
     public bool ReplacementBlocked(string itemId)

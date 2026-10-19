@@ -31,6 +31,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly object retirementGate = new();
     Task? retirement;
     WorkspaceInventory? inventory;
+    readonly object inventoryGate = new();
+    internal Action? BeforeInventoryScanForTesting {get;set;}
     // Keep the last valid identity while a file is briefly unreadable during an
     // external atomic replacement. A real deletion has no scan error and is not
     // retained. This prevents a live editor from being removed for a repairable
@@ -88,7 +90,9 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     void SyncStateChanged() => Interlocked.Increment(ref durabilityVersion);
     WorkspaceInventory Inventory() {
         var cached=Volatile.Read(ref inventory);if(cached is not null)return cached;
-        var version=Volatile.Read(ref inventoryVersion);var scanned=files.ScanInventory();
+        lock(inventoryGate) {
+        cached=Volatile.Read(ref inventory);if(cached is not null)return cached;
+        var version=Volatile.Read(ref inventoryVersion);BeforeInventoryScanForTesting?.Invoke();var scanned=files.ScanInventory();
         var prior=Volatile.Read(ref lastKnownInventory);
         if(prior is not null && files.LastScanErrors.Count>0) {
             var errors=files.LastScanErrors.Where(error=>error.Reason=="File is invalid or temporarily unavailable. Its contents have been preserved.")
@@ -101,6 +105,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         Volatile.Write(ref inventory,scanned);
         if(version!=Volatile.Read(ref inventoryVersion))Volatile.Write(ref inventory,null);
         return scanned;
+        }
     }
     /// <summary>Runs a gate-protected sync read, giving up after <see cref="GateWait"/> when a sync pass holds the gate. Returns null only for that timeout; caller cancellation still throws.</summary>
     async Task<T?> BoundedGateRead<T>(Func<CancellationToken,Task<T>> read, CancellationToken ct) where T : struct
