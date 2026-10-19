@@ -29,6 +29,18 @@ The bounded post-install audit since `2026-10-19T03:30:00Z` found **zero** match
 
 Installed artifact and responding-window checks passed. Actual recovery, typing, durable reopen and all-six-client acceptance remain unverified on this installed PC; available CUA exposes the Mac only. The sealed private actor has not been launched against the owner's root. No public release occurred.
 
+## Read-only ownership refresh
+
+At `2026-10-19T06:13:42Z`, direct SSH still observed the same installed PID42616,
+start `03:38:29.9854401Z`, session1, responding. Its exact selected private state
+remained unchanged: no account-owner record or recorded AccountId, one preserved
+outbox entry, and no local/baseline entry for owned article `f82e4082-97b8-4ccb-8087-70de5f0a3c86`.
+The SSH-context zero window handle does not contradict the interactive window.
+No adoption, UI action, launch, scheduled task or state change was performed.
+Receipt: `/private/tmp/texttext-pc-normal-readonly-refresh-20261019.json`, SHA-256
+`be515a3925892d20b94ba41428b658ebca8c6f20bdf5ec3ff2ae5fc47318666c`.
+Supported owner review of the saved work remains the PC editing dependency.
+
 ## Evidence
 
 Private Mac evidence: `/private/tmp/texttext-pc-stop-4eca-5dfc6f4f` (pre/post backup configurations and summaries, exact termination, official install logs, installed verification, launch refusal and same-session window metadata). The matching PC build evidence remains at `C:/Users/Shokunin/AppData/Local/Temp/texttext-pc-frozen-4eca8353-cc_bg_xy`.
