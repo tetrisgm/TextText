@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { vaultRequest } from "./bridge";
 import { AccountMenu } from "./AccountMenu";
+import { nativeSyncNotice } from "./native-sync-notice";
 
-type Connection = { workspaceId?: string; connected: boolean; available: boolean; connecting?: boolean; onlineReady?: boolean; webURL?: string; message?: string; hasConflicts?: boolean };
+type Connection = { workspaceId?: string; connected: boolean; available: boolean; connecting?: boolean; onlineReady?: boolean; authenticationRequired?: boolean; webURL?: string; message?: string; hasConflicts?: boolean };
 
 /** Account actions for the open workspace. Sync runs automatically. */
 export function NativeConnection({ root }: { root: string }) {
@@ -33,11 +34,16 @@ export function NativeConnection({ root }: { root: string }) {
     finally { setBusy(false); }
   };
   const signedIn = connection?.available === true;
+  const notice = nativeSyncNotice(connection);
 
   return <AccountMenu profileKey={`${root}:${connection?.workspaceId ?? ""}`} signedIn={connection ? signedIn : null}
     accountSite={connection?.webURL}
     logOut={() => vaultRequest<void>("signOut")} signIn={() => vaultRequest<void>("signIn")}
     actions={<>
+      {notice && <div className="vault-account-message" role="status">
+        <p>{notice.message}</p>
+        {notice.kind === "authentication" && <button type="button" disabled={busy} onClick={() => void perform("signIn")}>Sign in again</button>}
+      </div>}
       {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}
       {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
       {failure && <div className="vault-account-message" role="alert"><p>{failure}</p></div>}
