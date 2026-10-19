@@ -125,6 +125,15 @@ export type EditorImagePasteRequest = {
 
 export type EditorImagePasteResult = { caret: number } | undefined;
 
+/** A declared conditional title remains owned by its authored render. Only a
+ * truly unbound core field receives an editor-only metadata fallback. */
+function declaresDocumentBinding(node: unknown, binding: string): boolean {
+  if (!node || typeof node !== "object") return false;
+  if (Array.isArray(node)) return node.some(child => declaresDocumentBinding(child, binding));
+  const record = node as Record<string, unknown>;
+  return record.bind === binding || Object.values(record).some(child => declaresDocumentBinding(child, binding));
+}
+
 /** Swap the live file-relay document in place; see `registerLocalRebind`. */
 export type LocalDocumentRebind = (next: Y.Doc, awareness: Awareness) => Promise<void>;
 
@@ -2146,6 +2155,9 @@ export function UnifiedDocumentEditor({
       (field) => field.visibility !== "hidden" && !bound.has(field.id),
     );
   }, [activeTemplate]);
+  const declaresTitle = useMemo(() => declaresDocumentBinding(activeTemplate.item, "content.title"), [activeTemplate.item]);
+  const fallbackTitle = collab.canEdit && activeTemplate.id !== "texttext.gallery" && !declaresTitle;
+  const detailsCount = unboundFields.length + (fallbackTitle ? 1 : 0);
   const retryBaseline = useCallback(() => {
     setBaselineFailure(null);
     setError(null);
@@ -2461,7 +2473,7 @@ export function UnifiedDocumentEditor({
         </div>
       )}
       {!localDocument && <EditorSaveNotice state={saveState} onRetry={retrySaving} />}
-      {!(experience === "article" || experience === "note") && !document.content.title.trim() && !document.content.body.trim() && <p className="workspace-post-body-status">Start with a title or write below. Use Stop editing above to return to reading.</p>}
+      {!(experience === "article" || experience === "note") && !document.content.title.trim() && !document.content.body.trim() && (detailsCount > 0 || activeTemplate.id === "texttext.gallery") && <p className="workspace-post-body-status">Add details to get started.</p>}
       {/* No byline while writing: an author and a reading time are reader
           chrome, and showing them here turns the page into a preview of
           itself instead of the thing being written.
@@ -2594,7 +2606,7 @@ export function UnifiedDocumentEditor({
         <button type="submit" disabled={!articleLinkURL.trim()}>Add link</button>
         {articleLinkError && <span role="alert">{articleLinkError}</span>}
       </form>}
-      {unboundFields.length > 0 && (
+      {detailsCount > 0 && (
         // Fields the look declares but does not place stay one level down, so
         // the writing surface is a document rather than a form.
         // Open. These are fields the look declared and did not place, and a
@@ -2605,10 +2617,11 @@ export function UnifiedDocumentEditor({
           <summary className="tt-field-details-title">
             Details
             <span className="tt-field-details-count" aria-hidden="true">
-              {unboundFields.length}
+              {detailsCount}
             </span>
           </summary>
           <div className="tt-field-details-body">
+            {fallbackTitle && <div className="tt-fallback-title">{slots.bindings["content.title"]}</div>}
             {unboundFields.map((field) => {
               const previewValue = displayDocument.content.fields[field.id];
               return <FieldInput
@@ -2698,20 +2711,20 @@ export function UnifiedDocumentEditor({
         .tt-gallery-edit-tags form button:disabled{opacity:.5}
         @media(max-width:800px){.tt-gallery-edit-layout{grid-template-columns:1fr;padding:0 16px}.tt-gallery-edit-details{position:static}}
         @media(max-width:700px){.tt-document-editor{padding-top:3.5rem}.tt-look-name{display:none}.tt-field-row.is-embedded{grid-template-columns:1fr;gap:0.3125rem;padding-inline:0.5rem}}
-        .tt-document-editor .tt-collaborative-field{position:relative;width:100%;min-width:0}
-        .tt-document-editor .tt-collaborative-field textarea,.tt-document-editor .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
-        .tt-document-editor .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:visible}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-field{position:relative;width:100%;min-width:0}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-field textarea,:is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-mirror{box-sizing:border-box;width:100%;margin:0;padding:0;border:0;outline:0;background:transparent;color:inherit;font:inherit;line-height:inherit;letter-spacing:0;white-space:pre-wrap;overflow-wrap:anywhere;resize:none;text-align:inherit}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-field textarea{position:relative;z-index:2;display:block;caret-color:var(--tt-accent);overflow:visible}
         /* Nothing is drawn around the writing. The caret is the focus
            indicator, the way it is in every editor people actually like. A
            tinted field turns a document into a form, and at body height that
            tint was a coloured panel behind the whole page. High contrast is
            the exception: there a caret is easy to lose, so it gets a real
            outline. */
-        @media(forced-colors:active){.tt-document-editor .tt-collaborative-field:focus-within::before{content:"";position:absolute;inset:-4px -8px;outline:2px solid Highlight;pointer-events:none}}
-        .tt-document-editor .tt-collaborative-mirror{position:absolute;z-index:1;inset:0;pointer-events:none;overflow:hidden;color:transparent}
-        .tt-document-editor .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
-        .tt-document-editor .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-0.0625rem;color:transparent}
-        .tt-document-editor .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:0.125rem 0.3125rem;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 0.625rem/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
+        @media(forced-colors:active){:is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-field:focus-within::before{content:"";position:absolute;inset:-4px -8px;outline:2px solid Highlight;pointer-events:none}}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-mirror{position:absolute;z-index:1;inset:0;pointer-events:none;overflow:hidden;color:transparent}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-collaborative-mirror mark{background:color-mix(in srgb,var(--tt-peer) 28%,transparent);color:transparent;border-radius:2px}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-remote-caret{position:relative;border-inline-start:2px solid var(--tt-peer);margin-inline-start:-0.0625rem;color:transparent}
+        :is(.tt-document-editor,.tt-fallback-title) .tt-remote-caret>span{position:absolute;left:-2px;bottom:100%;padding:0.125rem 0.3125rem;background:var(--tt-peer);color:var(--tt-peer-ink);font:600 0.625rem/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;white-space:nowrap;border-radius:3px}
         .tt-document-editor .tt-field-body textarea,.tt-document-editor .tt-field-body .tt-collaborative-mirror{min-height:36vh;text-align:start}
         /* The writing surface renders the source itself, styled, so what you
            type looks like what a reader gets without the document stopping
