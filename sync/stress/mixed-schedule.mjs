@@ -143,6 +143,10 @@ export function preflightMixedDocument(plan, baseline, {
   assetHashes = {}
 } = {}) {
   const projected = structuredClone(documentObservation(baseline).snapshot);
+  // This schedule includes direct-file subtitle writes, whose authored
+  // projection contract requires an existing excerpt. Generic observations
+  // accept an omitted subtitle; this scenario must refuse before any input.
+  if (typeof projected.content.subtitle !== 'string') throw Error('Mixed schedule requires an existing subtitle');
   const operations = fieldOperations(plan.rounds);
   for (const field of ['body', 'subtitle']) {
     const texts = operations.filter(edit => edit.field === field).map(edit => edit.text);

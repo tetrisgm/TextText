@@ -81,6 +81,10 @@ test('all five kinds reuse normal scoped IDs and preserve complete prior prefix'
   assert.equal(operations.some(e => e.id === 'r4-pc-cli-subtitle'), true);
   assert.notEqual(generate(make(['history', 'fields', 'typing', 'cli-writes', 'plain'])).sha256, plan.sha256);
 });
+test('mixed scenario refuses absent subtitle before direct-file field input', () => {
+  const initial=structuredClone(baseline);delete initial.content.subtitle;
+  assert.throws(()=>preflightMixedDocument(generate(make(['plain'])),initial),/existing subtitle/);
+});
 test('actual baseline growth preflight refuses text/document overflow before input', () => {
   const plan = generate(make(['plain']));
   assert.throws(() => preflightMixedDocument(plan, {

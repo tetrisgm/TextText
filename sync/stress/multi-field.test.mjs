@@ -24,9 +24,35 @@ test('allowed CRDT ordering must still agree across all six full snapshots',()=>
  f.observations.get('mac-app').content.subtitle=f.observations.get('mac-app').content.subtitle.replace(f.edits[1].text,'');
  assert.throws(()=>checkMultiFieldAccounting(baseline,f.observations,f.edits),/marker/);
 });
-test('missing subtitle or wrong template cannot masquerade as the real multi-field fixture',()=>{
+test('explicit undefined subtitle or wrong template cannot masquerade as a valid article',()=>{
  assert.throws(()=>documentObservation({...baseline,content:{...baseline.content,subtitle:undefined}}),/visible/);
  assert.throws(()=>documentObservation({...baseline,presentation:{template:{id:'texttext.note'}}}),/article/);
+});
+
+test('absent optional subtitle remains absent through body-only full accounting',()=>{
+ const initial=structuredClone(baseline);delete initial.content.subtitle;
+ const edits=roles.map(role=>({id:`r1-${role}`,role,op:'append',field:'body',text:`[${role} body]`}));
+ const current=structuredClone(initial);current.content.body+=edits.map(e=>e.text).join('');
+ const observations=new Map(roles.map(role=>[role,structuredClone(current)]));
+ assert.equal(Object.hasOwn(documentObservation(initial).snapshot.content,'subtitle'),false);
+ assert.doesNotThrow(()=>checkMultiFieldAccounting(initial,observations,edits));
+ observations.get('mac-app').content.subtitle='';
+ assert.throws(()=>checkMultiFieldAccounting(initial,observations,edits),/Unplanned/);
+});
+
+test('planned subtitle input may create an absent field without losing hidden metadata',()=>{
+ const initial=structuredClone(baseline);delete initial.content.subtitle;
+ const edits=roles.map(role=>({id:`r1-${role}`,role,op:'append',field:'subtitle',text:`[${role} subtitle]`}));
+ const current=structuredClone(initial);current.content.subtitle=edits.map(e=>e.text).join('');
+ const observations=new Map(roles.map(role=>[role,structuredClone(current)]));
+ assert.doesNotThrow(()=>checkMultiFieldAccounting(initial,observations,edits));
+ observations.get('pc-app').content.fields.status='changed';
+ assert.throws(()=>checkMultiFieldAccounting(initial,observations,edits),/Unplanned/);
+});
+
+test('present invalid subtitle values cannot pass optional-field inspection',()=>{
+ for(const subtitle of [undefined,null,0,false,{},[]])
+  assert.throws(()=>documentObservation({...baseline,content:{...baseline.content,subtitle}}));
 });
 
 test('mixed accounting requires explicit bounded expansion while default600 remains', () => {

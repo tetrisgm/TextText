@@ -10,7 +10,8 @@ export function validateMultiFieldEdit(edit) {
 }
 export function documentObservation(snapshot) {
   if (!snapshot || snapshot.schemaVersion !== 1 || typeof snapshot.content?.title !== 'string'
-    || typeof snapshot.content.body !== 'string' || typeof snapshot.content.subtitle !== 'string'
+    || typeof snapshot.content.body !== 'string'
+    || (Object.hasOwn(snapshot.content, 'subtitle') && typeof snapshot.content.subtitle !== 'string')
     || snapshot.presentation?.template?.id !== 'texttext.article') throw new Error('Existing article with visible body and subtitle required');
   const canonical = canonicalJSON(snapshot);
   if (Buffer.byteLength(canonical) > 256 * 1024) throw new Error('Full document observation exceeds bound');
@@ -23,7 +24,8 @@ export function checkMultiFieldAccounting(baseline, observations, edits, {maxEdi
     || new Set(edits.map(edit=>edit.id)).size !== edits.length) throw new Error('Invalid field operation plan');
   for (const field of MULTI_FIELD_KEYS) {
     const texts = edits.filter(edit=>edit.field===field).map(edit=>edit.text);
-    if (new Set(texts).size !== texts.length || texts.some(text=>original.snapshot.content[field].includes(text)
+    const initial = original.snapshot.content[field] ?? '';
+    if (new Set(texts).size !== texts.length || texts.some(text=>initial.includes(text)
       || texts.some(other=>other!==text && other.includes(text)))) throw new Error('Ambiguous field operation markers');
   }
   if (!(observations instanceof Map) || observations.size !== 6
@@ -32,13 +34,19 @@ export function checkMultiFieldAccounting(baseline, observations, edits, {maxEdi
   for (const [role, snapshot] of observations) {
     const observed = documentObservation(snapshot), stripped = structuredClone(observed.snapshot);
     for (const field of MULTI_FIELD_KEYS) {
-      let value = stripped.content[field];
-      for (const edit of edits.filter(edit=>edit.field===field)) {
+      let value = stripped.content[field] ?? '';
+      const fieldEdits = edits.filter(edit=>edit.field===field);
+      for (const edit of fieldEdits) {
         if (value.split(edit.text).length !== 2) throw new Error(`Field marker missing or duplicated: ${role}/${edit.id}`);
         value = value.replace(edit.text, '');
       }
-      if (value !== original.snapshot.content[field]) throw new Error(`Field baseline lost: ${role}/${field}`);
-      stripped.content[field] = value;
+      if (value !== (original.snapshot.content[field] ?? '')) throw new Error(`Field baseline lost: ${role}/${field}`);
+      // Accepted subtitle input can create the optional field. Remove only that
+      // planned addition while comparing the untouched baseline. Without input,
+      // absent and empty remain distinct full-document semantics.
+      if (!Object.hasOwn(original.snapshot.content, field)) {
+        if (fieldEdits.length > 0) delete stripped.content[field];
+      } else stripped.content[field] = value;
     }
     if (canonicalJSON(stripped) !== original.canonical) throw new Error(`Unplanned full document change: ${role}`);
     if (finalHash !== undefined && observed.hash !== finalHash) throw new Error('Full document semantic divergence');
