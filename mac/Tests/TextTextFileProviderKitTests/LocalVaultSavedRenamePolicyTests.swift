@@ -14,6 +14,14 @@ final class LocalVaultSavedRenamePolicyTests: XCTestCase {
             XCTAssertEqual(actual, vector.decision, vector.name)
         }
     }
+    func testTypedGenerationSavedRenameVectorsRoundTripThroughSharedOwner() async throws {
+        var root = URL(fileURLWithPath: #filePath); for _ in 0..<4 { root.deleteLastPathComponent() }
+        let rows = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: root.appendingPathComponent("sync/fixtures/mirror-generation-rename.json")))
+        for vector in rows {
+            let actual = try await makeTestMirrorPolicy(workspaceId: "typed-saved-rename-vectors").savedRename(vector.observed)
+            XCTAssertEqual(actual, vector.decision, vector.name)
+        }
+    }
     func testSavedRenameReplyRejectsFutureAndForgedFields() async throws {
         let scope = LocalVaultMirrorScope(accountId: "account", workspaceId: "workspace", lifecycle: "connection")
         let observed = try vectors()[0].observed

@@ -142,14 +142,33 @@ enum LocalVaultSharedRename {
         }
     }
     struct Resolution: Codable, Equatable, Sendable {
-        let localPath: String, remotePath: String, localLifecycle: String, remoteLifecycle: String
-        init(localPath: String, remotePath: String, localLifecycle: String, remoteLifecycle: String) { self.localPath = localPath; self.remotePath = remotePath; self.localLifecycle = localLifecycle; self.remoteLifecycle = remoteLifecycle }
-        private enum CodingKeys: String, CodingKey { case localPath, remotePath, localLifecycle, remoteLifecycle }
+        let localPath: String, remotePath: String
+        let localGeneration: LocalVaultGeneration, remoteGeneration: LocalVaultGeneration
+        let typed: Bool
+        var localLifecycle: String? { localGeneration.lifecycle }
+        var remoteLifecycle: String? { remoteGeneration.lifecycle }
+        init(localPath: String, remotePath: String, localLifecycle: String, remoteLifecycle: String) {
+            self.localPath = localPath; self.remotePath = remotePath
+            localGeneration = .present(localLifecycle); remoteGeneration = .present(remoteLifecycle); typed = false
+        }
+        init(localPath: String, remotePath: String, localGeneration: LocalVaultGeneration, remoteGeneration: LocalVaultGeneration) {
+            self.localPath = localPath; self.remotePath = remotePath
+            self.localGeneration = localGeneration; self.remoteGeneration = remoteGeneration; typed = true
+        }
+        private enum CodingKeys: String, CodingKey { case localPath, remotePath, localLifecycle, remoteLifecycle, localGeneration, remoteGeneration }
         init(from decoder: Decoder) throws {
-            try LocalVaultSharedRename.keys(decoder, ["localPath", "remotePath", "localLifecycle", "remoteLifecycle"])
             let c = try decoder.container(keyedBy: CodingKeys.self)
+            typed = c.contains(.localGeneration) || c.contains(.remoteGeneration)
+            try LocalVaultSharedRename.keys(decoder, typed ? ["localPath", "remotePath", "localGeneration", "remoteGeneration"] : ["localPath", "remotePath", "localLifecycle", "remoteLifecycle"])
             localPath = try c.decode(String.self, forKey: .localPath); remotePath = try c.decode(String.self, forKey: .remotePath)
-            localLifecycle = try c.decode(String.self, forKey: .localLifecycle); remoteLifecycle = try c.decode(String.self, forKey: .remoteLifecycle)
+            localGeneration = typed ? try c.decode(LocalVaultGeneration.self, forKey: .localGeneration) : .present(try c.decode(String.self, forKey: .localLifecycle))
+            remoteGeneration = typed ? try c.decode(LocalVaultGeneration.self, forKey: .remoteGeneration) : .present(try c.decode(String.self, forKey: .remoteLifecycle))
+        }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(localPath, forKey: .localPath); try c.encode(remotePath, forKey: .remotePath)
+            if typed { try c.encode(localGeneration, forKey: .localGeneration); try c.encode(remoteGeneration, forKey: .remoteGeneration) }
+            else { try c.encode(localLifecycle, forKey: .localLifecycle); try c.encode(remoteLifecycle, forKey: .remoteLifecycle) }
         }
     }
     struct Record: Codable, Equatable, Sendable {
@@ -157,27 +176,33 @@ enum LocalVaultSharedRename {
         let rootHash: String
         let request: LocalVaultProtectedRenameRequest
         let scope: LocalVaultProtectedRenameScope
-        let baselineHash: String, lifecycle: String
+        let baselineHash: String
+        let generation: LocalVaultGeneration
+        var lifecycle: String? { generation.lifecycle }
         let phase: Phase
         let receipt: Receipt?
         let resolution: Resolution?
-        init(rootHash: String, request: LocalVaultProtectedRenameRequest, scope: LocalVaultProtectedRenameScope, baselineHash: String, lifecycle: String, phase: Phase = .pending, receipt: Receipt? = nil, resolution: Resolution? = nil) {
-            version = 1; self.rootHash = rootHash; self.request = request; self.scope = scope; self.baselineHash = baselineHash; self.lifecycle = lifecycle; self.phase = phase; self.receipt = receipt; self.resolution = resolution
+        init(rootHash: String, request: LocalVaultProtectedRenameRequest, scope: LocalVaultProtectedRenameScope, baselineHash: String, lifecycle: String? = nil, generation: LocalVaultGeneration? = nil, phase: Phase = .pending, receipt: Receipt? = nil, resolution: Resolution? = nil) {
+            version = generation == nil ? 1 : 2; self.rootHash = rootHash; self.request = request; self.scope = scope; self.baselineHash = baselineHash; self.generation = generation ?? lifecycle.map(LocalVaultGeneration.present) ?? .unknown; self.phase = phase; self.receipt = receipt; self.resolution = resolution
         }
-        private enum CodingKeys: String, CodingKey { case version, rootHash, request, scope, baselineHash, lifecycle, phase, receipt, resolution }
+        private enum CodingKeys: String, CodingKey { case version, rootHash, request, scope, baselineHash, lifecycle, generation, phase, receipt, resolution }
         init(from decoder: Decoder) throws {
-            try LocalVaultSharedRename.keys(decoder, ["version", "rootHash", "request", "scope", "baselineHash", "lifecycle", "phase", "receipt", "resolution"])
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            version = try c.decode(Int.self, forKey: .version); rootHash = try c.decode(String.self, forKey: .rootHash)
+            version = try c.decode(Int.self, forKey: .version)
+            try LocalVaultSharedRename.keys(decoder, ["version", "rootHash", "request", "scope", "baselineHash", version == 1 ? "lifecycle" : "generation", "phase", "receipt", "resolution"])
+            rootHash = try c.decode(String.self, forKey: .rootHash)
             request = try LocalVaultSharedRename.request(c.superDecoder(forKey: .request)); scope = try LocalVaultSharedRename.scope(c.superDecoder(forKey: .scope))
-            baselineHash = try c.decode(String.self, forKey: .baselineHash); lifecycle = try c.decode(String.self, forKey: .lifecycle)
+            baselineHash = try c.decode(String.self, forKey: .baselineHash)
+            generation = version == 1 ? .present(try c.decode(String.self, forKey: .lifecycle)) : try c.decode(LocalVaultGeneration.self, forKey: .generation)
             phase = try c.decode(Phase.self, forKey: .phase); receipt = try c.decodeIfPresent(Receipt.self, forKey: .receipt); resolution = try c.decodeIfPresent(Resolution.self, forKey: .resolution)
             try LocalVaultSharedRename.validate(self, rootHash: rootHash, scope: scope)
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encode(version, forKey: .version); try c.encode(rootHash, forKey: .rootHash); try c.encode(request, forKey: .request); try c.encode(scope, forKey: .scope)
-            try c.encode(baselineHash, forKey: .baselineHash); try c.encode(lifecycle, forKey: .lifecycle); try c.encode(phase, forKey: .phase)
+            try c.encode(baselineHash, forKey: .baselineHash)
+            if version == 1 { try c.encode(lifecycle, forKey: .lifecycle) } else { try c.encode(generation, forKey: .generation) }
+            try c.encode(phase, forKey: .phase)
             if let receipt { try c.encode(receipt, forKey: .receipt) } else { try c.encodeNil(forKey: .receipt) }
             if let resolution { try c.encode(resolution, forKey: .resolution) } else { try c.encodeNil(forKey: .resolution) }
         }
@@ -191,6 +216,8 @@ enum LocalVaultSharedRename {
         let localLifecycle: String?, remoteLifecycle: String?
         let remoteRevision: String, checkpointPath: String
         let checkpointReady: Bool, localUnique: Bool, organizePermitted: Bool
+        var localGeneration: LocalVaultGeneration? = nil
+        var remoteGeneration: LocalVaultGeneration? = nil
     }
     struct ArchiveProof {
         let operationId: String, rootHash: String, scope: LocalVaultProtectedRenameScope, recordHash: String
@@ -204,12 +231,12 @@ enum LocalVaultSharedRename {
         return value.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
     static func validate(_ record: Record, rootHash: String, scope: LocalVaultProtectedRenameScope) throws {
-        guard record.version == 1, hash(rootHash), record.rootHash == rootHash, record.scope == scope,
+        guard (record.version == 1 || record.version == 2), record.generation.known, (record.version != 1 || record.lifecycle != nil), hash(rootHash), record.rootHash == rootHash, record.scope == scope,
               let account = scope.accountId, text(account, maximum: 256),
               scope.workspaceId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) != nil,
               let origin = URL(string: scope.origin),
               try PortableWorkspaceBinding.normalized(.init(origin: origin, workspaceId: scope.workspaceId)).origin.absoluteString == scope.origin,
-              text(record.lifecycle, maximum: 512), hash(record.baselineHash), hash(record.request.baseRevision),
+              (record.lifecycle == nil || text(record.lifecycle!, maximum: 512)), hash(record.baselineHash), hash(record.request.baseRevision),
               let operation = UUID(uuidString: record.request.operationId), operation.uuidString.lowercased() == record.request.operationId,
               record.request.itemId.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) != nil,
               path(record.request.source), path(record.request.destination), record.request.source != record.request.destination else { throw Failure.invalid }
@@ -221,7 +248,7 @@ enum LocalVaultSharedRename {
             if record.phase == .terminalRejected { guard record.resolution == nil else { throw Failure.invalid } }
             else {
                 guard let resolution = record.resolution, !receipt.deleted, receipt.revision != nil, path(resolution.localPath), path(resolution.remotePath), resolution.remotePath == receipt.relativePath,
-                      resolution.localLifecycle == record.lifecycle, resolution.remoteLifecycle == record.lifecycle else { throw Failure.invalid }
+                      resolution.typed == (record.version == 2), resolution.localGeneration.matches(record.generation), resolution.remoteGeneration.matches(record.generation) else { throw Failure.invalid }
             }
         }
     }
@@ -241,21 +268,24 @@ enum LocalVaultSharedRename {
             return .moved(record.request.baseRevision)
         }
         guard value.status == "conflict" else { throw Failure.invalid }
-        let rejected = Record(rootHash: record.rootHash, request: record.request, scope: record.scope, baselineHash: record.baselineHash, lifecycle: record.lifecycle, phase: .terminalRejected, receipt: Receipt(value))
+        let rejected = Record(rootHash: record.rootHash, request: record.request, scope: record.scope, baselineHash: record.baselineHash, lifecycle: record.lifecycle, generation: record.version == 2 ? record.generation : nil, phase: .terminalRejected, receipt: Receipt(value))
         try validate(rejected, rootHash: record.rootHash, scope: record.scope)
         return .rejected(rejected)
     }
     static func stopped(_ record: Record, resolution: Resolution) throws -> Record {
         guard record.phase == .terminalRejected else { throw Failure.changed }
-        let result = Record(rootHash: record.rootHash, request: record.request, scope: record.scope, baselineHash: record.baselineHash, lifecycle: record.lifecycle, phase: .stopped, receipt: record.receipt, resolution: resolution)
+        let result = Record(rootHash: record.rootHash, request: record.request, scope: record.scope, baselineHash: record.baselineHash, lifecycle: record.lifecycle, generation: record.version == 2 ? record.generation : nil, phase: .stopped, receipt: record.receipt, resolution: resolution)
         try validate(result, rootHash: record.rootHash, scope: record.scope); return result
     }
     // A fact-consistency guard for a later packaged policy decision, never a
     // native scheduling fallback. No revision/hash is an input to this guard.
-    static func matchesStoppedFacts(_ record: Record, localPath: String, remotePath: String, localLifecycle: String?, remoteLifecycle: String?, unique: Bool) -> Bool {
+    static func matchesStoppedFacts(_ record: Record, localPath: String, remotePath: String, localLifecycle: String?, remoteLifecycle: String?, unique: Bool,
+        localGeneration: LocalVaultGeneration? = nil, remoteGeneration: LocalVaultGeneration? = nil) -> Bool {
         do { try validate(record, rootHash: record.rootHash, scope: record.scope) } catch { return false }
         guard record.phase == .stopped, let resolution = record.resolution, unique else { return false }
-        return resolution.localPath == localPath && resolution.remotePath == remotePath && resolution.localLifecycle == localLifecycle && resolution.remoteLifecycle == remoteLifecycle
+        return resolution.localPath == localPath && resolution.remotePath == remotePath &&
+            resolution.localGeneration.matches(localGeneration ?? localLifecycle.map(LocalVaultGeneration.present) ?? .unknown) &&
+            resolution.remoteGeneration.matches(remoteGeneration ?? remoteLifecycle.map(LocalVaultGeneration.present) ?? .unknown)
     }
     static func archiveBytes(_ record: Record) throws -> Data {
         try validate(record, rootHash: record.rootHash, scope: record.scope)
@@ -273,16 +303,17 @@ enum LocalVaultSharedRename {
         if expected == replacement { return current }
         if let expected, let replacement {
             if expected.request == replacement.request {
-                guard expected.rootHash == replacement.rootHash, expected.scope == replacement.scope, expected.baselineHash == replacement.baselineHash, expected.lifecycle == replacement.lifecycle,
+                guard expected.version == replacement.version, expected.rootHash == replacement.rootHash, expected.scope == replacement.scope, expected.baselineHash == replacement.baselineHash, expected.generation == replacement.generation,
                       (expected == replacement || expected.phase == .pending && replacement.phase == .terminalRejected || expected.phase == .terminalRejected && replacement.phase == .stopped && expected.receipt == replacement.receipt) else { throw Failure.changed }
             } else {
                 guard expected.phase == .stopped, replacement.phase == .pending, expected.request.operationId != replacement.request.operationId,
                       expected.scope == replacement.scope, expected.rootHash == replacement.rootHash, expected.request.itemId == replacement.request.itemId,
-                      expected.lifecycle == replacement.lifecycle, let resolution = expected.resolution, let observation,
+                      expected.generation == replacement.generation, let resolution = expected.resolution, let observation,
                       observation.rootHash == expected.rootHash, observation.scope == expected.scope,
                       observation.localPath != resolution.localPath, observation.localPath == replacement.request.destination,
                       observation.remotePath == resolution.remotePath, observation.remotePath == replacement.request.source,
-                      observation.localLifecycle == expected.lifecycle, observation.remoteLifecycle == expected.lifecycle,
+                      (observation.localGeneration ?? observation.localLifecycle.map(LocalVaultGeneration.present) ?? .unknown).matches(expected.generation),
+                      (observation.remoteGeneration ?? observation.remoteLifecycle.map(LocalVaultGeneration.present) ?? .unknown).matches(expected.generation),
                       observation.remoteRevision == replacement.request.baseRevision, observation.checkpointPath == observation.localPath,
                       observation.checkpointReady, observation.localUnique, observation.organizePermitted, let archive else { throw Failure.changed }
                 let bytes = try archiveBytes(expected), proof = try archive(expected, bytes)

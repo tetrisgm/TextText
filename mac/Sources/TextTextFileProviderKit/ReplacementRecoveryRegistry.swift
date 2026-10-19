@@ -367,10 +367,9 @@ struct ReplacementRecoveryRegistry {
                 guard (resolution.currentPresent != false || entry.kind == "removal" || entry.identityMode == "path"), ((resolution.currentPresent ?? true) ? resolution.visibleHash.map(validHash) == true : resolution.visibleHash == nil), validHash(resolution.preparedHash), validHash(resolution.displacedHash) else { throw Failure.invalidRegistry }
             }
     }
-#if TEXTTEXT_STRESS_ACTOR
     /// Private fixed-path attestation. The caller already attested this principal.
     /// This never opens ownership, relocates, classifies, repairs or acquires a lease.
-    func stressCompletedHistory(principalHash: String) throws -> [String: String] {
+    func completedHistoryInspection(principalHash: String, itemId: String? = nil) throws -> [String: String] {
         guard validHash(principalHash) else { throw Failure.invalidRegistry }
         func snapshot() throws -> [String: String] {
             var info = stat()
@@ -389,6 +388,8 @@ struct ReplacementRecoveryRegistry {
                 try Self.requireKnownFields(bytes)
                 let entry = try JSONDecoder().decode(Entry.self, from: bytes)
                 try validateEntry(entry, fileName: file.lastPathComponent, principalHash: principalHash, rootHash: digest(Data(root.path.utf8)))
+                result["index/" + file.lastPathComponent] = digest(bytes)
+                if let itemId, entry.itemId != itemId { continue }
                 let exactTarget = try target(entry)
                 // recovery(target:) validates only this exact stored operation.
                 // Do not call recovery(entry), whose missing-pointer fallback scans.
@@ -416,6 +417,8 @@ struct ReplacementRecoveryRegistry {
         }
         let first = try snapshot(); guard try snapshot() == first else { throw Failure.invalidRegistry }; return first
     }
+#if TEXTTEXT_STRESS_ACTOR
+    func stressCompletedHistory(principalHash: String) throws -> [String: String] { try completedHistoryInspection(principalHash: principalHash) }
 #endif
     /// Must be durable before invoking the replacement primitive. Even failure
     /// before staging remains a visible refusal, never a silent replay success.

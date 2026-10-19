@@ -39,6 +39,38 @@ final class LocalVaultHTTPContractTests: XCTestCase {
     }
 
     func testTwoNativeVaultsAgainstRealDirectoryServer() async throws { try await twoNativeVaults(knownLifecycle: false) }
+    func testFreshGenerationEvidenceFromActualDirectoryManifest() async throws {
+        guard ProcessInfo.processInfo.environment["TEXTTEXT_VAULT_HTTP_TEST"] == "1" else { throw XCTSkip("Enable the isolated loopback HTTP fixture") }
+        var repository = URL(fileURLWithPath: #filePath); for _ in 0..<4 { repository.deleteLastPathComponent() }
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("generation-http-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        let ready = temporary.appendingPathComponent("ready.json"), process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env"); process.currentDirectoryURL = repository
+        process.arguments = ["node", "--import", "tsx", "scripts/vault-http-test-server.ts", temporary.appendingPathComponent("server").path, ready.path]
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run()
+        defer { if process.isRunning { process.terminate(); process.waitUntilExit() }; try? FileManager.default.removeItem(at: temporary) }
+        for _ in 0..<500 {
+            if FileManager.default.fileExists(atPath: ready.path) || !process.isRunning { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        struct Ready: Decodable { let origin: URL }
+        let origin = try JSONDecoder().decode(Ready.self, from: Data(contentsOf: ready)).origin
+        let transport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: workspaceId, token: token, accountId: "generation-fixture-owner")
+        let item = "a4e5658d-8848-477c-95a2-851922319b32", path = "Generation/Actual.textpack"
+        let bytes = try pack(in: temporary, itemId: item, body: "Actual directory manifest generation")
+        let revision = try await transport.upload(itemId: item, path: path, data: bytes, baseRevision: nil, operationId: UUID().uuidString, nativeEditor: false)
+        let initial = try await transport.generationEvidence(itemId: item)
+        let first = try XCTUnwrap(initial)
+        XCTAssertEqual(first.generation, .observedAbsent); XCTAssertEqual(first.item.relativePath, path); XCTAssertEqual(first.item.revision, revision)
+        XCTAssertEqual(first.scope.accountId, "generation-fixture-owner")
+        _ = try await transport.manifest() // Populate the ordinary ETag cache.
+        let refreshed = try await transport.generationEvidence(itemId: item)
+        let second = try XCTUnwrap(refreshed)
+        XCTAssertEqual(first, second) // Dedicated evidence still requires HTTP 200.
+        let downloaded = try await transport.download(itemId: item)
+        XCTAssertEqual(downloaded.data, bytes); XCTAssertEqual(TextTextStableDigest.sha256Hex(downloaded.data), revision)
+    }
     func testKnownLifecycleDeleteAcrossTwoNativeHTTPClients() async throws { try await twoNativeVaults(knownLifecycle: true) }
     private func twoNativeVaults(knownLifecycle: Bool) async throws {
         guard ProcessInfo.processInfo.environment["TEXTTEXT_VAULT_HTTP_TEST"] == "1" else {

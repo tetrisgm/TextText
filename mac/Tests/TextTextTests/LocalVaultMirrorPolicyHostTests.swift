@@ -53,6 +53,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         let tombstones = try JSONDecoder().decode([TombstoneVector].self, from: Data(contentsOf: base.appendingPathComponent("tombstone-vectors.json")))
         let folders = try JSONDecoder().decode([FolderVector].self, from: Data(contentsOf: base.appendingPathComponent("folder-vectors.json")))
         let savedRenames = try JSONDecoder().decode([SavedRenameVector].self, from: Data(contentsOf: base.appendingPathComponent("saved-rename-vectors.json")))
+        XCTAssertEqual(savedRenames.count, 43, "31 existing saved-name vectors plus 12 typed-generation vectors must execute")
         let queuedUploadPaths = try JSONDecoder().decode([QueuedUploadPathVector].self, from: Data(contentsOf: base.appendingPathComponent("queued-upload-path-vectors.json")))
         let queues = try JSONDecoder().decode([QueueVector].self, from: Data(contentsOf: base.appendingPathComponent("queue-vectors.json")))
         let lifecycles = try JSONDecoder().decode([LifecycleVector].self, from: Data(contentsOf: base.appendingPathComponent("lifecycle-vectors.json")))

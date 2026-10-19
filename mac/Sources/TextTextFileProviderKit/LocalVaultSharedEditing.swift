@@ -1,7 +1,5 @@
 import Foundation
-#if TEXTTEXT_STRESS_ACTOR
 import Darwin
-#endif
 import CoreFoundation
 import ZIPFoundation
 import TextTextWorkspaceCore
@@ -160,10 +158,9 @@ struct LocalVaultSharedEditingStore: Sendable {
         }
         return .init(fingerprints: fingerprints, protected: protected)
     }
-#if TEXTTEXT_STRESS_ACTOR
     /// Private observation must not enter assertReadable: that API may finish
     /// retained transactions. Only already-completed history can be attested.
-    func stressProtectionSnapshot(itemId: String, principalHash: String? = nil) throws -> ProtectionSnapshot {
+    func generationProtectionSnapshot(itemId: String, principalHash: String? = nil, scopedHistory: Bool = false) throws -> ProtectionSnapshot {
         func directory() throws -> URL {
             guard Self.identifier(itemId) else { throw LocalVaultSharedFailure.invalid }
             try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
@@ -189,8 +186,8 @@ struct LocalVaultSharedEditingStore: Sendable {
             }
             guard present else { return [:] }
             guard let principalHash else { throw LocalVaultSharedFailure.protected }
-            let registry = try ReplacementRecoveryRegistry(root: root).stressCompletedHistory(principalHash: principalHash)
-            let folders = try FolderCaseRename(root: root).stressCompletedHistory(principalHash: principalHash)
+            let registry = try ReplacementRecoveryRegistry(root: root).completedHistoryInspection(principalHash: principalHash, itemId: scopedHistory ? itemId : nil)
+            let folders = try FolderCaseRename(root: root).completedHistoryInspection(principalHash: principalHash)
             var result = [String: String]()
             for (key, value) in registry { result["history/registry/" + key] = value }
             for (key, value) in folders { result["history/folder/" + key] = value }
@@ -201,12 +198,59 @@ struct LocalVaultSharedEditingStore: Sendable {
         let value = try fixedProtectionSnapshot(itemId: itemId, directory: selected) { url, limit in
             var info = stat()
             if lstat(url.path, &info) != 0 { guard errno == ENOENT else { throw LocalVaultSharedFailure.invalid }; return nil }
-            return try StableFileSnapshot.read(url, maximumBytes: limit)
+            let bytes = try StableFileSnapshot.read(url, maximumBytes: limit)
+            try LocalVaultSharedRename.validateStateBytes(bytes)
+            return bytes
         }
         guard try directory() == selected, try history() == historyBefore else { throw LocalVaultSharedFailure.invalid }
         var fingerprints = value.fingerprints
         for (key, entry) in historyBefore { guard fingerprints[key] == nil else { throw LocalVaultSharedFailure.invalid }; fingerprints[key] = entry }
         return ProtectionSnapshot(fingerprints: fingerprints, protected: value.protected)
+    }
+    private func generationDirectoryInventory(itemId: String) throws -> [String: String] {
+        let directory = LocalVaultDeviceState.directory(root: root).appendingPathComponent("shared-editing").appendingPathComponent(itemId)
+        var info = stat()
+        if lstat(directory.path, &info) != 0 { guard errno == ENOENT else { throw LocalVaultSharedFailure.invalid }; return [:] }
+        guard info.st_mode & S_IFMT == S_IFDIR, directory.resolvingSymlinksInPath().path == directory.path else { throw LocalVaultSharedFailure.invalid }
+        guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
+            options: [.skipsSubdirectoryDescendants, .skipsPackageDescendants]) else { throw LocalVaultSharedFailure.invalid }
+        let fixed: Set<String> = ["checkpoint.json", "intent.json", "move-intent.json", "binary-intent.json", "projection.textpack", "before.textpack"]
+        let archivePattern = "\\A(?:archived-account-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}\\.json|recovery-[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\.json|archived-[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}(?:\\.json|-(?:projection|before)\\.textpack))\\z"
+        var result: [String: String] = [:], count = 0
+        for case let file as URL in files {
+            count += 1
+            let name = file.lastPathComponent
+            // binary-next and binary-asset.tmp are staged only while a binary
+            // transaction is incomplete. An orphan is still retained work.
+            guard count <= 1000, fixed.contains(name) || name.range(of: archivePattern, options: .regularExpression) != nil,
+                  lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+                  info.st_size >= 0, info.st_size <= 64 * 1024 * 1024 else { throw LocalVaultSharedFailure.protected }
+            result["entry/" + name] = try RetainedFileReplacement.fingerprint(file)
+        }
+        return result
+    }
+    func generationInspection(itemId: String, principalHash: String) throws -> (protection: ProtectionSnapshot, checkpoint: LocalVaultSharedCheckpoint?) {
+        let value = try generationProtectionSnapshot(itemId: itemId, principalHash: principalHash, scopedHistory: true)
+        let inventory = try generationDirectoryInventory(itemId: itemId)
+        var fingerprints = value.fingerprints
+        for (key, hash) in inventory { fingerprints[key] = hash }
+        let protection = ProtectionSnapshot(fingerprints: fingerprints, protected: value.protected)
+        guard !["intent.json", "move-intent.json", "binary-intent.json"].contains(where: { protection.fingerprints[$0] != nil }) else { throw LocalVaultSharedFailure.protected }
+        let url = LocalVaultDeviceState.directory(root: root).appendingPathComponent("shared-editing").appendingPathComponent(itemId).appendingPathComponent("checkpoint.json")
+        guard let hash = protection.fingerprints["checkpoint.json"] else {
+            guard try generationDirectoryInventory(itemId: itemId) == inventory else { throw LocalVaultSharedFailure.invalid }
+            return (protection, nil)
+        }
+        let bytes = try StableFileSnapshot.read(url, maximumBytes: 9 * 1024 * 1024)
+        guard TextTextStableDigest.sha256Hex(bytes) == hash else { throw LocalVaultSharedFailure.invalid }
+        let checkpoint = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: bytes)
+        guard try generationProtectionSnapshot(itemId: itemId, principalHash: principalHash, scopedHistory: true) == value,
+              try generationDirectoryInventory(itemId: itemId) == inventory else { throw LocalVaultSharedFailure.invalid }
+        return (protection, checkpoint)
+    }
+#if TEXTTEXT_STRESS_ACTOR
+    func stressProtectionSnapshot(itemId: String, principalHash: String? = nil) throws -> ProtectionSnapshot {
+        try generationProtectionSnapshot(itemId: itemId, principalHash: principalHash)
     }
 #endif
 

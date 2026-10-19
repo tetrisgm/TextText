@@ -64,7 +64,7 @@ struct FolderCaseRename {
         try RetainedReplacementProfile.verify(root: root, owner: owner)
         let profile = try StableFileSnapshot.read(state.appendingPathComponent("retained-replacement-profile/profile.json"), maximumBytes: 4096)
         guard let fields = try JSONSerialization.jsonObject(with: profile) as? [String: Any],
-              let version = fields["version"] as? Int, version == 2 || version == 3 || version == 4 || version == 5 else { throw Failure.invalid }
+              let version = fields["version"] as? Int, version == 2 || version == 3 || version == 4 || version == 5 || version == 6 else { throw Failure.invalid }
         return try RetainedReplacementProfile.principalHash(owner)
     }
     private func encode(_ record: Record) throws -> Data {
@@ -120,8 +120,7 @@ struct FolderCaseRename {
                   record.explicitResolution == nil || record.state == "completed" else { throw Failure.invalid }
         return record
     }
-#if TEXTTEXT_STRESS_ACTOR
-    func stressCompletedHistory(principalHash: String) throws -> [String: String] {
+    func completedHistoryInspection(principalHash: String) throws -> [String: String] {
         guard principalHash.range(of: "\\A[0-9a-f]{64}\\z", options: .regularExpression) != nil else { throw Failure.invalid }
         func snapshot() throws -> [String: String] {
             var info = stat()
@@ -148,6 +147,8 @@ struct FolderCaseRename {
         }
         let first = try snapshot(); guard try snapshot() == first else { throw Failure.invalid }; return first
     }
+#if TEXTTEXT_STRESS_ACTOR
+    func stressCompletedHistory(principalHash: String) throws -> [String: String] { try completedHistoryInspection(principalHash: principalHash) }
 #endif
     private func endpoint(_ path: String) throws -> Endpoint {
         let components = path.split(separator: "/")

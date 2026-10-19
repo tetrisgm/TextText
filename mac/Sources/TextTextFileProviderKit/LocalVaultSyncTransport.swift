@@ -101,6 +101,9 @@ public protocol LocalVaultSyncTransport: Sendable {
     func canOrganize() async -> Bool
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool
     func manifest() async throws -> [LocalVaultRemoteItem]
+    /// A fresh complete authenticated response, never an upgrade of an old
+    /// optional-lifecycle cache. Legacy transports cannot certify absence.
+    func generationEvidence(itemId: String) async throws -> LocalVaultManifestGenerationEvidence?
     func folders() async -> [String]
     func authoritativeFolders() async -> [String]?
     func download(itemId: String) async throws -> LocalVaultRemotePack
@@ -124,6 +127,7 @@ public struct LocalVaultBinaryManifest: Codable, Sendable {
 }
 
 public extension LocalVaultSyncTransport {
+    func generationEvidence(itemId: String) async throws -> LocalVaultManifestGenerationEvidence? { nil }
     var protectedRenameBinding: LocalVaultProtectedRenameScope? { nil }
     func protectedRename(_ request: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt { throw LocalVaultSyncFailure.invalidResponse }
     func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
@@ -146,6 +150,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     public nonisolated var protectedRenameBinding: LocalVaultProtectedRenameScope? { protectedRenameScope }
     private let accountId: String?
     private var token: String
+    private var credentialEpoch = UUID()
     private let session: URLSession
     private var manifestETag: String?
     private var fullAccess = false
@@ -230,6 +235,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
 
     public func updateToken(_ token: String, accountId: String? = nil) throws {
         guard self.accountId == accountId else { throw LocalVaultAccountIdentity.Failure.unverified }
+        if self.token != token { credentialEpoch = UUID() }
         self.token = token
     }
 
@@ -297,6 +303,18 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     public func manifest() async throws -> [LocalVaultRemoteItem] {
         _ = try await loadManifest(wait: false)
         return cachedManifest
+    }
+
+    public func generationEvidence(itemId: String) async throws -> LocalVaultManifestGenerationEvidence? {
+        guard accountId != nil else { return nil }
+        let credential = token, epoch = credentialEpoch
+        // No If-None-Match: a legacy optional-value cache cannot certify that
+        // a lifecycle property was omitted in an authenticated full response.
+        let (bytes, response) = try await send(request(endpoint))
+        try Task.checkCancellation()
+        guard token == credential, credentialEpoch == epoch else { throw LocalVaultSharedFailure.account }
+        guard response.statusCode == 200, response.url == endpoint else { throw LocalVaultSyncFailure.invalidResponse }
+        return try LocalVaultGenerationManifest.parse(bytes, itemId: itemId, scope: protectedRenameScope)
     }
 
     /// Request-scoped server watch. Cancelling the task cancels URLSession;
@@ -377,7 +395,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     public func protectedRename(_ command: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt {
         try Self.validateProtectedRename(command)
         guard accountId != nil else { throw LocalVaultSharedFailure.account }
-        let credential = token
+        let credential = token, epoch = credentialEpoch
         var request = request(endpoint.appendingPathComponent(command.itemId))
         request.httpMethod = "PATCH"
         request.httpBody = try JSONSerialization.data(withJSONObject: ["relativePath": command.destination])
@@ -389,7 +407,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         // existing conflict behavior. No error body is a terminal receipt.
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard token == credential else { throw LocalVaultSharedFailure.account }
+        guard token == credential, credentialEpoch == epoch else { throw LocalVaultSharedFailure.account }
         guard let response = response as? HTTPURLResponse else { throw LocalVaultSyncFailure.invalidResponse }
         guard response.url == request.url else { throw LocalVaultSyncFailure.invalidResponse }
         guard response.statusCode == 200 || response.statusCode == 409 else { throw LocalVaultSyncFailure.httpStatus(response.statusCode) }

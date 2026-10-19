@@ -75,7 +75,15 @@ public struct LocalVaultMirrorLifecycleDecision: Codable, Equatable, Sendable {
     public let baseline: String, pending: String
 }
 
+public struct LocalVaultMirrorPathGenerations: Codable, Equatable, Sendable {
+    public let local: LocalVaultGeneration, remote: LocalVaultGeneration
+}
+public struct LocalVaultMirrorSavedGenerations: Codable, Equatable, Sendable {
+    public let local: LocalVaultGeneration, remote: LocalVaultGeneration, saved: LocalVaultGeneration, stoppedLocal: LocalVaultGeneration, stoppedRemote: LocalVaultGeneration
+}
+
 public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendable {
+    public let generations: LocalVaultMirrorPathGenerations?
     public let protectedProjection: Bool
     public let baselinePath: String?
     public let localPath: String?
@@ -90,7 +98,8 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
     public let blocked: Bool
     public let organizePermitted: Bool
     public let pendingRename: String
-    public init(protectedProjection: Bool, baselinePath: String?, localPath: String?, remotePath: String?, checkpointPath: String?, checkpointReady: Bool, checkpointRetired: Bool, localUnique: Bool, remoteDeleted: Bool, localLifecycle: String?, remoteLifecycle: String?, blocked: Bool, organizePermitted: Bool, pendingRename: String) {
+    public init(protectedProjection: Bool, baselinePath: String?, localPath: String?, remotePath: String?, checkpointPath: String?, checkpointReady: Bool, checkpointRetired: Bool, localUnique: Bool, remoteDeleted: Bool, localLifecycle: String?, remoteLifecycle: String?, blocked: Bool, organizePermitted: Bool, pendingRename: String, generations: LocalVaultMirrorPathGenerations? = nil) {
+        self.generations = generations
         self.protectedProjection = protectedProjection
         self.baselinePath = baselinePath
         self.localPath = localPath
@@ -106,9 +115,10 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
         self.organizePermitted = organizePermitted
         self.pendingRename = pendingRename
     }
-    private enum CodingKeys: String, CodingKey { case protectedProjection, baselinePath, localPath, remotePath, checkpointPath, checkpointReady, checkpointRetired, localUnique, remoteDeleted, localLifecycle, remoteLifecycle, blocked, organizePermitted, pendingRename }
+    private enum CodingKeys: String, CodingKey { case generations, protectedProjection, baselinePath, localPath, remotePath, checkpointPath, checkpointReady, checkpointRetired, localUnique, remoteDeleted, localLifecycle, remoteLifecycle, blocked, organizePermitted, pendingRename }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(generations, forKey: .generations)
         try c.encode(protectedProjection, forKey: .protectedProjection)
         try c.encode(baselinePath, forKey: .baselinePath)
         try c.encode(localPath, forKey: .localPath)
@@ -221,6 +231,7 @@ public struct LocalVaultMirrorQueuedUploadPathObservation: Codable, Equatable, S
 public struct LocalVaultMirrorQueuedUploadPathDecision: Codable, Equatable, Sendable { public let action: String }
 
 public struct LocalVaultMirrorSavedRenameObservation: Codable, Equatable, Sendable {
+    public let generations: LocalVaultMirrorSavedGenerations?
     public let phase: String
     public let savedSource: String?
     public let savedDestination: String?
@@ -244,7 +255,8 @@ public struct LocalVaultMirrorSavedRenameObservation: Codable, Equatable, Sendab
     public let recoveryBlocked: Bool
     public let terminalProofValid: Bool
     public let remoteAuthoritative: Bool
-    public init(phase: String, savedSource: String?, savedDestination: String?, savedLifecycle: String?, stoppedLocalPath: String?, stoppedRemotePath: String?, stoppedLocalLifecycle: String?, stoppedRemoteLifecycle: String?, localPath: String?, remotePath: String?, baselinePath: String?, checkpointPath: String?, localLifecycle: String?, remoteLifecycle: String?, remoteDeleted: Bool, localUnique: Bool, checkpointReady: Bool, retired: Bool, scopeVerified: Bool, canOrganize: Bool, recoveryBlocked: Bool, terminalProofValid: Bool, remoteAuthoritative: Bool) {
+    public init(phase: String, savedSource: String?, savedDestination: String?, savedLifecycle: String?, stoppedLocalPath: String?, stoppedRemotePath: String?, stoppedLocalLifecycle: String?, stoppedRemoteLifecycle: String?, localPath: String?, remotePath: String?, baselinePath: String?, checkpointPath: String?, localLifecycle: String?, remoteLifecycle: String?, remoteDeleted: Bool, localUnique: Bool, checkpointReady: Bool, retired: Bool, scopeVerified: Bool, canOrganize: Bool, recoveryBlocked: Bool, terminalProofValid: Bool, remoteAuthoritative: Bool, generations: LocalVaultMirrorSavedGenerations? = nil) {
+        self.generations = generations
         self.phase = phase
         self.savedSource = savedSource
         self.savedDestination = savedDestination
@@ -269,9 +281,10 @@ public struct LocalVaultMirrorSavedRenameObservation: Codable, Equatable, Sendab
         self.terminalProofValid = terminalProofValid
         self.remoteAuthoritative = remoteAuthoritative
     }
-    private enum CodingKeys: String, CodingKey { case phase, savedSource, savedDestination, savedLifecycle, stoppedLocalPath, stoppedRemotePath, stoppedLocalLifecycle, stoppedRemoteLifecycle, localPath, remotePath, baselinePath, checkpointPath, localLifecycle, remoteLifecycle, remoteDeleted, localUnique, checkpointReady, retired, scopeVerified, canOrganize, recoveryBlocked, terminalProofValid, remoteAuthoritative }
+    private enum CodingKeys: String, CodingKey { case generations, phase, savedSource, savedDestination, savedLifecycle, stoppedLocalPath, stoppedRemotePath, stoppedLocalLifecycle, stoppedRemoteLifecycle, localPath, remotePath, baselinePath, checkpointPath, localLifecycle, remoteLifecycle, remoteDeleted, localUnique, checkpointReady, retired, scopeVerified, canOrganize, recoveryBlocked, terminalProofValid, remoteAuthoritative }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(generations, forKey: .generations)
         try c.encode(phase, forKey: .phase)
         try c.encode(savedSource, forKey: .savedSource)
         try c.encode(savedDestination, forKey: .savedDestination)
@@ -457,6 +470,19 @@ public actor LocalVaultMirrorPolicy {
         guard pending[id] != nil else { return }
         retired = true; finish(id, .failure(Failure.timeout))
     }
+    private func validGenerationFields(_ observation: [String: Any], expected: Set<String>) -> Bool {
+        guard let value = observation["generations"] else { return true }
+        guard let fields = value as? [String: Any], Set(fields.keys) == expected else { return false }
+        for raw in fields.values {
+            guard let generation = raw as? [String: Any], let kind = generation["kind"] as? String else { return false }
+            if kind == "unknown" || kind == "observed-absent" {
+                guard Set(generation.keys) == ["kind"] else { return false }
+            } else if kind == "present" {
+                guard Set(generation.keys) == ["kind", "generation"], let text = generation["generation"] as? String, LocalVaultGeneration.valid(text) else { return false }
+            } else { return false }
+        }
+        return true
+    }
     private func call<T: Decodable>(_ method: String, _ argument: String = "", as: T.Type) async throws -> T {
         try Task.checkCancellation(); guard !retired else { throw Failure.stale }
         let id = UUID(), script = "window.texttextMirrorPolicy.\(method)(\(argument))"
@@ -473,11 +499,13 @@ public actor LocalVaultMirrorPolicy {
             }
         } onCancel: { Task { await self.finish(id, .failure(CancellationError())) } }
         try Task.checkCancellation(); guard !retired else { throw Failure.stale }
+        if method == "sharedPath" || method == "savedRename" { try LocalVaultSharedRename.validateStateBytes(Data(raw.utf8)) }
         if method == "sharedPath" {
             guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
-                  Set(observation.keys) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  Set(observation.keys).subtracting(["generations"]) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  validGenerationFields(observation, expected: ["local", "remote"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }
@@ -501,7 +529,8 @@ public actor LocalVaultMirrorPolicy {
             guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
-                  Set(observation.keys) == Set(["phase", "savedSource", "savedDestination", "savedLifecycle", "stoppedLocalPath", "stoppedRemotePath", "stoppedLocalLifecycle", "stoppedRemoteLifecycle", "localPath", "remotePath", "baselinePath", "checkpointPath", "localLifecycle", "remoteLifecycle", "remoteDeleted", "localUnique", "checkpointReady", "retired", "scopeVerified", "canOrganize", "recoveryBlocked", "terminalProofValid", "remoteAuthoritative"]),
+                  Set(observation.keys).subtracting(["generations"]) == Set(["phase", "savedSource", "savedDestination", "savedLifecycle", "stoppedLocalPath", "stoppedRemotePath", "stoppedLocalLifecycle", "stoppedRemoteLifecycle", "localPath", "remotePath", "baselinePath", "checkpointPath", "localLifecycle", "remoteLifecycle", "remoteDeleted", "localUnique", "checkpointReady", "retired", "scopeVerified", "canOrganize", "recoveryBlocked", "terminalProofValid", "remoteAuthoritative"]),
+                  validGenerationFields(observation, expected: ["local", "remote", "saved", "stoppedLocal", "stoppedRemote"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }

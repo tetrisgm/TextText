@@ -74,6 +74,45 @@ final class ProtectedRenameTransportTests: XCTestCase {
         do { _ = try await transport.protectedRename(command); XCTFail("Lost reply accepted") }
         catch let error as URLError { XCTAssertEqual(error.code, .networkConnectionLost) }
     }
+    private func generationManifest() throws -> Data {
+        try JSONSerialization.data(withJSONObject: ["items": [["itemId": "fixture-item", "relativePath": "Old.textpack", "revision": command.baseRevision, "canEditContent": true]],
+            "tombstones": [], "folders": [], "problems": [], "revision": command.baseRevision,
+            "fullAccess": true, "canCreateContent": true, "writableFolders": []])
+    }
+    func testGenerationEvidenceRejects304AndForeignFinalEndpoint() async throws {
+        for (status, url) in [(304, Optional<URL>.none), (200, URL(string: "https://other.test/api/vault/fixture/items"))] {
+            ProtectedRenameURLProtocol.install(status: status, data: try generationManifest(), replyURL: url)
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ProtectedRenameURLProtocol.self]
+            let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+            let transport = try HTTPLocalVaultSyncTransport(origin: URL(string: "https://protected-rename.test")!, workspaceId: "fixture", token: "fixture-token", session: session, accountId: "fixture-account")
+            do { _ = try await transport.generationEvidence(itemId: "fixture-item"); XCTFail("Unbound manifest accepted") } catch {}
+        }
+    }
+    func testGenerationEvidenceRejectsCredentialRotationDuringBodyRead() async throws {
+        let started = expectation(description: "Original manifest held")
+        ProtectedRenameURLProtocol.install(status: 200, data: try generationManifest(), hold: true, started: { started.fulfill() })
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ProtectedRenameURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let transport = try HTTPLocalVaultSyncTransport(origin: URL(string: "https://protected-rename.test")!, workspaceId: "fixture", token: "fixture-original", session: session, accountId: "fixture-account")
+        let task = Task { try await transport.generationEvidence(itemId: "fixture-item") }
+        await fulfillment(of: [started], timeout: 2)
+        try await transport.updateToken("fixture-rotated", accountId: "fixture-account")
+        try await transport.updateToken("fixture-original", accountId: "fixture-account")
+        ProtectedRenameURLProtocol.release()
+        do { _ = try await task.value; XCTFail("Stale credential manifest accepted") } catch LocalVaultSharedFailure.account {}
+    }
+    func testRepeatedSameCredentialDoesNotInvalidateHeldGenerationEvidence() async throws {
+        let started = expectation(description: "Unchanged credential manifest held")
+        ProtectedRenameURLProtocol.install(status: 200, data: try generationManifest(), hold: true, started: { started.fulfill() })
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ProtectedRenameURLProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let transport = try HTTPLocalVaultSyncTransport(origin: URL(string: "https://protected-rename.test")!, workspaceId: "fixture", token: "fixture-original", session: session, accountId: "fixture-account")
+        let task = Task { try await transport.generationEvidence(itemId: "fixture-item") }
+        await fulfillment(of: [started], timeout: 2)
+        try await transport.updateToken("fixture-original", accountId: "fixture-account")
+        ProtectedRenameURLProtocol.release()
+        let evidence = try await task.value; XCTAssertEqual(evidence?.generation, .observedAbsent)
+    }
     private func response(_ status: Int, _ body: [String: Any], replyURL: URL? = nil) async throws -> LocalVaultProtectedRenameReceipt {
         let data = try JSONSerialization.data(withJSONObject: body)
         ProtectedRenameURLProtocol.install(status: status, data: data, replyURL: replyURL)

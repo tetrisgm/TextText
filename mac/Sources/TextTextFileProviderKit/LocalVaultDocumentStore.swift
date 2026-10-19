@@ -159,10 +159,19 @@ public struct LocalVaultDocumentStore: Sendable {
         return removed
     }
 
-    public func list() throws -> [String] {
+    public func list() throws -> [String] { try list(requireComplete: false) }
+    func generationPaths() throws -> [String] { try list(requireComplete: true) }
+    static func validateGenerationInventoryCount(_ count: Int) throws {
+        guard count <= 20_000 else { throw Failure.tooLarge }
+    }
+    private func list(requireComplete: Bool) throws -> [String] {
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        var enumerationError: Error?
         guard let enumerator = FileManager.default.enumerator(at: root,
-            includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants])
+            includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, error in
+                if requireComplete { enumerationError = error }
+                return !requireComplete
+            })
         else { throw CocoaError(.fileReadNoSuchFile) }
         var result: [String] = []
         for case let file as URL in enumerator {
@@ -172,8 +181,10 @@ public struct LocalVaultDocumentStore: Sendable {
             let canonical = file.standardizedFileURL.resolvingSymlinksInPath().path
             guard canonical.hasPrefix(root.path + "/") else { continue }
             result.append(String(canonical.dropFirst(root.path.count + 1)))
-            if result.count >= 20_000 { break }
+            if requireComplete { try Self.validateGenerationInventoryCount(result.count) }
+            else if result.count >= 20_000 { break }
         }
+        if let enumerationError { throw enumerationError }
         return result.sorted()
     }
 
@@ -209,8 +220,31 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Collection sorting reads text metadata without expanding image entries.
     /// Template callers can opt into the small JSON look entries without loading assets.
     public func readMetadata(path: String, includeTemplate: Bool = false) throws -> Document {
-        try ReplacementRecoveryRegistry(root: root).assertPathReadable(path)
-        let target = try url(for: path)
+        try readMetadata(path: path, includeTemplate: includeTemplate, inspectOnly: false)
+    }
+    /// Identity discovery is not admission and never repairs retained work.
+    func generationMetadata(path: String) throws -> Document {
+        try readMetadata(path: path, includeTemplate: false, inspectOnly: true)
+    }
+    func generationDocument(path: String) throws -> Document {
+        let bytes = try StableFileSnapshot.read(generationURL(path))
+        return try parseDocument(path: path, bytes: bytes, preserveHistory: false)
+    }
+    private func generationURL(_ path: String) throws -> URL {
+        _ = try url(for: path)
+        var target = root
+        let components = path.split(separator: "/")
+        for (index, component) in components.enumerated() {
+            target.appendPathComponent(String(component))
+            var info = stat()
+            guard lstat(target.path, &info) == 0,
+                  info.st_mode & S_IFMT == (index == components.count - 1 ? S_IFREG : S_IFDIR) else { throw Failure.invalidPath }
+        }
+        return target
+    }
+    private func readMetadata(path: String, includeTemplate: Bool, inspectOnly: Bool) throws -> Document {
+        if !inspectOnly { try ReplacementRecoveryRegistry(root: root).assertPathReadable(path) }
+        let target = try inspectOnly ? generationURL(path) : url(for: path)
         var outcome: Result<Document, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(readingItemAt: target, options: [], error: &coordinationError) { coordinated in
@@ -241,7 +275,7 @@ public struct LocalVaultDocumentStore: Sendable {
                     templateAuthoringSourceJSON: templateSource.map { String(decoding: $0, as: UTF8.self) },
                     projectionJSON: projection.map { String(decoding: $0, as: UTF8.self) },
                     assets: [], logicalSize: Int(expanded))
-                try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: contents.markdown)?.itemId, path: path)
+                if !inspectOnly { try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: MarkdownIdentityCodec.extract(from: contents.markdown)?.itemId, path: path) }
                 return Document(path: path, hash: TextTextStableDigest.sha256Hex(bytes), contents: contents,
                     publishedAt: publishedAt(archive, prefix: prefix))
             }
