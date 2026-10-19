@@ -483,6 +483,14 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const retryingHandoffRef = useRef(false);
   const handoffScope = JSON.stringify([root, path, packIdentity(markdown)]);
   const handoffScopeRef = useRef(handoffScope); handoffScopeRef.current = handoffScope;
+  const [localFallbackFile, setLocalFallbackFile] = useState<{ scope: string; file: VaultFile } | null>(null);
+  const fallbackToLocal = useCallback((fresh?: VaultFile) => {
+    if (fresh) {
+      if (fresh.path !== path || packIdentity(fresh.markdown) !== packIdentity(markdown)) throw new Error("The local file no longer matches this document.");
+      setLocalFallbackFile({ scope: handoffScope, file: fresh });
+    }
+    setMode("local");
+  }, [handoffScope, path, markdown]);
   const [promoting, setPromoting] = useState(false);
   const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
   const [resumeEditor, setResumeEditor] = useState<{ target: "body" | "title"; selection: { anchor: number; head: number; direction?: "forward" | "backward" | "none" } | null; focused: boolean } | null>(null);
@@ -809,7 +817,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     return () => { stopped = true; unsubscribeSurface(); handoffAbort?.abort(); window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
   }, [mode, path, root, handoffRetry]);
   if (mode === "local") return <><div ref={localRoot} inert={promoting} onCompositionStartCapture={() => surfaceHost.setComposing(true)} onCompositionEndCapture={() => surfaceHost.setComposing(false)}>
-    <div hidden={nativeHandoff?.committed}><VaultEditorSurfaceController host={surfaceHost} owner="local"><VaultEditor {...props} registerFlush={registerLocalFlush} registerHandoff={registerLocalOwner} /></VaultEditorSurfaceController></div>
+    <div hidden={nativeHandoff?.committed}><VaultEditorSurfaceController host={surfaceHost} owner="local"><VaultEditor {...props} initial={localFallbackFile?.scope === handoffScope ? localFallbackFile.file : props.initial} registerFlush={registerLocalFlush} registerHandoff={registerLocalOwner} /></VaultEditorSurfaceController></div>
     {nativeHandoff?.sharedReady && <div hidden={!nativeHandoff.committed}><VaultEditorSurfaceController host={surfaceHost} owner="shared"><CollaborativeVaultEditor {...props} initial={nativeHandoff.file} config={nativeHandoff.config} inactiveHandoff={!nativeHandoff.committed} registerFlush={registerBackgroundFlush} onTitleChange={(path, title) => { if (nativeHandoffRef.current?.committed) props.onTitleChange?.(path, title); }} startEditing /></VaultEditorSurfaceController></div>}
     <section className="vault-document"><VaultEditorSurface host={surfaceHost} /></section>
     </div>{(error || promoting || nativeHandoff && !nativeHandoff.committed) && <p className="vault-notice" role="status">{error || "Connecting this note…"}{error && <>{canRetryHandoff && <button disabled={retryingHandoff} onClick={() => void retryCertifiedHandoff()}>{retryingHandoff ? "Retrying…" : "Retry connecting"}</button>}<button onClick={downloadHandoffRecovery}>Download recovery</button></>}</p>}</>;
@@ -818,7 +826,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     focusNewNote={Boolean(resumeEditor?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeEditor ? null : props.focusNewNoteOrigin}
     focusNewNoteTitle={resumeEditor ? resumeEditor.target === "title" : props.focusNewNoteTitle}
     focusNewNoteSelection={resumeEditor?.selection} onNewNoteFocusHandled={() => { setResumeEditor(null); props.onNewNoteFocusHandled?.(); }}
-    onLocalFallback={() => setMode("local")} />;
+    onLocalFallback={fallbackToLocal} />;
   return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <>{startupHandle.current ? canRetryHandoff && <button disabled={retryingHandoff} onClick={() => void retryCertifiedHandoff()}>Retry connecting</button> : <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}<button onClick={downloadHandoffRecovery}>Download recovery</button></>}</div>;
 }
 

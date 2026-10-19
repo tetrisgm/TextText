@@ -11,6 +11,7 @@ import { prepareSavedLook } from "./saved-look";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { FileCollaborationClient, type FileCollaborationStatus } from "./collaboration-client";
+import { fileCollaborationJournalKey, hasPendingFileCollaborationJournal } from "@/sync/engine/client";
 import type { PresencePeer } from "@/lib/collab/provider";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -55,7 +56,7 @@ function avatarTextColor(color: string): string {
 }
 
 /** The relay owns shared writes; this component never snapshot-autosaves them. */
-export function CollaborativeVaultEditor({ documentReferences, onOpenReference, referenceChoices, readOnly: permissionReadOnly = false, initial, root, config, registerFlush, onChanged, onTitleChange, onLocalFallback, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled, onSessionAcquired, inactiveHandoff = false }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: () => void; onSessionAcquired?: (handle: VaultDocumentHandle) => void; inactiveHandoff?: boolean }) {
+export function CollaborativeVaultEditor({ documentReferences, onOpenReference, referenceChoices, readOnly: permissionReadOnly = false, initial, root, config, registerFlush, onChanged, onRemoved, onTitleChange, onLocalFallback, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled, onSessionAcquired, inactiveHandoff = false }: VaultEditorProps & { config: VaultCollaborationConfig; onLocalFallback?: (fresh?: VaultFile) => void; onSessionAcquired?: (handle: VaultDocumentHandle) => void; inactiveHandoff?: boolean }) {
   const file = useRef(initial);
   const acquiredRef = useRef(onSessionAcquired); acquiredRef.current = onSessionAcquired;
   const surfaceRef = useRef<HTMLElement | null>(null);
@@ -79,6 +80,8 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
   const sessionRef = useRef<VaultDocumentHandle | null>(null);
+  const failedNativeOpenRef = useRef<VaultDocumentHandle | null>(null);
+  const localFallbackRef = useRef(onLocalFallback); localFallbackRef.current = onLocalFallback;
   const viewEpochRef = useRef(0);
   const mountedRef = useRef(true);
   const mutationInputGuardRef = useRef<(() => void) | null>(null);
@@ -133,7 +136,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     let handle: VaultDocumentHandle;
     try { handle = acquireVaultDocument(config, file.current, root); }
     catch (error) { if (reopenRef.current === reopening) { reopening?.reject(error instanceof Error ? error : new Error("Could not open the shared file.")); reopenRef.current = null; } setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); return; }
-    sessionRef.current = handle; acquiredRef.current?.(handle);
+    sessionRef.current = handle; failedNativeOpenRef.current = null; acquiredRef.current?.(handle);
     const unsubscribe = handle.session.subscribe({
       changed: session => {
         if (stopped) return;
@@ -163,10 +166,34 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           reopenRef.current = null;
         }
       }
-    }).catch(error => {
+    }).catch(async error => {
       if (stopped) return;
       if (reopenRef.current === reopening) { reopening?.reject(error instanceof Error ? error : new Error("Could not reopen the file.")); reopenRef.current = null; }
-      if (config.localFiles && externalReloadRef.current && error instanceof VaultError && error.code === "local_changed") {
+      if (config.localFiles && error instanceof VaultError && error.code === "local_changed" &&
+          (externalReloadRef.current || !handle.session.hasClient && !handle.session.native)) {
+        if (!handle.session.hasClient && !handle.session.native) failedNativeOpenRef.current = handle;
+        if (failedNativeOpenRef.current === handle && localFallbackRef.current && !handle.session.identity.requireLocalHandoff) {
+          try {
+            const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, config.itemId])}`;
+            const legacyDraftKey = `texttext:vault-draft:${root}:${file.current.path}`;
+            const hasDraft = () => localStorage.getItem(draftKey) !== null || localStorage.getItem(legacyDraftKey) !== null;
+            const journalKey = fileCollaborationJournalKey({ server: config.namespace, workspaceId: config.workspaceId, itemId: config.itemId, accountId: config.accountId });
+            if (hasDraft() || await hasPendingFileCollaborationJournal(journalKey) || hasDraft())
+              throw new Error("Saved edits are still waiting to reconnect. Their recovery copy is kept.");
+            if (stopped || sessionRef.current !== handle || handle.session.hasClient || handle.session.native) return;
+            if (!await handle.closeExclusive()) throw new Error("The document session could not finish closing.");
+            const fresh = await vaultRequest<VaultFile>("read", { path: file.current.path });
+            if (stopped || sessionRef.current !== handle) return;
+            if (fresh.path !== file.current.path || packIdentity(fresh.markdown) !== config.itemId || hasDraft() || await hasPendingFileCollaborationJournal(journalKey) || hasDraft())
+              throw new Error("The saved file changed before local editing could open.");
+            if (stopped || sessionRef.current !== handle) return;
+            sessionRef.current = null; failedNativeOpenRef.current = null;
+            localFallbackRef.current(fresh); return;
+          } catch (failure) {
+            if (!stopped) { setStatus("error"); setDetail(failure instanceof Error ? failure.message : "Could not open the local file."); }
+            return;
+          }
+        }
         setWaitingForExternalSync(true); setStatus("offline"); setDetail("Waiting for the updated file to sync…");
       } else { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); }
     });
@@ -245,6 +272,18 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       const fresh = await vaultRequest<VaultFile>("read", { path: shared?.relativePath ?? file.current.path });
       assertCurrent();
       const freshSnapshot = readDocument(fresh);
+      if (!shared && sessionRef.current) {
+        const handle = sessionRef.current;
+        if (failedNativeOpenRef.current !== handle || handle.session.hasClient || handle.session.native)
+          throw new Error("The shared editor is still opening. Its saved file is kept.");
+        if (!await handle.closeExclusive(() => {
+          assertCurrent();
+          if (failedNativeOpenRef.current !== handle || handle.session.hasClient || handle.session.native)
+            throw new Error("The document session changed before retrying.");
+        })) throw new Error("The document session could not finish closing. Its saved file is kept.");
+        assertCurrent(); failedNativeOpenRef.current = null;
+        if (sessionRef.current === handle) sessionRef.current = null;
+      }
       if (shared) {
         const handle = sessionRef.current;
         if (!handle) throw new Error("The document session changed. Reopen this document.");
@@ -282,7 +321,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     sessionRef.current = null; clientRef.current = null; nativeSessionRef.current = null;
     setClient(null); bind(null); setCanEdit(false);
   }, [bind]);
-  const withFileMutation = useCallback(async <T,>(action: (handle: VaultDocumentHandle, assertCurrent: () => void) => Promise<T>): Promise<T> => {
+  const withFileMutation = useCallback(async <T,>(action: (handle: VaultDocumentHandle, assertCurrent: () => void) => Promise<T>, reopenAfterClose = true): Promise<T> => {
     const handle = sessionRef.current;
     if (!handle) throw new Error("The document session is still opening.");
     const epoch = viewEpochRef.current, surface = surfaceRef.current;
@@ -301,7 +340,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       catch (error) { failure = error; }
       // runExclusive has released its closing tombstone before a new owner can
       // acquire. Keep the old input surface inert until the new owner is ready.
-      if (handle.phase === "closed" && mountedRef.current && viewEpochRef.current === epoch) {
+      if (reopenAfterClose && handle.phase === "closed" && mountedRef.current && viewEpochRef.current === epoch) {
         if (sessionRef.current === handle) detachClosedOwner(handle);
         let waiter!: NonNullable<typeof reopenRef.current>;
         const ready = new Promise<void>((resolve, reject) => { waiter = { key: viewKey, generation: generation + 1, resolve, reject }; reopenRef.current = waiter; });
@@ -322,7 +361,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         catch (error) { failure ??= error; if (mountedRef.current && viewKeyRef.current === viewKey) setStatus("error"); }
       }
       if (failure) throw failure;
-      if (handle.phase === "closed" && !reopened) throw new Error("The document view changed. Its saved file is kept.");
+      if (reopenAfterClose && handle.phase === "closed" && !reopened) throw new Error("The document view changed. Its saved file is kept.");
       return result;
     } finally {
       // On failed reopen, commit removal of the destroyed old editor before
@@ -409,9 +448,9 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         const fresh = await vaultRequest<VaultFile>("read", { path });
         const confirmed = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path, readyOnly: true });
         if (stopped || fresh.path !== path || !confirmed || confirmed.itemId !== candidate.itemId || confirmed.workspaceId !== candidate.workspaceId || confirmed.namespace !== candidate.namespace) return;
-        stopped = true;
-        file.current = fresh; setOpened(fresh); setSnapshot(readDocument(fresh));
-        setWaitingForExternalSync(false); setDetail(""); setGeneration(value => value + 1);
+        // Close the rejected owner before acquiring the replacement. A render
+        // generation alone can race the old handle's asynchronous release.
+        if (await reset()) stopped = true;
       })().catch(() => { /* A sync completion or connection change will check again. */ })
         .finally(() => { running = false; });
     };
@@ -419,7 +458,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     window.addEventListener("texttext:vault-sync-status", onSync);
     check();
     return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", onSync); };
-  }, [waitingForExternalSync, config.localFiles, config.itemId, config.workspaceId, config.namespace, config.accountId]);
+  }, [waitingForExternalSync, config.localFiles, config.itemId, config.workspaceId, config.namespace, config.accountId, reset]);
   const downloadRecovery = () => {
     const journal = clientRef.current?.recoveryJournal;
     const rawJournal = clientRef.current?.recoveryRawJournal;
@@ -439,10 +478,10 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         assertCurrent();
         await handle.session.recoverTo(recovered);
         assertCurrent();
-        if (!await handle.closeExclusive(() => handle.session.client.clearRetiredAfterRecoveryDurably()))
+        if (!await handle.closeExclusive(() => handle.session.hasClient ? handle.session.client.clearRetiredAfterRecoveryDurably() : undefined))
           throw new Error("The recovery copy is saved. Reopen the original after its journal finishes saving.");
-        assertCurrent(); detachClosedOwner(handle); onChanged();
-      });
+        assertCurrent(); detachClosedOwner(handle); onChanged(); onRemoved();
+      }, false);
     } catch (error) { if (mountedRef.current && viewKeyRef.current === mutationView) setDetail(error instanceof Error ? error.message : "Could not save the recovery copy."); }
     finally { setBusy(false); }
   };
@@ -474,9 +513,9 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     {(!ready || blocked || status === "offline" || detail || readOnly) && <div className="vault-notice" role="status">
       {detail || (readOnly ? "Read only. You don’t have editing access." : ready ? "Offline. Edits are kept on this device." : "Opening the shared document…")}
       {config.localFiles && status === "offline" && !ready && client && !client.hasPendingChanges && !client.hasUnreadableJournal &&
-        <button onClick={onLocalFallback}>Edit local file</button>}
-      {waitingForExternalSync && !client && onLocalFallback && <button onClick={onLocalFallback}>Edit local file</button>}
-      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a copy and reopen</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && !waitingForExternalSync && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
+        <button onClick={() => onLocalFallback?.()}>Edit local file</button>}
+      {waitingForExternalSync && !client && onLocalFallback && <button onClick={() => onLocalFallback?.()}>Edit local file</button>}
+      {blocked ? <><button onClick={downloadRecovery}>Download recovery</button><button disabled={busy || client?.hasUnreadableJournal} onClick={() => void keepCopy()}>Save a recovery copy</button>{!client?.hasPendingChanges && <button onClick={() => void reset()}>Reopen file</button>}</> : status === "offline" && !waitingForExternalSync && <button onClick={() => void clientRef.current?.retry()}>Retry</button>}
     </div>}
     {ready && <>
       {editable && !inactiveHandoff && <ArticleCapture document={snapshot} readCurrent={() => latestSnapshot.current} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />}

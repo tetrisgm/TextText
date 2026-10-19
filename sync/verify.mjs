@@ -140,7 +140,7 @@ async function main() {
           await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-web-handoff-bootstrap.mts']);
           await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-custom-gallery-title.mts']);
           for (const mode of [[], ['--hosted'], ['--template'], ['--write-failure'], ['--unknown-write'], ['--read-failure'],
-            ['--app-shortcuts', '--held-ready'], ['--switch-at-read'], ['--unmount-at-read'], ['--recovery'], ['--copy-failure']]) {
+            ['--app-shortcuts', '--held-ready'], ['--switch-at-read'], ['--unmount-at-read'], ['--recovery'], ['--copy-failure'], ['--unopened-recovery'], ['--initial-pending-baseline']]) {
             await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-file-mutation-handoff.mts', ...mode]);
           }
         }

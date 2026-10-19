@@ -14,7 +14,7 @@ import { seedVaultCollaboration, applyVaultCollaboration } from "@/sync/engine/c
 import { openPack } from "../pack";
 
 const flags = new Set(process.argv.slice(2));
-for (const flag of flags) assert.ok(["--hosted", "--write-failure", "--unknown-write", "--template", "--app-shortcuts", "--held-ready", "--switch-at-read", "--unmount-at-read", "--recovery", "--copy-failure", "--read-failure"].includes(flag));
+for (const flag of flags) assert.ok(["--hosted", "--write-failure", "--unknown-write", "--template", "--app-shortcuts", "--held-ready", "--switch-at-read", "--unmount-at-read", "--recovery", "--copy-failure", "--read-failure", "--unopened-recovery", "--initial-pending-baseline"].includes(flag));
 const localFiles = !flags.has("--hosted"), itemId = "owned-mutation", root = "/isolated/mutation";
 const config = { namespace: "https://mutation.test", workspaceId: "owned-workspace", accountId: "owned-account", itemId, localFiles };
 const document = emptyDocumentSnapshot(flags.has("--template") ? {id:"texttext.article",version:1} : undefined); document.content.title = "Owned mutation"; document.content.body = "Original";
@@ -30,7 +30,7 @@ const otherState=seedVaultCollaboration(other.bytes,"other-item",1);
 let readFailure=false;
 let heldRead=false,releaseRead!:()=>void;const readGate=new Promise<void>(r=>{releaseRead=r;});const openItems:string[]=[];
 let state = seedVaultCollaboration(current.bytes, itemId, 1), remoteBytes = current.bytes;
-let creates = 0, exists = false, failCheckpoint = false, recoveries = 0;
+let creates = 0, exists = false, failCheckpoint = false, recoveries = 0, baselineReady = false;
 let recovered: ReturnType<typeof pack> | null = null;
 let token: string | null = null, journal: string | null = null, opens = 0, closes = 0, writes = 0, closedCallbacks = 0;
 let heldReady = false, releaseReady!: () => void; const readyGate = new Promise<void>(r=>{releaseReady=r;});
@@ -39,17 +39,18 @@ const events: string[] = [], errors: string[] = [], transportErrors: string[] = 
 const dir = await mkdtemp(path.join(tmpdir(), "texttext-file-mutation-controlled-"));
 const entry = path.join(dir, "entry.tsx"), output = path.join(dir, "ui");
 const sourceRoot = path.resolve(".");
-const rendered = flags.has("--app-shortcuts") ? "<VaultApp/>" : `<CollaborativeVaultEditor initial={selectedInitial} root=${JSON.stringify(root)} config={selectedConfig} startEditing registerFlush={f=>window.fixtureFlush=f} onChanged={()=>{}} onRemoved={()=>{}}/>`;
+const rendered = (flags.has("--app-shortcuts") || flags.has("--initial-pending-baseline")) ? "<VaultApp/>" : `<CollaborativeVaultEditor initial={selectedInitial} root=${JSON.stringify(root)} config={selectedConfig} startEditing registerFlush={f=>window.fixtureFlush=f} onChanged={()=>{}} onRemoved={()=>window.fixtureReturn()}/>`;
 await writeFile(entry, `import React,{useState} from 'react';import{createRoot}from'react-dom/client';
 import{CollaborativeVaultEditor}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/CollaborativeVaultEditor"))};
 import{VaultApp}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/VaultApp"))};
-import{setVaultTransport}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/bridge"))};
-import{acquireVaultDocument}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/document-session"))};
+import{setVaultTransport,VaultError}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/bridge"))};
+import{acquireVaultDocument,flushDocumentSessions}from ${JSON.stringify(path.join(sourceRoot,"src/local-vault/document-session"))};
 const config=${JSON.stringify(config)},initial=${JSON.stringify(current.file)},otherInitial=${JSON.stringify(other.file)};
-setVaultTransport((m,p)=>window.fixtureRequest(m,p));
+setVaultTransport(async(m,p)=>{const result=await window.fixtureRequest(m,p);if(result?.fixtureError)throw new VaultError(result.fixtureError.message,result.fixtureError.code);return result});
 window.tryCompeting=()=>{try{const h=acquireVaultDocument(config,initial,${JSON.stringify(root)});void h.release();return 'ACQUIRED'}catch(e){return e.message}};
 const mount=createRoot(document.getElementById('root'));
 window.fixtureUnmount=()=>{mount.unmount();document.getElementById('root').textContent='Unmounted safe view'};
+window.fixtureReturn=()=>{mount.unmount();document.getElementById('root').textContent='Workspace'};window.fixtureGlobalFlush=flushDocumentSessions;
 function Fixture(){const[other,setOther]=useState(false);window.fixtureSwitch=()=>setOther(true);const selectedInitial=other?otherInitial:initial,selectedConfig=other?{...config,itemId:'other-item'}:config;return ${rendered};}
 mount.render(<Fixture/>);`);
 await symlink(path.join(sourceRoot,"node_modules"),path.join(dir,"node_modules"));
@@ -62,7 +63,7 @@ scenario: { try {
   await page.exposeFunction("fixtureRpc", async(method:string,p:any) => {
     events.push(method);
     if(method==="fixtureFailCheckpoint"){failCheckpoint=true;return {};}
-    if(method==="collaborationOpen") { openItems.push(p.itemId);token="native-"+(++opens);if(p.itemId==="other-item")return {sessionToken:token,path:other.file.path,hash:other.file.hash,projectedHash:other.file.hash,acknowledgedRevision:otherState.revision,journal:null,retiredReason:null}; return {sessionToken:token,path:current.file.path,hash:current.file.hash,projectedHash:current.file.hash,acknowledgedRevision:state.revision,journal,retiredReason:null,capabilities:["epoch-adoption"]}; }
+    if(method==="collaborationOpen") { openItems.push(p.itemId);opens++;if(flags.has("--initial-pending-baseline")&&!baselineReady)return {fixtureError:{message:"Controlled native baseline pending",code:"local_changed"}};if(flags.has("--unopened-recovery")&&opens===1)throw Error("Controlled native open refusal before any shared client");token="native-"+opens;if(p.itemId==="other-item")return {sessionToken:token,path:other.file.path,hash:other.file.hash,projectedHash:other.file.hash,acknowledgedRevision:otherState.revision,journal:null,retiredReason:null}; return {sessionToken:token,path:current.file.path,hash:current.file.hash,projectedHash:current.file.hash,acknowledgedRevision:state.revision,journal,retiredReason:null,capabilities:["epoch-adoption"]}; }
     if(method==="collaborationClose") { assert.equal(p.sessionToken,token);token=null;closes++;return {}; }
     if(method==="collaborationRead") { if(p.itemId==="other-item")return {...otherState,relativePath:other.file.path,canEditContent:true,canComment:true}; if(flags.has("--held-ready")&&opens===2&&!heldReady){heldReady=true;await readyGate;} if(p.waitMs) await wait(80);return {...state,relativePath:current.file.path,canEditContent:true,canComment:true}; }
     if(method==="collaborationPush") { const next=applyVaultCollaboration(state,remoteBytes,p.updates);state=next.state;remoteBytes=next.bytes;return {status:"written",revision:state.revision}; }
@@ -80,7 +81,7 @@ scenario: { try {
     if(method==="accountRead")return {accountId:config.accountId,email:"owned@example.invalid"};
     if(method==="workspaceAccess")return {fullAccess:true,isOwner:true,canEditContent:true,canComment:true,canManageShares:true,grants:[]};
     if(method==="folderViews")return {files:[]};
-    if(method==="collaborationConfig")return config;
+    if(method==="collaborationConfig")return flags.has("--initial-pending-baseline")&&opens>0&&!baselineReady?null:config;
     if(method==="create"||method==="importPack"){
       exists=true;creates++;
       if(String(p.title).endsWith("(recovered)")){const d=emptyDocumentSnapshot();d.content.title=p.title;recovered=pack('---\ntextTextId: recovered-item\n---\n\n',JSON.stringify(d),undefined,'Recovered.textpack');return recovered.file;}
@@ -96,7 +97,9 @@ scenario: { try {
         if(flags.has("--copy-failure"))throw Error("Controlled recovery copy refusal");
         recovered=pack(p.markdown,p.documentJSON,undefined,"Recovered.textpack");return recovered.file;
       }
-      assert.equal(p.hash,current.file.hash);assert.equal(token,null,"native owner closed before external write");heldWrite=true;await writeGate;
+      assert.equal(p.hash,current.file.hash);assert.equal(token,null,"native owner closed before external write");
+      if(flags.has("--initial-pending-baseline")) { current=pack(p.markdown,p.documentJSON,p.templateJSON);writes++;return current.file; }
+      heldWrite=true;await writeGate;
       if(flags.has("--write-failure"))throw Error("Controlled CAS refusal");
       for(const asset of p.addedAssets??[])files["assets/"+asset.filename]=Buffer.from(asset.data,"base64");
       current=pack(p.markdown,p.documentJSON,p.templateJSON);writes++;state=seedVaultCollaboration(current.bytes,itemId,1);remoteBytes=current.bytes;journal=null;
@@ -111,26 +114,71 @@ scenario: { try {
   });
   await page.addInitScript(()=>{ (window as any).fixtureRequest=(m:string,p:unknown)=>(window as any).fixtureRpc(m,p); });
   await page.goto(pathToFileURL(path.join(output,"index.html")).href);
-  if(flags.has("--app-shortcuts"))await page.getByRole("button",{name:"New note",exact:true}).click();
-  const body=page.getByRole("textbox",{name:"Document body",exact:true});await body.waitFor();
+  if(flags.has("--app-shortcuts")||flags.has("--initial-pending-baseline"))await page.getByRole("button",{name:"New note",exact:true}).click();
+  const body=page.getByRole("textbox",{name:"Document body",exact:true});
+  if(flags.has("--initial-pending-baseline")) {
+    await until(()=>opens>0,"initial native open attempted");
+    await body.waitFor({timeout:30000});
+    assert.equal(token,null);assert.equal(journal,null);
+    const refusedOpens=opens;
+    const before=JSON.parse(current.file.documentJSON!);
+    await body.click();await page.keyboard.press('End');await page.keyboard.type(' after baseline pending');
+    const close=await page.evaluate(async()=>(window as any).texttextFlushForNativeClose());
+    assert.equal(close.ok,true,'ordinary local file can close while native baseline remains unavailable');
+    assert.equal(close.durability.outcome,'local-file-durable');
+    assert.equal(baselineReady,false);assert.equal(opens,refusedOpens,'local edits do not bypass native opening');
+    assert.ok(JSON.parse(current.file.documentJSON!).content.body.includes('after baseline pending'));
+    assert.ok(JSON.parse(current.file.documentJSON!).content.body.startsWith(before.content.body));
+    baselineReady=true;state=seedVaultCollaboration(current.bytes,itemId,1);remoteBytes=current.bytes;
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('texttext:vault-sync-status',{detail:{connected:true}})));
+    await page.waitForFunction(()=>document.querySelector('[data-collaboration-state]')?.getAttribute('data-collaboration-state')==='ready');
+    assert.equal(opens,refusedOpens+1,'fresh shared owner after the genuine baseline becomes ready');
+    assert.equal((await page.evaluate(async()=>(window as any).texttextFlushForNativeClose())).ok,true);
+    assert.deepEqual(errors,[]);assert.deepEqual(transportErrors,[]);
+    await writeFile(path.join(dir,'result.json'),JSON.stringify({ok:true,flags:[...flags],opens,refusedOpens,close,events},null,2));
+    console.log('PASS controlled initial pending baseline',dir);break scenario;
+  }
+  if(flags.has("--unopened-recovery")) {
+    await page.getByRole('status').filter({hasText:/Controlled native open refusal/}).waitFor();
+    assert.equal(opens,1);assert.equal(token,null);assert.equal(journal,null);
+    assert.equal(await body.count(),0,"failed native open never mounted an editable shared client");
+    assert.equal(await page.evaluate(async()=>(window as any).fixtureFlush(true)),false,"unknown failed opening is not declared durable without recovery");
+    const originalHash=current.file.hash,originalBytes=Buffer.from(current.bytes);
+    await page.getByRole('button',{name:'Save a recovery copy',exact:true}).click();
+    await page.waitForFunction(()=>document.getElementById('root')?.textContent==='Workspace'||document.querySelector('[role="status"]')?.textContent?.includes('journal finishes saving'));
+    const notice=await page.getByRole('status').allTextContents();
+    assert.ok(!notice.some(text=>text.includes('journal finishes saving')), 'verified recovery copy could not close a session that never created a client: '+notice.join(' | '));
+    assert.equal(await page.locator("#root").innerText(),"Workspace");
+    assert.equal(opens,1,"recovery does not retry the refused original open");
+    assert.equal(current.file.hash,originalHash);assert.deepEqual(Buffer.from(current.bytes),originalBytes);
+    assert.ok(recovered);assert.deepEqual(JSON.parse(recovered.file.documentJSON!),JSON.parse(current.file.documentJSON!));
+    assert.equal(recoveries,0,"no native recover RPC for a native session that never opened");
+    assert.equal(closes,0,"no fake native close for a lease that never existed");
+    await wait(100);assert.equal(await page.evaluate(async()=>(window as any).fixtureGlobalFlush()),true);
+    assert.deepEqual(errors,[]);assert.deepEqual(transportErrors,[]);
+    await writeFile(path.join(dir,'result.json'),JSON.stringify({ok:true,flags:[...flags],opens,closes,recoveries,originalHash,recoveredHash:recovered.file.hash,events},null,2));
+    console.log('PASS controlled no-client recovery',dir);break scenario;
+  }
+  await body.waitFor();
   await until(()=>!localFiles||opens===1,"initial native owner");
   await page.waitForFunction(()=>document.querySelector('.vault-document')?.getAttribute('data-collaboration-state')==='ready');
   if(flags.has("--recovery")||flags.has("--copy-failure")) {
+    await body.click();await page.keyboard.press('End');
     await page.evaluate(()=>(window as any).fixtureRpc('fixtureFailCheckpoint',{}));
-    await body.click();await page.keyboard.press('End');await page.keyboard.type(' recovery text');
+    await page.keyboard.insertText(' recovery text');
     await page.getByRole('status').filter({hasText:/needs to be reopened/}).waitFor();
     const originalHash=current.file.hash;
-    await page.getByRole('button',{name:'Save a copy and reopen',exact:true}).click();
+    await page.getByRole('button',{name:'Save a recovery copy',exact:true}).click();
     if(flags.has("--copy-failure")) {
       await page.getByRole('status').filter({hasText:/Controlled recovery copy refusal/}).waitFor();
       assert.equal(recoveries,0);assert.equal(closes,0);assert.equal(opens,1);assert.equal(current.file.hash,originalHash);
       assert.ok((await page.locator(".vault-document").innerText()).includes("recovery text"));
     } else {
-      await until(()=>recoveries===1&&opens===2,'supported recovery and original reopen');
+      await until(()=>recoveries===1,'supported recovery');
+      await page.getByText('Workspace',{exact:true}).waitFor();assert.equal(opens,1,'recovery returns without reopening original');
       assert.ok(recovered);assert.ok(JSON.parse(recovered.file.documentJSON!).content.body.includes('recovery text'));
       assert.equal(closes,0,'recovery actor released native lease, no second close');
-      await page.waitForFunction(()=>!(document.querySelector('.vault-document') as HTMLElement)?.inert);
-      assert.equal(await page.evaluate(async()=>(window as any).fixtureFlush()),true);
+      await wait(100);assert.equal(await page.evaluate(async()=>(window as any).fixtureGlobalFlush()),true);
     }
     assert.deepEqual(errors,[]);assert.deepEqual(transportErrors,[]);
     await writeFile(path.join(dir,'result.json'),JSON.stringify({ok:true,flags:[...flags],recoveries,closes,opens,events},null,2));
