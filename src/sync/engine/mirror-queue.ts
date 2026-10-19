@@ -12,6 +12,7 @@ export interface MirrorQueueCandidate {
 export interface MirrorQueueObservation {
   candidates: MirrorQueueCandidate[];
   budget: number;
+  lane?: "document" | "binary";
 }
 export interface MirrorQueueDecision {
   operationIds: string[];
@@ -22,7 +23,8 @@ export function validateMirrorQueueObservation(value: unknown): MirrorQueueObser
   const invalid = () => { throw Error("Invalid mirror queue observation"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const v = value as Record<string, unknown>;
-  if (Object.keys(v).length !== 2 || !Object.hasOwn(v, "candidates") || !Object.hasOwn(v, "budget") ||
+  if (Object.keys(v).some(key => !["candidates", "budget", "lane"].includes(key)) || !Object.hasOwn(v, "candidates") || !Object.hasOwn(v, "budget") ||
+      (Object.hasOwn(v, "lane") && v.lane !== "document" && v.lane !== "binary") ||
       !Number.isInteger(v.budget) || (v.budget as number) < 0 || (v.budget as number) > 512 ||
       !Array.isArray(v.candidates) || v.candidates.length > 40_000) return invalid();
   const ids = new Set<string>();
@@ -36,10 +38,10 @@ export function validateMirrorQueueObservation(value: unknown): MirrorQueueObser
     return { operationId: c.operationId, conflicted: c.conflicted as boolean, editorOwned: c.editorOwned as boolean,
       recoveryBlocked: c.recoveryBlocked as boolean, permitted: c.permitted as boolean };
   });
-  return { candidates, budget: v.budget as number };
+  return { candidates, budget: v.budget as number, ...(Object.hasOwn(v, "lane") ? { lane: v.lane as "document" | "binary" } : {}) };
 }
 export function mirrorQueue(input: MirrorQueueObservation): MirrorQueueDecision {
-  const { candidates, budget } = validateMirrorQueueObservation(input);
-  const eligible = candidates.filter(c => !c.conflicted && !c.editorOwned && !c.recoveryBlocked && c.permitted);
+  const { candidates, budget, lane } = validateMirrorQueueObservation(input);
+  const eligible = candidates.filter(c => !c.conflicted && (lane === "binary" || !c.editorOwned) && !c.recoveryBlocked && c.permitted);
   return { operationIds: eligible.slice(0, budget).map(c => c.operationId), hasMore: eligible.length > budget };
 }

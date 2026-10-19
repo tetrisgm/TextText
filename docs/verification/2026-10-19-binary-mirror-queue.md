@@ -1,0 +1,20 @@
+# Shared binary retry eligibility
+
+## Reproduced gap and bounded contract
+
+The production Mac engine regression showed binary CAS reaching its transport without a shared queue decision, then retiring the staged operation: two tests failed six assertions (`/private/tmp/texttext-t11-binary-native-red-20261019.log`). Actual Windows Core reproduced the missing binary policy request in an isolated fresh source archive (`/private/tmp/texttext-t11-binary-pc-ap82sfq6/red-core.log`). These demonstrate the missing shared admission boundary, not an observed production permission breach or content loss. The new shared binary-lane test also failed against the previous validator (`/private/tmp/texttext-t11-binary-policy-red-20261019.log`).
+
+Queue observations now optionally carry `lane: "document" | "binary"`. Omission preserves the prior document selection and wire omission. The binary lane reports actual editor ownership and permits existing asset CAS alongside a text lease; conflict, recovery and permission flags still exclude work. Unknown lanes fail closed, including before native host dispatch. No IDs, paths, payloads or credentials enter this policy.
+
+Both adapters select the existing binary operation with a one-operation phase budget, recheck permissions, retained operation/baseline/lifecycle and recovery guards after awaiting the host, and retain exact IDs and asset bytes on refusal. Post-network checks prevent retiring replaced state. Journals, filesystem primitives, server CAS and editor ownership remain native. This adds no total-pass budget or second writer and does not alter folder or shared-rename retry policy.
+
+## Final evidence
+
+- Shared selector and host: **13 tests passed** (`/private/tmp/texttext-t11-binary-host-green-20261019.log`); all binary fence combinations, actual editor ownership, omitted/default behavior and unknown-lane refusal are covered. Four new serialized binary vectors run through both native wrappers.
+- Relevant Mac production sync and queue integration: **63 tests passed, zero skips**, including existing binary conflict/recovery/lost-reply tests plus new revocation/unavailable-page preservation and exact restart retry (`/private/tmp/texttext-t11-binary-native-full-second-20261019.log`). Owner `Package.resolved` bytes were preserved exactly, SHA-256 `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`.
+- Actual Windows full Core: **1,119 passing assertions**, exit zero, in owned scratch `C:/Users/Shokunin/AppData/Local/Temp/texttext-t11-binary-pc-ap82sfq6/source`. The six uploaded source hashes match the Mac snapshot. Forced `--no-incremental` build produced Core DLL SHA-256 `9f44d00ff430f425fb85f60b50a82315d1cca30c364a00b53a8ea51a74ae968b` and test DLL `ab904988cf3ae3b47507604198e1087f1834224593e71ee61dea8438f64ceda6`. Source/actual hashes, forced-rebuild result and full log are retained under `/private/tmp/texttext-t11-binary-pc-ap82sfq6/`.
+- TypeScript `--noEmit --incremental false` and diff whitespace checks passed (`/private/tmp/texttext-t11-binary-tsc-20261019.log`). Existing test registrations and recursive source fingerprints cover these changed paths.
+
+The first expanded Mac run sent an intentionally unknown lane to the source test host, poisoning its shared channel and cascading stale failures. Native wrappers now reject unknown lanes before dispatch; the unchanged expanded suite passes. That failed log remains `texttext-t11-binary-native-full-20261019.log`. The first Windows green-overlay invocation reused the previously compiled DLL and repeated the old assertion; it is not passing evidence. The subsequent explicit no-incremental rebuild passed, and the final fresh rebuild's Core DLL differs from the intermediate DLL. Both failed/intermediate logs remain preserved.
+
+This is source/native conformance evidence. No installed app, release artifact, owner vault or account was changed by these tests. Packaged-host/installed acceptance and the broader T11 scheduling/consolidation work remain separate; see [the prior ordinary queue slice](2026-10-18-mirror-queue-policy.md).

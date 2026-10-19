@@ -9,6 +9,7 @@ static class MirrorQueueIntegrationTests
         public readonly Dictionary<string,RemotePack> Files = [];
         public readonly List<(string Id,string Item,string Path,byte[] Payload)> Sent = [];
         public int AttemptedUploads;
+        public readonly List<(string Id,byte[]? Payload)> BinarySent = [];
         public WorkspaceCapabilities Grant = new(true,true,[],[]);
         public WorkspaceCapabilities? Capabilities => Grant;
         public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken ct=default) => Task.FromResult<IReadOnlyList<RemoteItem>>(Files.Select(pair=>new RemoteItem(pair.Key,pair.Value.RelativePath,pair.Value.Revision)).ToArray());
@@ -18,6 +19,11 @@ static class MirrorQueueIntegrationTests
             if(!Grant.CanWrite(id,path,revision is not null))throw new InvalidOperationException("Queue sent with revoked permission.");
             if(Files[id].Revision!=revision)throw new SyncConflictException();
             Sent.Add((operation,id,path,data.ToArray()));var hash=TextPackStore.Hash(data);Files[id]=new(data.ToArray(),path,hash);return Task.FromResult(hash);
+        }
+        public Task<string> BinaryPatchAsync(string id,string operation,string entry,string? expected,string? lifecycle,byte[]? bytes,CancellationToken ct=default) {
+            BinarySent.Add((operation,bytes?.ToArray()));
+            var pack=Files[id];var patched=BinaryEntryPacks.Patch(pack.Data,entry,expected,bytes);var revision=TextPackStore.Hash(patched);
+            Files[id]=new(patched,pack.RelativePath,revision);return Task.FromResult(revision);
         }
         public Task<string> RenameAsync(string id,string from,string to,string revision,string operation,CancellationToken ct=default) => throw new InvalidOperationException("Unexpected queue rename.");
         public Task DeleteAsync(string id,string path,string revision,string operation,CancellationToken ct=default) => throw new InvalidOperationException("Unexpected queue delete.");
@@ -41,6 +47,7 @@ static class MirrorQueueIntegrationTests
     }
     static SyncEngine.State State(Fixture f) => JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(f.StatePath))!;
     public static async Task Run(string temp,Action<bool,string> check) {
+        await BinaryQueueFences(temp,check);
         var f=Make(temp,"queue-budget",129);var engine=new SyncEngine(f.Store,f.Remote,mirrorPolicy:NativePolicyTestHost.Create());await engine.SyncAsync();
         check(f.Remote.Sent.Count==128&&engine.HasEligiblePending&&engine.Status.Pending==1,"queue shared policy enforces Windows128 pass budget and hasMore for129 retained uploads");
         check(f.Remote.Sent.Select(x=>x.Id).SequenceEqual(f.Operations.Take(128).Select(x=>x.Id)),"queue sends captured FIFO operation IDs without lexical resort or regeneration");
@@ -71,4 +78,42 @@ static class MirrorQueueIntegrationTests
             check(q.Store.Read(original.Path).SequenceEqual(Convert.FromBase64String(original.Payload!)),"queue "+scenario+" leaves local bytes unchanged");
         }
     }
+    static async Task BinaryQueueFences(string temp,Action<bool,string> check) {
+        foreach(var scenario in new[]{"permission","unavailable-policy","editor-owned"}) {
+            var f=Make(temp,"binary-queue-"+scenario,1);var id=f.Operations[0].ItemId;var path=f.Operations[0].Path;
+            var original=BinaryEntryPacks.Patch(f.Remote.Files[id].Data,"assets/data.bin",null,[1,2]);
+            var local=BinaryEntryPacks.Patch(original,"assets/data.bin",TextPackStore.Hash([1,2]),[3,4,255]);
+            var old=f.Store.Describe(path);var file=f.Store.Write(path,local,old.Hash);var revision=TextPackStore.Hash(original);
+            f.Remote.Files[id]=new(original,path,revision);
+            var operation=new SyncEngine.BinaryPending(Guid.NewGuid().ToString(),id,"assets/data.bin",TextPackStore.Hash([1,2]),null,null,file.Hash,
+                PayloadHash:TextPackStore.Hash([3,4,255]),SourcePath:path);
+            var state=new SyncEngine.State{Capabilities=f.Remote.Grant};state.Items[id]=new(path,revision,revision);
+            state.BinaryBaselines[id]=new(){{"assets/data.bin",TextPackStore.Hash([1,2])}};state.BinaryOutbox.Add(operation);
+            TextPackStore.AtomicWrite(f.StatePath,JsonSerializer.SerializeToUtf8Bytes(state));
+            var payloadPath=Path.Combine(f.Store.StateDirectory,"binary-outbox",operation.Id+".asset");TextPackStore.AtomicWrite(payloadPath,[3,4,255]);
+            if(scenario=="editor-owned") {
+                var dir=Path.Combine(f.Store.StateDirectory,"shared-editing",id);Directory.CreateDirectory(dir);
+                TextPackStore.AtomicWrite(Path.Combine(dir,"checkpoint.json"),JsonSerializer.SerializeToUtf8Bytes(new SharedCheckpoint(id,path,file.Hash,revision,1,0,1,"{}",true)));
+            }
+            var observed=false;var ownership=false;
+            var policy=NativePolicyTestHost.Create(beforeRequest:script=>{
+                if(script.Contains(".queue(")&&script.Contains("\"lane\":\"binary\"")) {
+                    observed=true;ownership=script.Contains("\"editorOwned\":true");
+                    if(scenario=="permission")f.Remote.Grant=new(false,false,[],new(){{id,false}});
+                    if(scenario=="unavailable-policy")throw new IOException("Injected unavailable binary policy.");
+                }return Task.CompletedTask;
+            });
+            try{await new SyncEngine(f.Store,f.Remote,mirrorPolicy:policy).SyncAsync();}catch(IOException)when(scenario=="unavailable-policy"){}
+            check(observed,"binary "+scenario+" consults actual shared binary lane before CAS");
+            if(scenario=="editor-owned") {
+                check(ownership&&f.Remote.BinarySent.Count==1,"binary lane truthfully captures active editor and permits existing asset CAS semantics");
+            } else {
+                check(f.Remote.BinarySent.Count==0&&State(f).BinaryOutbox.SequenceEqual(new[]{operation})&&File.ReadAllBytes(payloadPath).SequenceEqual(new byte[]{3,4,255}),"binary "+scenario+" keeps exact durable identity and staged payload without attempted send");
+                f.Remote.Grant=new(true,true,[],new(){{id,true}});
+                await new SyncEngine(f.Store,f.Remote,mirrorPolicy:NativePolicyTestHost.Create()).SyncAsync();
+                check(f.Remote.BinarySent.Count==1&&f.Remote.BinarySent[0].Id==operation.Id&&f.Remote.BinarySent[0].Payload!.SequenceEqual(new byte[]{3,4,255})&&State(f).BinaryOutbox.Count==0,"binary restart retries exact original ID and bytes after authority returns");
+            }
+        }
+    }
+
 }

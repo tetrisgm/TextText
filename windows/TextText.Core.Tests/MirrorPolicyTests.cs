@@ -39,6 +39,13 @@ static class MirrorPolicyTests
             var result=await policy.QueueAsync(vector.GetProperty("observed").Deserialize<MirrorQueueObservation>(json)!);
             check(JsonSerializer.Serialize(result,json)==JsonSerializer.Serialize(vector.GetProperty("decision").Deserialize<MirrorQueueDecision>(json),json),"source queue vector: "+vector.GetProperty("name"));
         }
+        var unknownLaneRequests=0;
+        var unknownLanePolicy=new MirrorPolicy(digest,scope,(script,ct)=>{
+            unknownLaneRequests++;throw new IOException("Unknown lane must not reach the policy page.");
+        });
+        var unknownLaneRefused=false;
+        try{await unknownLanePolicy.QueueAsync(new([],1,"future"));}catch(MirrorPolicyUnavailableException){unknownLaneRefused=true;}
+        check(unknownLaneRefused&&unknownLaneRequests==0,"unknown binary queue lane refuses before host dispatch");
         var largeCandidates=Enumerable.Range(0,512).Select(i=>new MirrorQueueCandidate("operation-"+i,false,false,false,true)).ToArray();
         var largeQueue=await NativePolicyTestHost.Create().QueueAsync(new(largeCandidates,128));
         check(largeQueue.HasMore&&largeQueue.OperationIds.SequenceEqual(largeCandidates.Take(128).Select(c=>c.OperationId)),"bounded native queue snapshot above former small RPC line limit");

@@ -216,5 +216,87 @@
       "operationIds": [],
       "hasMore": false
     }
+  },
+  {
+    "name": "binary active editor",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "retained-binary",
+          "conflicted": false,
+          "editorOwned": true,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1,
+      "lane": "binary"
+    },
+    "decision": {
+      "operationIds": [
+        "retained-binary"
+      ],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "binary conflict",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "retained-binary",
+          "conflicted": true,
+          "editorOwned": true,
+          "recoveryBlocked": false,
+          "permitted": true
+        }
+      ],
+      "budget": 1,
+      "lane": "binary"
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "binary recovery",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "retained-binary",
+          "conflicted": false,
+          "editorOwned": true,
+          "recoveryBlocked": true,
+          "permitted": true
+        }
+      ],
+      "budget": 1,
+      "lane": "binary"
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": false
+    }
+  },
+  {
+    "name": "binary permission",
+    "observed": {
+      "candidates": [
+        {
+          "operationId": "retained-binary",
+          "conflicted": false,
+          "editorOwned": true,
+          "recoveryBlocked": false,
+          "permitted": false
+        }
+      ],
+      "budget": 1,
+      "lane": "binary"
+    },
+    "decision": {
+      "operationIds": [],
+      "hasMore": false
+    }
   }
 ]

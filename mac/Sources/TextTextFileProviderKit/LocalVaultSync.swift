@@ -85,7 +85,7 @@ public actor LocalVaultSync {
         var paths: [String]
         var remotePath: String? = nil
     }
-    private struct BinaryPending: Codable {
+    private struct BinaryPending: Codable, Equatable {
         var itemId: String
         var path: String
         var entryPath: String
@@ -750,12 +750,29 @@ public actor LocalVaultSync {
             }
             return false
         }
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        // The binary CAS lane permits assets beside a text lease; ownership is
+        // still reported truthfully rather than hidden from the shared owner.
+        let editorOwned = try sharedProtection(itemId: itemId)
+        let permitted = await transport.canWrite(itemId: itemId, path: path, existing: true)
+        guard state.binaryOutbox?[itemId] == pending, state.baselines[itemId] == baseline else { return false }
+        let selected = try await mirrorPolicy.queue(.init(candidates: [.init(operationId: pending.operationId,
+            conflicted: pending.conflicted, editorOwned: editorOwned, recoveryBlocked: false, permitted: permitted)],
+            budget: 1, lane: "binary"))
+        guard selected.operationIds == [pending.operationId],
+              await transport.canWrite(itemId: itemId, path: path, existing: true),
+              state.binaryOutbox?[itemId] == pending, state.baselines[itemId] == baseline,
+              state.lifecycles?[itemId] == remote.lifecycle else { return false }
+        try Task.checkCancellation()
+        try assertReplacementReadable(itemId: itemId)
         do {
             let bytes = try stagedBinaryBytes(pending)
             let revision = try await transport.binaryPatch(itemId: itemId, operationId: pending.operationId,
                 entryPath: pending.entryPath, expectedHash: pending.expectedHash,
                 expectedLifecycle: pending.lifecycle, bytes: bytes)
             try assertReplacementReadable(itemId: itemId)
+            guard state.binaryOutbox?[itemId] == pending, state.baselines[itemId] == baseline,
+                  state.lifecycles?[itemId] == remote.lifecycle else { return false }
             let previous = state
             if state.binaryBaselines == nil { state.binaryBaselines = [:] }
             if bytes == nil { state.binaryBaselines?[itemId]?.removeValue(forKey: pending.entryPath) }

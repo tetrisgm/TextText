@@ -941,6 +941,51 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(after, before)
     }
 
+    func testBinaryQueuePolicyRevocationRetainsExactAssetForRestart() async throws {
+        try await verifyBinaryQueueFence(unavailable: false)
+    }
+    func testBinaryQueueUnavailablePolicyRetainsExactAssetForRestart() async throws {
+        try await verifyBinaryQueueFence(unavailable: true)
+    }
+    private func verifyBinaryQueueFence(unavailable: Bool) async throws {
+        let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
+        try putLocal(original)
+        let transport = FakeVaultTransport()
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        let witness = BinaryQueueWitness()
+        let policy = makeTestMirrorPolicy(workspaceId: binding.workspaceId) { script in
+            if script.contains(".queue("), script.contains("\"lane\":\"binary\"") {
+                await witness.record(script.contains("\"editorOwned\":true"))
+                if unavailable { throw LocalVaultMirrorPolicy.Failure.stale }
+                await transport.setWritable(false)
+            }
+        }
+        var sync: LocalVaultSync? = try LocalVaultSync(root: root, binding: binding, transport: transport, mirrorPolicy: policy)
+        _ = try await sync!.sync()
+        _ = try await sync!.beginSharedEditing(itemId: itemId, path: path, expectedHash: TextTextStableDigest.sha256Hex(original))
+        try putLocal(withAsset(original, bytes: Data("second".utf8)))
+        _ = try await sync!.sync()
+        let observed = await witness.count
+        let ownership = await witness.editorOwned
+        XCTAssertTrue(ownership, "Binary selection must report the actual text editor lease")
+        XCTAssertGreaterThan(observed, 0, "Actual binary CAS must consult the shared queue before transport")
+        let attempts = await transport.binaryRequests()
+        XCTAssertTrue(attempts.isEmpty, "Revoked or unavailable shared policy must prevent even an attempted binary send")
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let pending = try XCTUnwrap((state["binaryOutbox"] as? [String: [String: Any]])?[itemId])
+        let operation = try XCTUnwrap(pending["operationId"] as? String)
+        let payload = stateURL.deletingLastPathComponent().appendingPathComponent("outbox/" + operation + ".asset")
+        XCTAssertEqual(try Data(contentsOf: payload), Data("second".utf8))
+        sync = nil
+        await transport.setWritable(true)
+        _ = try await engine(transport).sync()
+        let replay = await transport.binaryRequests()
+        XCTAssertEqual(replay.count, 1)
+        XCTAssertEqual(replay.first?.operationId, operation)
+        XCTAssertEqual(replay.first?.bytes, Data("second".utf8))
+    }
+
     func testOpenEditorSendsDirectAssetEditAndReplaysLostReplyAfterRestart() async throws {
         let original = try withAsset(pack("Text"), bytes: Data("first".utf8))
         try putLocal(original)
@@ -1482,4 +1527,10 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
         receipts[operationId] = baseRevision
     }
 
+}
+
+private actor BinaryQueueWitness {
+    private(set) var count = 0
+    private(set) var editorOwned = false
+    func record(_ owned: Bool) { count += 1; editorOwned = editorOwned || owned }
 }

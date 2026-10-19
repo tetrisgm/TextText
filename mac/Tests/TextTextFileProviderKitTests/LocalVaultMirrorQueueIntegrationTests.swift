@@ -3,6 +3,23 @@ import TextTextSyncTestSupport
 @testable import TextTextFileProviderKit
 
 final class LocalVaultMirrorQueueIntegrationTests: XCTestCase {
+    func testSharedSerializedQueueLanesAndUnknownLaneRefusal() async throws {
+        struct Vector: Decodable { let name: String; let observed: LocalVaultMirrorQueueObservation; let decision: LocalVaultMirrorQueueDecision }
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<4 { root.deleteLastPathComponent() }
+        let vectors = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: root.appendingPathComponent("sync/fixtures/mirror-queue.json")))
+        for vector in vectors {
+            let policy = makeTestMirrorPolicy(workspaceId: "queue-vectors")
+            let actual = try await policy.queue(vector.observed)
+            XCTAssertEqual(actual.operationIds, vector.decision.operationIds, vector.name)
+            XCTAssertEqual(actual.hasMore, vector.decision.hasMore, vector.name)
+        }
+        let policy = makeTestMirrorPolicy(workspaceId: "queue-invalid")
+        do {
+            _ = try await policy.queue(.init(candidates: [], budget: 1, lane: "future"))
+            XCTFail("Unknown lane must refuse")
+        } catch { }
+    }
     private struct Fixture: Sendable {
         let root: URL, binding: LocalVaultSyncBinding, stateURL: URL
         let transport: FakeVaultTransport

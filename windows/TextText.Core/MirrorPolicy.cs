@@ -14,7 +14,8 @@ public sealed record MirrorLifecycleObservation(bool RemotePresent,bool RemoteDe
     string? BaselineLifecycle,string? BaselineRevision,string? PendingKind,string? PendingLifecycle,string? PendingBaseRevision,bool PendingConflicted);
 public sealed record MirrorLifecycleDecision(string Baseline,string Pending);
 public sealed record MirrorQueueCandidate(string OperationId,bool Conflicted,bool EditorOwned,bool RecoveryBlocked,bool Permitted);
-public sealed record MirrorQueueObservation(MirrorQueueCandidate[] Candidates,int Budget);
+public sealed record MirrorQueueObservation(MirrorQueueCandidate[] Candidates,int Budget,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? Lane=null);
 public sealed record MirrorQueueDecision(string[] OperationIds,bool HasMore);
 public static class MirrorFailure
 {
@@ -54,8 +55,10 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
     public async Task<MirrorLifecycleDecision> LifecycleAsync(MirrorLifecycleObservation observed,CancellationToken ct=default) =>
         (MirrorLifecycleDecision)(await ExecuteAsync(null,null,observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror lifecycle decision."));
 
-    public async Task<MirrorQueueDecision> QueueAsync(MirrorQueueObservation observed,CancellationToken ct=default) =>
-        (MirrorQueueDecision)(await ExecuteAsync(null,null,null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror queue selection."));
+    public async Task<MirrorQueueDecision> QueueAsync(MirrorQueueObservation observed,CancellationToken ct=default) {
+        if(observed.Lane is not (null or "document" or "binary"))throw new MirrorPolicyUnavailableException("Unknown mirror queue lane.");
+        return (MirrorQueueDecision)(await ExecuteAsync(null,null,null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror queue selection."));
+    }
 
     private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, MirrorLifecycleObservation? lifecycle, MirrorQueueObservation? queue, CancellationToken ct)
     {
@@ -102,7 +105,7 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
                 var decision=value.GetProperty("decision").Deserialize<MirrorQueueDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing mirror queue selection.");
                 var ids=decision.OperationIds??throw new MirrorPolicyUnavailableException("Missing selected operation IDs.");
                 var selected=ids.ToHashSet(StringComparer.Ordinal);
-                if(queue.Budget is <0 or >512 || ids.Length>queue.Budget || selected.Count!=ids.Length ||
+                if(queue.Lane is not (null or "document" or "binary") || queue.Budget is <0 or >512 || ids.Length>queue.Budget || selected.Count!=ids.Length ||
                    !queue.Candidates.Where(c=>selected.Contains(c.OperationId)).Select(c=>c.OperationId).SequenceEqual(ids,StringComparer.Ordinal))
                     throw new MirrorPolicyUnavailableException("Invalid mirror queue selection.");
                 return decision;

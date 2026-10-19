@@ -17,6 +17,22 @@ describe("durable mirror queue selection", () => {
       expect(mirrorQueue(observed)).toEqual(mask === 0 ? { operationIds: [candidate.operationId], hasMore: true } : { operationIds: ["unrelated"], hasMore: false });
     }
   });
+  it("allows the binary CAS lane beside the actual text editor but keeps every other fence", () => {
+    for (let mask = 0; mask < 8; mask++) {
+      const c = { ...candidate, editorOwned: true, conflicted: !!(mask & 1), recoveryBlocked: !!(mask & 2), permitted: !(mask & 4) };
+      expect(mirrorQueue(validateMirrorQueueObservation({ candidates: [c], budget: 1, lane: "binary" })))
+        .toEqual({ operationIds: mask === 0 ? [c.operationId] : [], hasMore: false });
+    }
+    expect(mirrorQueue(validateMirrorQueueObservation({ candidates: [{ ...candidate, editorOwned: true }], budget: 1 })))
+      .toEqual({ operationIds: [], hasMore: false });
+  });
+  it("preserves omitted document lane and refuses unknown lanes", () => {
+    const base = { candidates: [candidate], budget: 1 };
+    expect(validateMirrorQueueObservation(base)).toEqual(base);
+    for (const lane of [null, "future", "", 1, {}, []]) {
+      expect(() => validateMirrorQueueObservation({ ...base, lane })).toThrow("Invalid mirror queue observation");
+    }
+  });
   it("bounds a large retained queue and returns detached decisions", () => {
     const candidates = Array.from({ length: 40_000 }, (_, i) => ({ ...candidate, operationId: `op-${i}` }));
     const input = { candidates, budget: 512 };

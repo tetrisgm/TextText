@@ -548,12 +548,23 @@ public sealed partial class SyncEngine
                 PayloadHash:payload is null?null:TextPackStore.Hash(payload),SourcePath:local.Path);
             state.BinaryOutbox.Add(pending);Save(state); // Exact bytes and operation ID are durable before network I/O.
         }
+        // Asset CAS already coexists with the text lease. The explicit lane
+        // keeps actual editor ownership visible to the shared policy.
+        var selection=await mirrorPolicy!.QueueAsync(new([new(pending.Id,pending.Conflicted,IsEditing(pending.ItemId),
+            store.ReplacementBlocked(pending.ItemId),state.Capabilities?.CanWrite(pending.ItemId,baseline.Path,true)!=false)],1,"binary"),ct);
+        RememberCapabilities(state);
+        ct.ThrowIfCancellationRequested();
+        if(!selection.OperationIds.SequenceEqual(new[]{pending.Id}) || !state.BinaryOutbox.Contains(pending) ||
+           state.Items.GetValueOrDefault(pending.ItemId)!=baseline || baseline.Lifecycle!=remote.Lifecycle ||
+           state.Capabilities?.CanWrite(pending.ItemId,baseline.Path,true)==false)return;
         try {
             var bytes=BinaryPayload(pending);
             store.AssertReplacementReadable(pending.ItemId);
             var revision=await transport.BinaryPatchAsync(pending.ItemId,pending.Id,pending.EntryPath,pending.ExpectedHash,pending.Lifecycle,
                 bytes,ct);
             store.AssertReplacementReadable(pending.ItemId);
+            ct.ThrowIfCancellationRequested();
+            if(!state.BinaryOutbox.Contains(pending)||state.Items.GetValueOrDefault(pending.ItemId)!=baseline)return;
             if(!state.BinaryBaselines.TryGetValue(pending.ItemId,out var hashes))throw new InvalidDataException("Binary baseline is missing.");
             if(bytes is null)hashes.Remove(pending.EntryPath);
             else hashes[pending.EntryPath]=TextPackStore.Hash(bytes);

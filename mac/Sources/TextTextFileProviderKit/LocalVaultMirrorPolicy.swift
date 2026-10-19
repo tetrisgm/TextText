@@ -85,7 +85,8 @@ public struct LocalVaultMirrorQueueCandidate: Codable, Equatable, Sendable {
 }
 public struct LocalVaultMirrorQueueObservation: Codable, Equatable, Sendable {
     public let candidates: [LocalVaultMirrorQueueCandidate], budget: Int
-    public init(candidates: [LocalVaultMirrorQueueCandidate], budget: Int) { self.candidates = candidates; self.budget = budget }
+    public let lane: String?
+    public init(candidates: [LocalVaultMirrorQueueCandidate], budget: Int, lane: String? = nil) { self.candidates = candidates; self.budget = budget; self.lane = lane }
 }
 public struct LocalVaultMirrorQueueDecision: Codable, Equatable, Sendable {
     public let operationIds: [String], hasMore: Bool
@@ -237,6 +238,7 @@ public actor LocalVaultMirrorPolicy {
     }
 
     public func queue(_ observed: LocalVaultMirrorQueueObservation) async throws -> LocalVaultMirrorQueueDecision {
+        guard observed.lane == nil || observed.lane == "document" || observed.lane == "binary" else { throw Failure.stale }
         await acquire(); defer { release() }
         try await prepare()
         guard let generation, let pageId else { throw Failure.stale }
@@ -245,6 +247,7 @@ public actor LocalVaultMirrorPolicy {
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         let ids = reply.decision.operationIds
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              (observed.lane == nil || observed.lane == "document" || observed.lane == "binary"),
               (0...512).contains(observed.budget), ids.count <= observed.budget,
               Set(ids).count == ids.count else { throw Failure.stale }
         let selected = Set(ids)
