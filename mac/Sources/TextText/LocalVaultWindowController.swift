@@ -54,6 +54,17 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
     private let accountReviewSession: URLSession?
     private var accountFence: (() -> Void)?
     private var legacyDraftsWindow: LegacyDraftsWindowController?
+    /// Internal deterministic fixture dependencies; normal callers use nil.
+    struct TestDependencies {
+        var session: URLSession = .shared
+        var policyFactory: LocalVaultConnectionController.MirrorPolicyFactory?
+        var syncPass: (@MainActor (LocalVaultSync) async throws -> LocalVaultSyncReport)?
+        var observesFiles = true
+        var connectsAutomatically = true
+        var didCreateConnection: ((LocalVaultConnectionController) -> Void)?
+        var beforeNativeWrite: (@Sendable () -> Void)?
+    }
+    private let testDependencies: TestDependencies?
     private var connection: LocalVaultConnectionController?
     private var collaboration: LocalVaultCollaboration?
 #if TEXTTEXT_STRESS_ACTOR
@@ -105,8 +116,9 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
          collaboration: LocalVaultCollaboration? = nil,
          credentials: @escaping LocalVaultConnectionController.CredentialsProvider = { nil },
          verifiedCredentials: LocalVaultConnectionController.VerifiedCredentialsProvider? = nil,
-         accountReviewSession: URLSession? = nil) {
+         accountReviewSession: URLSession? = nil, testDependencies: TestDependencies? = nil) {
         self.entry = entry
+        self.testDependencies = testDependencies
         self.accountReviewSession = accountReviewSession
         let source = verifiedCredentials ?? { credentials().map { LocalVaultAccountCredential(origin: $0.origin, token: $0.token) } }
         let initialAccount = source()
@@ -466,7 +478,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         return value
     }
 
-    private func selectRoot(_ url: URL, preparedConnection: LocalVaultConnectionController? = nil, persist: (() throws -> Void)? = nil) throws {
+    func selectRoot(_ url: URL, preparedConnection: LocalVaultConnectionController? = nil, persist: (() throws -> Void)? = nil) throws {
         if connection != nil, root?.standardizedFileURL.resolvingSymlinksInPath() == url.standardizedFileURL.resolvingSymlinksInPath() { return }
         let nextScoped = url.startAccessingSecurityScopedResource()
         do {
@@ -489,16 +501,19 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         // folder must not create another set of local starter identities.
         openError = nil
         window?.title = url.lastPathComponent + " · TextText"
-        watcher = WorkspaceFolderWatcher(path: url.path, queue: .main, latency: 0.5) { [weak self] in
+        watcher = testDependencies?.observesFiles == false ? nil : WorkspaceFolderWatcher(path: url.path, queue: .main, latency: 0.5) { [weak self] in
             self?.emit("texttext:vault-changed", value: [:])
             self?.connection?.schedule()
         }
-        connection = preparedConnection ?? LocalVaultConnectionController(root: url, verifiedCredentials: self.credentials, mirrorPolicyFactory: policyFactory)
+        connection = preparedConnection ?? LocalVaultConnectionController(root: url,
+            session: testDependencies?.session ?? .shared, verifiedCredentials: self.credentials,
+            mirrorPolicyFactory: testDependencies?.policyFactory ?? policyFactory, syncPass: testDependencies?.syncPass)
+        if let connection { testDependencies?.didCreateConnection?(connection) }
         connection?.onChange = { [weak self] state, filesChanged in
             self?.emit("texttext:vault-sync-status", value: state)
             if filesChanged { self?.emit("texttext:vault-changed", value: [:]) }
         }
-        if preparedConnection != nil { connection?.activate() } else { connection?.connectAutomatically() }
+        if preparedConnection != nil { connection?.activate() } else if testDependencies?.connectsAutomatically != false { connection?.connectAutomatically() }
     }
 
     private func openWorkspace(_ workspaceId: String) async throws -> [String: Any] {
@@ -757,6 +772,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         }
         let recoveryConnection = connection
         let recoveryAccount = credentials()
+        let beforeNativeWrite = testDependencies?.beforeNativeWrite
         io.async { [weak self] in
             let result: Result<[String: Any], Error> = Result {
                 func requireRecoveryScope() throws {
@@ -906,6 +922,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                         "templateAuthoringSourceJSON": document.contents.templateAuthoringSourceJSON as Any? ?? NSNull()]
                 case "write":
                     let expectedHash = try Self.string(params, "hash")
+                    beforeNativeWrite?()
                     return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
                         try store.write(path: Self.string(params, "path"),
                             expectedHash: expectedHash, markdown: Self.string(params, "markdown"),
@@ -967,6 +984,13 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 }
                 let decorated = result.map { value in
                     method == "list" ? Self.withCapabilities(value, self?.connection?.capabilities) : value
+                }
+                if method == "write", case .success = decorated, self?.connection === recoveryConnection {
+                    let current = self?.credentials()
+                    let same = recoveryAccount.map { owner in current.map { owner.sameAccount(as: $0) } ?? false } ?? (current == nil)
+                    // Closing a shared owner can wake an idle pass before this
+                    // CAS commits. A successful write needs its own fenced wake.
+                    if same { self?.connection?.schedule() }
                 }
                 if method == "resolveFolderRename" || method == "resolveReplacement" || method == "cancelUncapturedDeletion" || method == "resolveMove", case .success = decorated { self?.connection?.schedule() }
                 self?.reply(id, result: decorated, current: conflictCurrent)

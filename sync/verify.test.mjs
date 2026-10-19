@@ -119,11 +119,17 @@ test('manual native gate selects and requires handoff and retained-work suites',
   const required = [...manual.matchAll(/for suite in ([^;\n]+); do/g)]
     .flatMap(match => match[1].trim().split(/\s+/));
   for (const suite of ['LocalHandoffProfile', 'LocalHandoffBridge', 'MirrorTombstoneIntegration',
-    'SharedRenameProfile', 'ProtectedRenameTransport', 'MissingManifestVisibility', 'QueuedUploadPathAdoption']) {
+    'SharedRenameProfile', 'ProtectedRenameTransport', 'MissingManifestVisibility', 'QueuedUploadPathAdoption',
+    'LocalVaultFileMutationHandoff', 'LocalVaultFileMutationWake']) {
     assert.ok(filter[1].split('|').includes(`${suite}Tests`), `${suite} is selected`);
     assert.ok(required.includes(suite), `${suite} must execute`);
   }
   assert.ok(manual.includes('Required native creation suite did not execute: ${suite}Tests'));
+  for (const method of ['testImageCASReopenBeforeMirrorACKRetainsBytesAndOneMirrorPassResolves',
+    'testSuccessfulBridgeWriteWakesAfterReleasePassFinishedBeforeCAS', 'testFailedCASDoesNotWakeAnotherPass',
+    'testChangedOwnerDoesNotWakeCapturedConnection', 'testStoppedConnectionDoesNotWakeAfterWrite',
+    'testChangedRootDoesNotWakeCapturedConnection']) assert.ok(manual.includes(method));
+  assert.ok(manual.includes('Required file mutation handoff cases must not skip.'));
 });
 
 test('default source fingerprint includes binary presets and their generation logic', async () => {
