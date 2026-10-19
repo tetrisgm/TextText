@@ -36,6 +36,138 @@ static class ProtectedSavedRenameIntegrationTests
         foreach(var field in new[]{"origin","workspace","account"})await WrongBinding(temp,field,check);
         foreach(var race in new[]{"duplicate","checkpoint","permission","lifecycle","binding"})await PolicyRace(temp,race,check);
     }
+    public static async Task RunAbsence(string temp,Action<bool,string> check) {
+        if(!OperatingSystem.IsWindows()){Console.WriteLine("SKIP Windows-required native absence integration: retained file identity requires Windows Fingerprint primitives; pure model/profile/HTTP controls still run.");return;}
+        using(var fixture=await Fixture.Create(temp,"absent-idle",absent:true)) {
+            var reads=fixture.Remote.GenerationReads;var downloads=fixture.Remote.Downloads;await fixture.Pass();
+            check(fixture.Remote.GenerationReads==reads&&fixture.Remote.Downloads==downloads,"ordinary unchanged absent item issues no additional generation or full-pack reads");
+            var manifests=fixture.Remote.Manifests;await fixture.Pass(true);
+            check(fixture.Remote.Manifests==manifests&&fixture.Remote.GenerationReads==reads&&fixture.Remote.Downloads==downloads,"unchanged same-path absent local wake sends zero manifest generation or full-pack requests");
+        }
+
+        using(var fixture=await Fixture.Create(temp,"absent-no-binding-new",absent:true)) {
+            await fixture.MoveLocal("Local.textpack");var profile=Path.Combine(fixture.Store.StateDirectory,"retained-replacement-profile","profile.json");var priorProfile=File.Exists(profile)?File.ReadAllBytes(profile):null;fixture.Remote.ProtectedRenameBinding=null;await fixture.Pass();
+            check(fixture.Saved() is null&&fixture.Remote.Requests.Count==0&&(priorProfile is null?!File.Exists(profile):File.Exists(profile)&&File.ReadAllBytes(profile).SequenceEqual(priorProfile)),"missing binding holds new absent leaf rename without floor6 publication or global account failure");
+            var incomplete=System.Text.Encoding.UTF8.GetBytes("owned incomplete external pack");File.WriteAllBytes(fixture.Store.Resolve("Local.textpack"),incomplete);await fixture.Pass();
+            check(fixture.Remote.Requests.Count==0&&fixture.Store.LastScanErrors.Any(error=>error.Path=="Local.textpack")&&File.ReadAllBytes(fixture.Store.Resolve("Local.textpack")).SequenceEqual(incomplete),"bindingless invalid intermediate pack stays an ordinary scan error without global owner demand or generation authority");
+        }
+        using(var fixture=await Fixture.Create(temp,"absent-no-binding-retained",absent:true)) {
+            fixture.Remote.LoseReply=true;await fixture.MoveLocal("Local.textpack");await fixture.Pass();var saved=fixture.Saved();var calls=fixture.Remote.Requests.Count;var bytes=File.ReadAllBytes(fixture.Store.Resolve("Local.textpack"));fixture.Remote.ProtectedRenameBinding=null;await fixture.Pass();
+            check(saved is {Version:2}&&fixture.Saved()==saved&&fixture.Remote.Requests.Count==calls&&File.ReadAllBytes(fixture.Store.Resolve("Local.textpack")).SequenceEqual(bytes),"missing binding retains existing v2 request and projection with no fallback or dispatch");
+        }
+        using(var fixture=await Fixture.Create(temp,"absent-lost",absent:true)) {
+            fixture.Remote.LoseReply=true;await fixture.MoveLocal("Local.textpack");await fixture.Pass(true);
+            var saved=fixture.Saved();check(saved is {Version:2}&&saved.Generation==MirrorGeneration.ObservedAbsent,"observed absent rename persists typed v2 only after genuine native evidence");
+            check(JsonNode.Parse(File.ReadAllBytes(Path.Combine(fixture.Store.StateDirectory,"retained-replacement-profile","profile.json")))!["Version"]!.GetValue<int>()==6,"absent request lazily publishes floor6 before retained request");
+            if(saved is null)return;
+            fixture.Restart();await fixture.Pass();
+            check(fixture.Saved() is null&&fixture.Remote.Requests.Count==2&&fixture.Remote.Requests.All(r=>r==saved.Request),"absent lost reply restarts and replays exact immutable request with fresh evidence");
+        }
+        using(var fixture=await Fixture.Create(temp,"absent-unknown",absent:true)) {
+            await fixture.MoveLocal("Local.textpack");fixture.Remote.GenerationAvailable=false;await fixture.Pass();
+            check(fixture.Saved() is null&&fixture.Remote.Requests.Count==0,"nil lifecycle without authenticated generation evidence never stages or sends");
+        }
+        using(var fixture=await Fixture.Create(temp,"absent-projection",absent:true)) {
+            var changed=Pack("clean current projection differs from incorporated baseline",false);await fixture.Checkpoint(changed,fixture.CheckpointValue().JournalGeneration+1);
+            var old=fixture.CheckpointValue();var journal=JsonNode.Parse(old.Journal)!;journal["pending"]=new JsonArray();journal["journalGeneration"]=old.JournalGeneration+1;
+            await fixture.Editing!.CheckpointAsync(fixture.Session!.SessionToken,TextPackStore.Hash(changed),changed,old with{Pending=false,JournalGeneration=old.JournalGeneration+1,Journal=journal.ToJsonString()});
+            await fixture.MoveLocal("Local.textpack");
+            old=fixture.CheckpointValue();journal=JsonNode.Parse(old.Journal)!;journal["pending"]=new JsonArray();journal["journalGeneration"]=old.JournalGeneration+1;
+            await fixture.Editing.CheckpointAsync(fixture.Session.SessionToken,old.ProjectedHash,changed,old with{Pending=false,JournalGeneration=old.JournalGeneration+1,Journal=journal.ToJsonString()});
+            fixture.Remote.GenericConflict=true;await fixture.Pass();
+            check(fixture.Saved() is {Version:2}&&fixture.Store.Read("Local.textpack").SequenceEqual(changed),"clean checkpoint incorporation permits projection-only hash divergence without replacing local bytes");
+        }
+        foreach(var invalid in new[]{"pending","pending-unchanged","retired","ack","path","hash"}) {
+            using var fixture=await Fixture.Create(temp,"absent-invalid-"+invalid,absent:true);
+            await fixture.MoveLocal("Local.textpack");var changed=invalid=="pending-unchanged"?fixture.Initial:Pack("unincorporated local projection",false);await fixture.Checkpoint(changed,fixture.CheckpointValue().JournalGeneration+1);
+            var path=Path.Combine(fixture.Store.StateDirectory,"shared-editing",Id,"checkpoint.json");var value=JsonNode.Parse(File.ReadAllBytes(path))!;
+            if(!invalid.StartsWith("pending",StringComparison.Ordinal)) {value["Pending"]=false;var journal=JsonNode.Parse(value["Journal"]!.GetValue<string>())!;journal["pending"]=new JsonArray();
+                if(invalid=="ack"){value["AcknowledgedRevision"]=new string('e',64);journal["revision"]=new string('e',64);}
+                if(invalid=="path"){value["Path"]="Other.textpack";journal["relativePath"]="Other.textpack";}
+                value["Journal"]=journal.ToJsonString();
+                if(invalid=="retired")value["RetiredReason"]="retained external checkpoint";
+                if(invalid=="hash")value["ProjectedHash"]=new string('e',64);
+            }
+            var raw=JsonSerializer.SerializeToUtf8Bytes(value);File.WriteAllBytes(path,raw);
+            try{await fixture.Pass();}catch(Exception e)when(e is InvalidDataException or IOException){}
+            check(fixture.Remote.Requests.Count==0&&fixture.Saved() is null&&fixture.Store.Read("Local.textpack").SequenceEqual(changed)&&File.ReadAllBytes(path).SequenceEqual(raw),"absent admission retains exact bytes and dispatches nothing for "+invalid+" checkpoint proof");
+        }
+        foreach(var race in new[]{"permission","binding","remote-path","remote-generation","projection","duplicate","checkpoint","durable-state"}) {
+            using var fixture=await Fixture.Create(temp,"absent-race-"+race,absent:true);await fixture.MoveLocal("Local.textpack");
+            var statePath=Path.Combine(fixture.Store.StateDirectory,"sync.json");var checkpointPath=Path.Combine(fixture.Store.StateDirectory,"shared-editing",Id,"checkpoint.json");
+            var expectedState=File.ReadAllBytes(statePath);var expectedCheckpoint=File.ReadAllBytes(checkpointPath);var expectedPack=fixture.Store.Read("Local.textpack");
+            fixture.Remote.GenerationHook=_=> {
+                fixture.Remote.GenerationHook=null;
+                if(race=="permission")fixture.Remote.Capabilities=new(false,false,[],new(){{Id,false}});
+                if(race=="binding")fixture.Remote.ProtectedRenameBinding=Scope with{AccountId="other-account"};
+                if(race=="remote-path")fixture.Remote.Item=fixture.Remote.Item with{RelativePath="Peer.textpack"};
+                if(race=="remote-generation")fixture.Remote.Item=fixture.Remote.Item with{Lifecycle="restored",RestoreFromRevision=fixture.InitialHash};
+                if(race=="projection"){expectedPack=Pack("new local text during authenticated evidence",false);File.WriteAllBytes(fixture.Store.Resolve("Local.textpack"),expectedPack);}
+                if(race=="duplicate")File.Copy(fixture.Store.Resolve("Local.textpack"),fixture.Store.Resolve("Duplicate.textpack"));
+                if(race=="checkpoint"){var c=JsonNode.Parse(expectedCheckpoint)!;var j=JsonNode.Parse(c["Journal"]!.GetValue<string>())!;j["journalGeneration"]=c["JournalGeneration"]!.GetValue<long>()+1;c["JournalGeneration"]=j["journalGeneration"]!.GetValue<long>();c["Journal"]=j.ToJsonString();expectedCheckpoint=JsonSerializer.SerializeToUtf8Bytes(c);File.WriteAllBytes(checkpointPath,expectedCheckpoint);}
+                if(race=="durable-state"){var changed=fixture.State();changed["Items"]![Id]!["Refresh"]=true;fixture.WriteState(changed);expectedState=File.ReadAllBytes(statePath);}
+            };
+            try{await fixture.Pass();}catch(Exception e)when(e is IOException or InvalidDataException){}
+            check(fixture.Remote.Requests.Count==0&&File.ReadAllBytes(statePath).SequenceEqual(expectedState)&&File.ReadAllBytes(checkpointPath).SequenceEqual(expectedCheckpoint)&&fixture.Store.Read("Local.textpack").SequenceEqual(expectedPack),"post-await "+race+" change retains actual native bytes and refuses rename dispatch");
+        }
+        using(var fixture=await Fixture.Create(temp,"absent-inactive-history",absent:true)) {
+            await fixture.MoveLocal("Local.textpack");var directory=Path.Combine(fixture.Store.StateDirectory,"shared-editing",Id);var raw=File.ReadAllBytes(Path.Combine(directory,"checkpoint.json"));
+            var archive=Path.Combine(directory,"archive-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(archive);File.WriteAllBytes(Path.Combine(archive,"checkpoint.json"),raw);File.WriteAllText(Path.Combine(archive,"recovered.json"),"{\"version\":1}");
+            File.WriteAllBytes(Path.Combine(directory,"archived-account-"+Guid.NewGuid().ToString("N")+".json"),raw);
+            File.WriteAllBytes(Path.Combine(directory,"recovery-"+Guid.NewGuid().ToString("D")+".json"),raw);
+            Dictionary<string,string> Inventory()=>Directory.GetFiles(directory,"*",SearchOption.AllDirectories).Order(StringComparer.Ordinal).ToDictionary(path=>path,path=>TextPackStore.Hash(File.ReadAllBytes(path)));
+            var before=Inventory();fixture.Remote.GenericConflict=true;await fixture.Pass();var saved=fixture.Saved();
+            check(saved is {Version:2}&&before.OrderBy(p=>p.Key).SequenceEqual(Inventory().OrderBy(p=>p.Key)),"known inactive shared history permits absent proof without rewriting archives");
+            File.WriteAllText(Path.Combine(directory,"future-intent.json"),"{\"version\":99}");before=Inventory();var state=File.ReadAllBytes(Path.Combine(fixture.Store.StateDirectory,"sync.json"));var calls=fixture.Remote.Requests.Count;
+            await fixture.Pass();
+            check(before.OrderBy(p=>p.Key).SequenceEqual(Inventory().OrderBy(p=>p.Key))&&fixture.Remote.Requests.Count==calls&&fixture.Saved()==saved&&File.ReadAllBytes(Path.Combine(fixture.Store.StateDirectory,"sync.json")).SequenceEqual(state),"unknown active item filename retains whole inventory and original v2 request without repair or dispatch");
+        }
+        if(OperatingSystem.IsWindows()){await AbsentPendingReplacement(temp,check);await AbsentPendingReplacement(temp,check,true);}
+        await StoppedBinary(temp,check,true);
+    }
+    static async Task AbsentPendingReplacement(string temp,Action<bool,string> check,bool global=false) {
+        using var fixture=await Fixture.Create(temp,"absent-pending-registry"+(global?"-bindingless-folder":""),absent:true);await fixture.MoveLocal("Local.textpack");
+        if(global){fixture.Remote.LoseReply=true;await fixture.Pass();fixture.Store.EnsureFolders(["HistoryFolder"]);}
+        RetainedReplacementProfile.PrepareSharedRename(fixture.Store);
+        const string other="unrelated-present-item";byte[] otherBytes;
+        using(var output=new MemoryStream()) {using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)) {
+            using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: "+other+"\n---\nunrelated retained projection");
+            using(var w=new StreamWriter(zip.CreateEntry("texttext-lifecycle.json").Open()))w.Write(JsonSerializer.Serialize(new{version=1,generation=Generation}));
+        }otherBytes=output.ToArray();}
+        var otherFile=fixture.Store.Write("Other.textpack",otherBytes);var state=fixture.State();
+        state["Items"]![other]=JsonSerializer.SerializeToNode(new SyncEngine.Baseline(otherFile.Path,otherFile.Hash,otherFile.Hash,Lifecycle:Generation));
+        fixture.Remote.Extra[other]=new(other,otherFile.Path,otherFile.Hash,Lifecycle:Generation,CanEditContent:true);fixture.Remote.Capabilities!.Items[other]=true;
+        state["Capabilities"]=JsonSerializer.SerializeToNode(fixture.Remote.Capabilities);fixture.WriteState(state);
+        var candidate=Guid.NewGuid();var unrelated=Guid.NewGuid();var registry=new ReplacementRecoveryRegistry(fixture.Store.Root,fixture.Store.StateDirectory);
+        void Pending(string path,string id,byte[] before,byte[] prepared,Guid operation) {
+            var full=fixture.Store.Resolve(path);var recoveryRoot=Path.Combine(fixture.Store.Root,".texttext","retained-replacements",TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(path)));
+            try{RetainedFileReplacement.Replace(full,TextPackStore.Hash(before),prepared,operation,point=>{
+                if(point=="prepared")registry.Register(operation,id,path,TextPackStore.Hash(before),TextPackStore.Hash(prepared),RetainedFileReplacement.OperationDirectory(full,operation,recoveryRoot));
+                if(point=="replaced")throw new OperationCanceledException("Owned fixture interruption after native replacement");
+            },recoveryRoot);}catch(OperationCanceledException){}
+        }
+        var prepared=Pack("retained candidate committed but not classified",false);
+        Pending("Local.textpack",Id,fixture.Initial,prepared,candidate);Pending(otherFile.Path,other,otherBytes,otherBytes,unrelated);
+        var ownEntry=registry.Entries(Id).Single(e=>e.Operation==candidate);var operationDirectory=Path.Combine(fixture.Store.Root,ownEntry.RecoveryPath!.Replace('/',Path.DirectorySeparatorChar));
+        Dictionary<string,string> OwnInventory() {
+            var paths=new List<string>{fixture.Store.Resolve("Local.textpack"),Path.Combine(fixture.Store.StateDirectory,"replacement-index",candidate.ToString("D")+".json")};
+            foreach(var directory in new[]{operationDirectory,Path.Combine(fixture.Store.StateDirectory,"shared-editing",Id),Path.Combine(fixture.Store.StateDirectory,"retained-replacement-profile")})if(Directory.Exists(directory))paths.AddRange(Directory.GetFiles(directory,"*",SearchOption.AllDirectories));
+            return paths.Order(StringComparer.Ordinal).ToDictionary(path=>path,path=>TextPackStore.Hash(File.ReadAllBytes(path)));
+        }
+        string ItemState(){var v=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(fixture.Store.StateDirectory,"sync.json")))!;return JsonSerializer.Serialize(new{Item=v.Items.GetValueOrDefault(Id),Outbox=v.Outbox.Where(o=>o.ItemId==Id).ToArray(),Rename=v.ProtectedRenames.TryGetValue(Id,out var retained)?Convert.ToBase64String(ProtectedSavedRename.ArchiveBytes(retained)):null,Legacy=v.SharedRenames.GetValueOrDefault(Id),Binary=v.BinaryOutbox.Where(o=>o.ItemId==Id).ToArray(),Assets=v.BinaryBaselines.GetValueOrDefault(Id),Cursor=v.BinaryRevisions.GetValueOrDefault(Id),Pull=v.PendingPull?.ItemId==Id?v.PendingPull:null});}
+        if(global) {
+            var type=typeof(TextPackStore).Assembly.GetType("TextText.Core.FolderCaseRename")!;var folder=Activator.CreateInstance(type,System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.Public|System.Reflection.BindingFlags.NonPublic,null,[fixture.Store],null)!;
+            try{type.GetMethod("RenameAlias",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(folder,[fixture.Store.Resolve("HistoryFolder"),fixture.Store.Resolve("historyfolder"),(Action<string>)(point=>{if(point=="prepared")throw new IOException("Owned pending folder interruption");})]);}catch(System.Reflection.TargetInvocationException error)when(error.InnerException is IOException){}
+            fixture.Remote.ProtectedRenameBinding=null;
+            var retainedFiles=Directory.GetFiles(Path.Combine(fixture.Store.StateDirectory,"folder-case"),"*",SearchOption.AllDirectories).Concat(Directory.GetFiles(Path.Combine(fixture.Store.Root,".texttext","retained-replacements"),"*",SearchOption.AllDirectories)).Concat(Directory.GetFiles(Path.Combine(fixture.Store.StateDirectory,"replacement-index"),"*",SearchOption.AllDirectories)).Append(Path.Combine(fixture.Store.StateDirectory,"sync.json")).ToArray();
+            var exact=retainedFiles.ToDictionary(path=>path,path=>TextPackStore.Hash(File.ReadAllBytes(path)));var calls=fixture.Remote.Requests.Count;var refused=false;try{await fixture.Pass();}catch(Exception error)when(error is IOException or InvalidDataException){refused=true;}
+            check(refused&&fixture.Remote.Requests.Count==calls&&exact.All(pair=>File.Exists(pair.Key)&&TextPackStore.Hash(File.ReadAllBytes(pair.Key))==pair.Value),"bindingless retained v2 with pending global folder history refuses before candidate or unrelated recovery mutation");return;
+        }
+        var before=OwnInventory();var beforeState=ItemState();await fixture.Pass();
+        check(before.OrderBy(p=>p.Key).SequenceEqual(OwnInventory().OrderBy(p=>p.Key))&&ItemState()==beforeState&&fixture.Remote.Requests.Count==0,"absent naming preserves entire pending item/registry/intent/profile inventories without hidden recovery or dispatch");
+        var otherEntry=registry.Entries(other).Single(e=>e.Operation==unrelated);var otherDirectory=Path.Combine(fixture.Store.Root,otherEntry.RecoveryPath!.Replace('/',Path.DirectorySeparatorChar));
+        check(JsonSerializer.Deserialize<RetainedFileReplacement.Manifest>(File.ReadAllBytes(Path.Combine(otherDirectory,"manifest.json")))!.State=="completed"&&File.ReadAllBytes(fixture.Store.Resolve(otherFile.Path)).SequenceEqual(otherBytes),"unrelated present-generation valid retained recovery still completes in the same pass");
+    }
     public static async Task GenericConflict(string temp,Action<bool,string> check) {
         using var fixture=await Fixture.Create(temp,"generic");fixture.Remote.GenericConflict=true;
         await fixture.MoveLocal("Local.textpack");await fixture.Pass();
@@ -172,15 +304,16 @@ static class ProtectedSavedRenameIntegrationTests
         state=JsonSerializer.Deserialize<SyncEngine.State>(fixture.State().ToJsonString())!;
         check(fixture.Remote.Downloads>downloads&&fixture.Store.Read("Original.textpack").SequenceEqual(fixture.Remote.Data)&&state.Items[Id].Revision==fixture.Remote.Item.Revision,"later clean native pass still downloads unincorporated text after asset-only materialization");
     }
-    public static async Task StoppedBinary(string temp,Action<bool,string> check) {
-        using var fixture=await Fixture.Create(temp,"stopped-binary");fixture.Remote.Item=fixture.Remote.Item with{RelativePath="Server.textpack"};
-        await fixture.MoveLocal("Local.textpack");RetainedReplacementProfile.PrepareSharedRename(fixture.Store);
+    public static async Task StoppedBinary(string temp,Action<bool,string> check,bool absent=false) {
+        using var fixture=await Fixture.Create(temp,absent?"absent-stopped-binary":"stopped-binary",absent:absent);fixture.Remote.Item=fixture.Remote.Item with{RelativePath="Server.textpack"};
+        await fixture.MoveLocal("Local.textpack");
+        if(absent)RetainedReplacementProfile.PrepareObservedAbsenceRename(fixture.Store);else RetainedReplacementProfile.PrepareSharedRename(fixture.Store);
         var request=new ProtectedRenameRequest(Guid.NewGuid().ToString("D"),Id,"Original.textpack","Local.textpack",fixture.InitialHash);
-        fixture.Put(ProtectedSavedRename.Pending(fixture.RootHash,request,Scope,fixture.InitialHash,Generation));await fixture.Pass();
+        fixture.Put(absent?ProtectedSavedRename.Pending(fixture.RootHash,request,Scope,fixture.InitialHash,MirrorGeneration.ObservedAbsent):ProtectedSavedRename.Pending(fixture.RootHash,request,Scope,fixture.InitialHash,Generation));await fixture.Pass();
         var row=await fixture.Sync.SavedFileMoveRecoveryReadAsync(request.OperationId);
         await fixture.Sync.KeepSavedFileMoveNamesAsync(row.Id,row.RequestHash!,row.Inspection!,true);var stopped=fixture.Saved();
         var asset=new byte[]{0,255,19,72,44};var changed=BinaryEntryPacks.Patch(fixture.Initial,"assets/exact.bin",null,asset);
-        await fixture.Checkpoint(changed,3);var calls=fixture.Remote.Requests.Count;await fixture.Pass();
+        await fixture.Checkpoint(changed,fixture.CheckpointValue().JournalGeneration+1);var calls=fixture.Remote.Requests.Count;await fixture.Pass();
         check(fixture.Remote.BinaryRequests.Count==1&&fixture.Remote.Requests.Count==calls&&fixture.Saved()==stopped&&fixture.Remote.Item.RelativePath=="Server.textpack"&&BinaryEntryPacks.Assets(fixture.Store.Read("Local.textpack"))["assets/exact.bin"].Bytes.SequenceEqual(asset)&&BinaryEntryPacks.Assets(fixture.Remote.Data).TryGetValue("assets/exact.bin",out var uploaded)&&uploaded.Bytes.SequenceEqual(asset),"stopped different local/server names preserve actual binary CAS without reissuing rename or changing either name");
     }
     static async Task PendingBinary(string temp,Action<bool,string> check) {
@@ -334,21 +467,21 @@ static class ProtectedSavedRenameIntegrationTests
         await fixture.Pass();
         check(injected&&fixture.Remote.Requests.Count==0&&fixture.Store.Read("Local.textpack").Length>0,"post-policy "+race+" race refuses stale rename authority without touching projection");
     }
-    static byte[] Pack(string text) {
+    static byte[] Pack(string text,bool lifecycle=true) {
         using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)) {
             using(var writer=new StreamWriter(zip.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: "+Id+"\n---\n"+text);
-            using(var writer=new StreamWriter(zip.CreateEntry("texttext-lifecycle.json").Open()))writer.Write(JsonSerializer.Serialize(new{version=1,generation=Generation}));
+            if(lifecycle)using(var writer=new StreamWriter(zip.CreateEntry("texttext-lifecycle.json").Open()))writer.Write(JsonSerializer.Serialize(new{version=1,generation=Generation}));
             using(var stream=zip.CreateEntry("unknown.bin").Open())stream.Write(new byte[]{0,255,19,72});
         }return output.ToArray();
     }
     sealed class Fixture:IDisposable {
         public required TextPackStore Store;public required Remote Remote;public required SyncEngine Sync;public SharedEditingStore? Editing;public SharedSession? Session;
         public required byte[] Initial;public string InitialHash=>TextPackStore.Hash(Initial);public string RootHash=>TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(Store.Root));
-        public static async Task<Fixture> Create(string temp,string name,bool folders=false,byte[]? initial=null,bool checkpoint=true) {
+        public static async Task<Fixture> Create(string temp,string name,bool folders=false,byte[]? initial=null,bool checkpoint=true,bool absent=false) {
             var store=new TextPackStore(Path.Combine(temp,"saved-"+name),Path.Combine(temp,"saved-state-"+name));
             AccountRootOwnership.Open(store,new(Scope.Origin),Scope.WorkspaceId,Account);
-            var bytes=initial??Pack("retained original text");var remote=new Remote(bytes);if(folders){remote.Item=remote.Item with{RelativePath="Notes/Original.textpack"};remote.Folders=["Notes","Notes/Empty child","Other","Other/Empty child"];remote.SupportsFolderCaseMoves=true;remote.ManifestRevision=new string('a',64);store.EnsureFolders(remote.Folders);}var fixture=new Fixture{Store=store,Remote=remote,Initial=bytes,Sync=new(store,remote,Account,NativePolicyTestHost.Create(Account))};
-            await fixture.Sync.SyncAsync();fixture.Editing=new(store,fixture.Sync,Account);fixture.Session=await fixture.Editing.OpenAsync(Id,remote.Item.RelativePath,fixture.InitialHash);if(checkpoint)await fixture.Checkpoint(bytes,1);return fixture;
+            var bytes=initial??Pack("retained original text",!absent);var remote=new Remote(bytes,absent);if(folders){remote.Item=remote.Item with{RelativePath="Notes/Original.textpack"};remote.Folders=["Notes","Notes/Empty child","Other","Other/Empty child"];remote.SupportsFolderCaseMoves=true;remote.ManifestRevision=new string('a',64);store.EnsureFolders(remote.Folders);}var fixture=new Fixture{Store=store,Remote=remote,Initial=bytes,Sync=new(store,remote,Account,NativePolicyTestHost.Create(Account))};
+            await fixture.Sync.SyncAsync();fixture.Editing=new(store,fixture.Sync,Account);fixture.Session=await fixture.Editing.OpenAsync(Id,remote.Item.RelativePath,fixture.InitialHash);if(checkpoint){await fixture.Checkpoint(bytes,1);if(absent)await fixture.CleanCheckpoint();}return fixture;
         }
         public void Restart(Func<string,Task>? hook=null) {
             Editing?.Dispose();Sync=new(Store,Remote,Account,NativePolicyTestHost.Create(Account,hook));Editing=new(Store,Sync,Account);
@@ -358,9 +491,13 @@ static class ProtectedSavedRenameIntegrationTests
             var file=Store.Scan().Single(x=>x.ItemId==Id);var checkpointPath=File.Exists(Path.Combine(Store.StateDirectory,"shared-editing",Id,"checkpoint.json"))?CheckpointValue().Path:Session!.Document.Path;var journal=JsonSerializer.Serialize(new{version=1,accountId=Account,epoch=1,seq=0,journalGeneration=generation,revision=InitialHash,relativePath=checkpointPath,update="AAA=",pending=new[]{"AAA="}});
             await Editing!.CheckpointAsync(Session!.SessionToken,file.Hash,bytes,new(Id,checkpointPath,TextPackStore.Hash(bytes),InitialHash,1,0,generation,journal,true));
         }
-        public async Task MoveLocal(string destination) {var file=Store.Scan().Single(x=>x.ItemId==Id);File.Move(Store.Resolve(file.Path),Store.Resolve(destination));await Checkpoint(Store.Read(destination),CheckpointValue().JournalGeneration+1);}
+        public async Task CleanCheckpoint() {
+            var old=CheckpointValue();var journal=JsonNode.Parse(old.Journal)!;journal["pending"]=new JsonArray();journal["journalGeneration"]=old.JournalGeneration+1;
+            var bytes=Store.Read(old.Path);await Editing!.CheckpointAsync(Session!.SessionToken,TextPackStore.Hash(bytes),bytes,old with{Pending=false,JournalGeneration=old.JournalGeneration+1,Journal=journal.ToJsonString()});
+        }
+        public async Task MoveLocal(string destination) {var file=Store.Scan().Single(x=>x.ItemId==Id);File.Move(Store.Resolve(file.Path),Store.Resolve(destination));await Checkpoint(Store.Read(destination),CheckpointValue().JournalGeneration+1);if(Remote.GenerationAvailable)await CleanCheckpoint();}
         public SharedCheckpoint CheckpointValue()=>JsonSerializer.Deserialize<SharedCheckpoint>(File.ReadAllBytes(Path.Combine(Store.StateDirectory,"shared-editing",Id,"checkpoint.json")))!;
-        public async Task Pass() {try{await Sync.SyncAsync();}catch(Exception error)when(error is HttpRequestException or FileChangedException or SharedAccountMismatchException) { }}
+        public async Task Pass(bool local=false) {try{await Sync.SyncAsync(localChangesOnly:local);}catch(Exception error)when(error is HttpRequestException or FileChangedException or SharedAccountMismatchException) { }}
         public JsonObject State()=>JsonNode.Parse(File.ReadAllBytes(Path.Combine(Store.StateDirectory,"sync.json")))!.AsObject();
         public ProtectedSavedRename.Record? Saved() {var node=State()["ProtectedRenames"]?[Id];return node is null?null:JsonSerializer.Deserialize<ProtectedSavedRename.Record>(node.ToJsonString());}
         public void WriteState(JsonObject state)=>TextPackStore.AtomicWrite(Path.Combine(Store.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(state));
@@ -372,11 +509,16 @@ static class ProtectedSavedRenameIntegrationTests
         public WorkspaceCapabilities? Capabilities {get;set;}=new(true,true,[],new(){{Id,true}});
         public IReadOnlyList<string> Folders {get;set;}=[];public IReadOnlyList<string>? AuthoritativeFolders=>SupportsFolderCaseMoves?Folders:null;public bool SupportsFolderCaseMoves {get;set;}public string? ManifestRevision {get;set;}public int FolderCalls;
         public Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken ct=default){FolderCalls++;Folders=Folders.Select(path=>path==request.Source||path.StartsWith(request.Source+"/",StringComparison.Ordinal)?request.Destination+path[request.Source.Length..]:path).ToArray();if(Item.RelativePath.StartsWith(request.Source+"/",StringComparison.Ordinal))Item=Item with{RelativePath=request.Destination+Item.RelativePath[request.Source.Length..]};ManifestRevision=new string('b',64);return Task.FromResult(new FolderCaseMoveReceipt(request.OperationId,"moved",request.Source,request.Destination,request.Folders.Select(path=>request.Destination+path[request.Source.Length..]).ToArray(),request.Items.Select(item=>item with{RelativePath=request.Destination+item.RelativePath[request.Source.Length..]}).ToArray(),ManifestRevision));}
+        public readonly Dictionary<string,RemoteItem> Extra=[];
         public RemoteItem Item;public byte[] Data;public bool GenericConflict,LoseReply,ManifestUnavailable,BinaryLoseReply,AllowConflictUpload;public int LegacyCalls,Downloads,Manifests;public Action? AfterMoved,BeforeBinaryPatch;
         public readonly List<string> BinaryRequests=[];readonly Dictionary<string,string> binaryReceipts=[],binaryInputs=[];
         public readonly List<ProtectedRenameRequest> Requests=[];readonly Dictionary<string,ProtectedRenameReceipt> receipts=[];
-        public Remote(byte[] data){Data=data;Item=new(Id,"Original.textpack",TextPackStore.Hash(data),Lifecycle:Generation,CanEditContent:true);}
-        public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken ct=default){Manifests++;return ManifestUnavailable?throw new HttpRequestException("Owned fixture unavailable"):Task.FromResult<IReadOnlyList<RemoteItem>>([Item]);}
+        public bool GenerationAvailable;public int GenerationReads;public Action<int>? GenerationHook;
+        public Remote(byte[] data,bool absent=false){Data=data;GenerationAvailable=absent;Item=new(Id,"Original.textpack",TextPackStore.Hash(data),Lifecycle:absent?null:Generation,CanEditContent:true);}
+        public async Task<RemoteManifestGenerationEvidence?> GenerationEvidenceAsync(string id,CancellationToken ct=default) {
+            GenerationReads++;await Task.Yield();GenerationHook?.Invoke(GenerationReads);return GenerationAvailable?new(Scope,Item,TextPackStore.Hash(JsonSerializer.SerializeToUtf8Bytes(Item)),Item.Lifecycle is null?MirrorGeneration.ObservedAbsent:MirrorGeneration.Present(Item.Lifecycle)):null;
+        }
+        public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken ct=default){Manifests++;return ManifestUnavailable?throw new HttpRequestException("Owned fixture unavailable"):Task.FromResult<IReadOnlyList<RemoteItem>>([Item,..Extra.Values]);}
         public Task<RemoteBinaryManifest> BinaryManifestAsync(string id,CancellationToken ct=default)=>Task.FromResult(new RemoteBinaryManifest(Item.Revision,BinaryEntryPacks.Assets(Data).Values.Select(entry=>new RemoteBinaryEntry(entry.Path,entry.Sha256,entry.Bytes.Length)).ToArray()));
         public Task<byte[]> BinaryReadAsync(string id,string path,CancellationToken ct=default)=>Task.FromResult(BinaryEntryPacks.Assets(Data)[path].Bytes);
         public Task<string> BinaryPatchAsync(string id,string operation,string path,string? expected,string? generation,byte[]? bytes,CancellationToken ct=default){BinaryRequests.Add(operation);var input=JsonSerializer.Serialize(new{id,path,expected,generation,hash=bytes is null?null:TextPackStore.Hash(bytes)});if(binaryReceipts.TryGetValue(operation,out var prior)){if(binaryInputs[operation]!=input)throw new InvalidDataException("Immutable asset CAS changed");return Task.FromResult(prior);}binaryInputs[operation]=input;var before=BeforeBinaryPatch;BeforeBinaryPatch=null;before?.Invoke();if(generation!=Item.Lifecycle)throw new SyncConflictException();try{Data=BinaryEntryPacks.Patch(Data,path,expected,bytes);}catch(FileChangedException){throw new SyncConflictException();}Item=Item with{Revision=TextPackStore.Hash(Data)};binaryReceipts[operation]=Item.Revision;if(BinaryLoseReply){BinaryLoseReply=false;throw new HttpRequestException("Owned asset CAS reply lost");}return Task.FromResult(Item.Revision);}

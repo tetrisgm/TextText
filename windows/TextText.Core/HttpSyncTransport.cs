@@ -78,6 +78,17 @@ public sealed class HttpSyncTransport : ISyncTransport
         Capabilities=new(manifest.FullAccess??ownerFallback,manifest.CanCreateContent??ownerFallback,manifest.WritableFolders??[],cached.ToDictionary(item=>item.ItemId,item=>item.CanEditContent??ownerFallback));
         etag=response.Headers.ETag?.ToString();return cached;
     }
+    // This deliberately bypasses cached manifest/ETag state. Omitted generation
+    // fields become evidence only on a fresh, strict, authenticated full reply.
+    public async Task<RemoteManifestGenerationEvidence?> GenerationEvidenceAsync(string itemId,CancellationToken cancellation=default) {
+        if(verifiedCredentials is null||ProtectedRenameBinding is not {} binding)return null;
+        using var response=await Send(()=>new HttpRequestMessage(HttpMethod.Get,endpoint),cancellation);
+        if(response.StatusCode!=HttpStatusCode.OK)throw new InvalidDataException("Fresh generation manifest required.");
+        if(response.RequestMessage?.RequestUri!=endpoint)throw new InvalidDataException("Generation manifest endpoint changed.");
+        var bytes=await Bytes(response,cancellation,16*1024*1024);
+        _=await Credential(cancellation);
+        return MirrorGenerationManifest.Parse(bytes,itemId,binding);
+    }
     public async Task<FolderCaseMoveReceipt> MoveFolderCaseAsync(FolderCaseMoveRequest request,CancellationToken cancellation=default) {
         using var response=await Send(()=>new HttpRequestMessage(HttpMethod.Post,new Uri(endpoint,"folder-case-moves")){Content=new StringContent(JsonSerializer.Serialize(request,FolderWireJson),Encoding.UTF8,"application/json")},cancellation);
         return JsonSerializer.Deserialize<FolderCaseMoveReceipt>(await Bytes(response,cancellation),Json)??throw new InvalidDataException("Invalid folder move receipt.");

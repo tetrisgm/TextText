@@ -91,7 +91,7 @@ internal static class AssetProofObservation
         if (owner.Version == 1) { if (Directory.Exists(directory) || File.Exists(directory)) throw Refusal(); return "none"; }
         if (!Directory.Exists(directory)) throw Refusal();
         var files = Directory.GetFileSystemEntries(directory);
-        var known = new[] { "profile.json", "owner-v1.json", "owner-displaced.json", "profile-v1.json", "profile-v1-displaced.json", "profile-v2.json", "profile-v2-displaced.json", "profile-v3.json", "profile-v3-displaced.json", "profile-v4.json", "profile-v4-displaced.json" };
+        var known = new[] { "profile.json", "owner-v1.json", "owner-displaced.json", "profile-v1.json", "profile-v1-displaced.json", "profile-v2.json", "profile-v2-displaced.json", "profile-v3.json", "profile-v3-displaced.json", "profile-v4.json", "profile-v4-displaced.json", "profile-v5.json", "profile-v5-displaced.json" };
         if (files.Length > known.Length || files.Any(path => !known.Contains(Path.GetFileName(path), StringComparer.Ordinal))) throw Refusal();
         // Entire existing C# method is fixed byte/hash/schema validation only.
         // Do NOT invoke public Verify: it acquires/creates a migration lease.

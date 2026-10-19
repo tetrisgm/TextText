@@ -9,12 +9,15 @@ public sealed partial class TextPackStore
     {
         try {AssertReplacementReadable(itemId);return false;}catch(RetainedFileReplacement.RequiredException){return true;}catch(FolderCaseRename.RequiredException){return true;}
     }
-    public IReadOnlyDictionary<string,Guid> ReplacementBlockedItems()
+    public IReadOnlyDictionary<string,Guid> ReplacementBlockedItems(IReadOnlySet<string>? inspectOnlyItems=null,ProtectedRenameScope? generationScope=null)
     {
         lock(gate) {
             var result=new Dictionary<string,Guid>();
             foreach(var entry in Replacements.Entries()) {
-                try{Replacements.AssertEntryReadable(entry);}catch(RetainedFileReplacement.RequiredException error){result[entry.ItemId]=error.Operation;}
+                if(inspectOnlyItems?.Contains(entry.ItemId)==true) {
+                    try{_=GenerationProtectionSnapshot(entry.ItemId,generationScope??throw new SharedAccountMismatchException());}
+                    catch(Exception error)when(error is IOException or InvalidDataException or System.Text.Json.JsonException){result[entry.ItemId]=entry.Operation;}
+                } else try{Replacements.AssertEntryReadable(entry);}catch(RetainedFileReplacement.RequiredException error){result[entry.ItemId]=error.Operation;}
             }
             return result;
         }

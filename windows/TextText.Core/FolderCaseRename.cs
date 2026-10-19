@@ -61,7 +61,7 @@ internal sealed class FolderCaseRename(TextPackStore store)
         if(owner.Version!=2||owner.RootHash!=RootHash)throw new InvalidDataException("Folder account binding changed.");
         RetainedReplacementProfile.Verify(store.StateDirectory,owner,RootHash);
         var marker=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json"),8192))!;
-        if(marker.Version is not (2 or 3 or 4 or 5))throw new InvalidDataException("Folder compatibility profile is unavailable.");return RetainedReplacementProfile.PrincipalHash(owner);
+        if(marker.Version is not (2 or 3 or 4 or 5 or 6))throw new InvalidDataException("Folder compatibility profile is unavailable.");return RetainedReplacementProfile.PrincipalHash(owner);
     }
     IDisposable Lease()=>RetainedFileReplacement.AcquireLease(Path.Combine(store.StateDirectory,"folder-case.lock"));
     void Validate(Intent intent,string owner)
@@ -77,7 +77,7 @@ internal sealed class FolderCaseRename(TextPackStore store)
         var owner=Owner();foreach(var file in Directory.EnumerateFiles(DirectoryPath,"*.json")){if(!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file),"D",out var id)||Path.GetFileName(file)!=id.ToString("D")+".json")throw new InvalidDataException("Unknown folder journal.");yield return Read(id,owner);}
     }
     // Private read-only attestation; no Owner/Entries/Lease/classification calls.
-    Dictionary<string,string> ReadCompletedHistory(string principalHash)
+    internal Dictionary<string,string> ReadCompletedHistory(string principalHash)
     {
         if(!RetainedFileReplacement.ValidHash(principalHash))throw new InvalidDataException("Invalid attested principal.");
         Dictionary<string,string> Snapshot()

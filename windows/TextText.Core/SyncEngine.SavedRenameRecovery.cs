@@ -28,10 +28,14 @@ public sealed partial class SyncEngine
     string SavedMoveLocalProof(string itemId)
     {
         var state=Load();var context=SavedRenameContext();
-        var files=store.Scan().Where(file=>file.ItemId==itemId).OrderBy(file=>file.Path,StringComparer.Ordinal).ToArray();
+        var typed=state.ProtectedRenames.GetValueOrDefault(itemId)?.Version==2||state.SharedRenames.TryGetValue(itemId,out var unknownLegacy)&&unknownLegacy.Lifecycle is null;
+        var snapshot=typed&&context is not null?store.GenerationProtectionSnapshot(itemId,context.Scope):null;
+        var discovery=typed?store.InspectGenerationInventory():null;
+        var files=(discovery?.Files??store.Scan()).Where(file=>file.ItemId==itemId).OrderBy(file=>file.Path,StringComparer.Ordinal).ToArray();
+        if(typed&&context is not null)foreach(var file in files)if(TextPackStore.Hash(store.ReadGenerationProjection(file.Path,itemId,context.Scope))!=file.Hash)throw new FileChangedException();
         var protection=ReadSavedProtection(itemId);
         return SavedMoveHash(new{State=JsonSerializer.Serialize(state),Context=context,Files=files,
-            Errors=store.LastScanErrors,Protection=protection,Intent=store.Intent(itemId),Editing=IsEditing(itemId),
+            Errors=discovery?.Errors??store.LastScanErrors,Generation=snapshot,Protection=protection,Intent=store.Intent(itemId),Editing=IsEditing(itemId),
             Binding=transport.ProtectedRenameBinding,Capabilities=transport.Capabilities});
     }
     static void RequireSavedMoveId(string id)
@@ -55,10 +59,12 @@ public sealed partial class SyncEngine
         var legacy=state.SharedRenames.Values.SingleOrDefault(value=>value.Id==id);
         if(record is null&&legacy is null)throw new FileChangedException();
         var itemId=record?.Request.ItemId??legacy!.ItemId;
+        using var generationInspection=BeginGenerationInspection(state,itemId,manifest?.SingleOrDefault(value=>value.ItemId==itemId));
         var source=record?.Request.Source??legacy!.Path;var destination=record?.Request.Destination??legacy!.Destination!;
         var localProof=SavedMoveLocalProof(itemId);
-        var files=store.Scan().Where(file=>file.ItemId==itemId).ToArray();
-        var local=files.Length==1?files[0]:null;var unique=files.Length==1&&store.LastScanErrors.Count==0;
+        var discovery=record?.Version==2||legacy?.Lifecycle is null&&legacy is not null?store.InspectGenerationInventory():null;
+        var files=(discovery?.Files??store.Scan()).Where(file=>file.ItemId==itemId).ToArray();
+        var local=files.Length==1?files[0]:null;var unique=files.Length==1&&(discovery?.Errors??store.LastScanErrors).Count==0;
         var matches=manifest?.Where(value=>value.ItemId==itemId).ToArray();
         var remote=matches?.Length==1?matches[0]:null;
         var context=SavedRenameContext(record is not null);
@@ -74,8 +80,8 @@ public sealed partial class SyncEngine
             checkpoint.Path==local.Path&&(checkpoint.ProjectedHash==local.Hash||checkpoint.Pending);
         if(legacy is not null)blocked??="ambiguous";
         if(!unique)blocked??="ambiguous";
-        if(record is not null&&(baseline?.Lifecycle!=record.Lifecycle||remote?.Lifecycle!=record.Lifecycle||remote?.Deleted==true))blocked??="lifecycle";
-        if(Blocked(state,itemId)||state.PendingPull?.ItemId==itemId||state.FolderCommand?.Request.Items.Any(item=>item.ItemId==itemId)==true||store.ReplacementBlocked(itemId)||pendingNative||!protection.Available)blocked??="recovery";
+        if(record is not null&&(remote?.Deleted==true||record.Version==1&&(baseline?.Lifecycle!=record.Lifecycle||remote?.Lifecycle!=record.Lifecycle)))blocked??="lifecycle";
+        if(Blocked(state,itemId)||state.PendingPull?.ItemId==itemId||state.FolderCommand?.Request.Items.Any(item=>item.ItemId==itemId)==true||ReplacementBlockedForSync(itemId)||pendingNative||!protection.Available)blocked??="recovery";
         var intent=store.Intent(itemId);
         if(intent is not null&&(intent.Kind!="rename"||intent.Destination!=local?.Path))blocked??="recovery";
         if(!ready)blocked??="checkpoint";
@@ -85,13 +91,17 @@ public sealed partial class SyncEngine
         var retry=false;var keep=false;
         if(blocked is null&&record is not null)
         {
+            void Current() {ct.ThrowIfCancellationRequested();if(SavedMoveLocalProof(itemId)!=localProof)throw new FileChangedException();}
+            var generations=await GenerationFacts(itemId,baseline,local,remote,checkpoint,record.ObservedGeneration,Current,ct);Current();
+            if(!record.ObservedGeneration.Matches(generations.Local)||!record.ObservedGeneration.Matches(generations.Remote))blocked="lifecycle";
             var resolution=record.Resolution;
             var observation=new MirrorSavedRenameObservation(phase,source,destination,record.Lifecycle,
                 resolution?.LocalPath,resolution?.RemotePath,resolution?.LocalLifecycle,resolution?.RemoteLifecycle,
                 local?.Path,remote?.RelativePath,baseline?.Path,checkpoint?.Path,baseline?.Lifecycle,remote?.Lifecycle,
-                remote?.Deleted??false,unique,ready,checkpoint?.RetiredReason is not null,scope,permitted,false,record.Receipt is not null,remote is not null);
+                remote?.Deleted??false,unique,ready,checkpoint?.RetiredReason is not null,scope,permitted,false,record.Receipt is not null,remote is not null,new(generations.Local,generations.Remote,record.ObservedGeneration,
+                    resolution?.LocalGeneration??MirrorGeneration.FromLegacy(resolution?.LocalLifecycle),resolution?.RemoteGeneration??MirrorGeneration.FromLegacy(resolution?.RemoteLifecycle)));
             if(mirrorPolicy is null)blocked="unavailable";
-            else
+            else if(blocked is null)
             {
                 var decision=await mirrorPolicy.SavedRenameAsync(observation,ct);
                 ct.ThrowIfCancellationRequested();
@@ -114,7 +124,7 @@ public sealed partial class SyncEngine
     {
         var state=Load();
         if(path is not null)_=store.Resolve(path);
-        var currentPaths=store.Scan().GroupBy(file=>file.ItemId).ToDictionary(group=>group.Key,group=>group.Select(file=>file.Path).ToArray());
+        var currentPaths=store.InspectGenerationInventory().Files.GroupBy(file=>file.ItemId).ToDictionary(group=>group.Key,group=>group.Select(file=>file.Path).ToArray());
         var candidates=state.ProtectedRenames.Values.Select(value=>(Id:value.Request.OperationId,Item:value.Request.ItemId,Source:value.Request.Source,Destination:value.Request.Destination))
             .Concat(state.SharedRenames.Values.Select(value=>(Id:value.Id,Item:value.ItemId,Source:value.Path,Destination:value.Destination!)))
             .Where(value=>path is null||value.Source==path||value.Destination==path||currentPaths.GetValueOrDefault(value.Item)?.Contains(path,StringComparer.Ordinal)==true)
@@ -155,7 +165,11 @@ public sealed partial class SyncEngine
         try
         {
             using var workspace=workspaceOwnership.Acquire();
-            beforeAcknowledge?.Invoke();var before=JsonSerializer.Serialize(Load());
+            beforeAcknowledge?.Invoke();var initial=Load();
+            var retained=initial.ProtectedRenames.Values.SingleOrDefault(r=>r.Request.OperationId==id);
+            var legacy=initial.SharedRenames.Values.SingleOrDefault(r=>r.Id==id);
+            using var generationInspection=BeginGenerationInspection(initial,retained?.Request.ItemId??legacy?.ItemId??throw new FileChangedException(),null);
+            var before=JsonSerializer.Serialize(initial);
             var remote=await SavedMoveRemote(ct);beforeAcknowledge?.Invoke();
             if(JsonSerializer.Serialize(Load())!=before)throw new FileChangedException();
             var inspected=await InspectSavedMove(id,remote.Items,remote.Blocked,ct);beforeAcknowledge?.Invoke();
@@ -165,7 +179,9 @@ public sealed partial class SyncEngine
             if(keep)
             {
                 var context=SavedRenameContext(true)??throw new SharedAccountMismatchException();
-                var stopped=ProtectedSavedRename.Stop(record,new(entry.LocalPath!,entry.RemotePath!,record.Lifecycle,record.Lifecycle));
+                var resolution=record.Version==1?new ProtectedSavedRename.Resolution(entry.LocalPath!,entry.RemotePath!,record.Lifecycle,record.Lifecycle):
+                    new(entry.LocalPath!,entry.RemotePath!,null,null,record.ObservedGeneration,record.ObservedGeneration);
+                var stopped=ProtectedSavedRename.Stop(record,resolution);
                 var next=ProtectedSavedRename.Replace(context,inspected.State.ProtectedRenames,entry.ItemId,record,stopped);
                 beforeAcknowledge?.Invoke();
                 if(SavedMoveLocalProof(entry.ItemId)!=inspected.LocalProof)throw new FileChangedException();

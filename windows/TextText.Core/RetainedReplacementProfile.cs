@@ -38,16 +38,16 @@ public static class RetainedReplacementProfile
         VerifyUnlocked(state,owner,rootHash);
         observed?.Invoke();
     }
-    static void VerifyUnlocked(string state, AccountRootOwnership.Owner owner, string rootHash)
+    internal static void VerifyUnlocked(string state, AccountRootOwnership.Owner owner, string rootHash)
     {
         var directory = DirectoryFor(state); RetainedFileReplacement.CheckPath(directory);
         var bytes = RetainedFileReplacement.Read(Path.Combine(directory, "profile.json"), 8192);
-        using var fields = JsonDocument.Parse(bytes);
-        if (!fields.RootElement.EnumerateObject().Select(field => field.Name).Order().SequenceEqual(new[] { "OriginalOwnerHash", "OwnerVersion", "PrincipalHash", "Version" })) throw new InvalidDataException("Invalid replacement profile fields.");
+        RetainedFileReplacement.JsonFields(bytes,["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"],["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"]);
         var marker = JsonSerializer.Deserialize<Marker>(bytes) ?? throw new InvalidDataException("Invalid replacement profile.");
         var original = RetainedFileReplacement.Read(Path.Combine(directory, "owner-v1.json"), 8192);
+        RetainedFileReplacement.JsonFields(original,["Version","Origin","WorkspaceId","AccountId","RootHash"],["Version","Origin","WorkspaceId","AccountId","RootHash"]);
         var before = JsonSerializer.Deserialize<AccountRootOwnership.Owner>(original) ?? throw new InvalidDataException("Invalid original owner.");
-        if (marker.Version is not (1 or 2 or 3 or 4 or 5) || marker.OwnerVersion != 2 || before.Version != 1 || owner.RootHash != rootHash || before.RootHash != rootHash ||
+        if (marker.Version is not (1 or 2 or 3 or 4 or 5 or 6) || marker.OwnerVersion != 2 || before.Version != 1 || owner.RootHash != rootHash || before.RootHash != rootHash ||
             marker.OriginalOwnerHash != TextPackStore.Hash(original) || marker.PrincipalHash != PrincipalHash(owner) || marker.PrincipalHash != PrincipalHash(before))
             throw new InvalidDataException("Replacement profile scope cannot be verified.");
         if(marker.Version>=2) {
@@ -73,6 +73,13 @@ public static class RetainedReplacementProfile
             RetainedFileReplacement.JsonFields(prior,["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"],["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"]);
             var old=JsonSerializer.Deserialize<Marker>(prior)??throw new InvalidDataException("Invalid prior shared rename profile.");
             if(old.Version!=4||old!=(marker with{Version=4})||!RetainedFileReplacement.Read(Path.Combine(directory,"profile-v4-displaced.json"),8192).SequenceEqual(prior))throw new InvalidDataException("Saved file move compatibility publication requires review. Both profiles remain retained.");
+        }
+        if(marker.Version>=6) {
+            var prior=RetainedFileReplacement.Read(Path.Combine(directory,"profile-v5.json"),8192);
+            RetainedFileReplacement.JsonFields(prior,["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"],["Version","OwnerVersion","PrincipalHash","OriginalOwnerHash"]);
+            var old=JsonSerializer.Deserialize<Marker>(prior)??throw new InvalidDataException("Invalid prior generation-aware rename profile.");
+            if(old.Version!=5||old!=(marker with{Version=5})||!RetainedFileReplacement.Read(Path.Combine(directory,"profile-v5-displaced.json"),8192).SequenceEqual(prior))
+                throw new InvalidDataException("Generation-aware move publication requires review. Both profiles remain retained.");
         }
         if(owner.Version==2 && !RetainedFileReplacement.Read(Path.Combine(directory,"owner-displaced.json"),8192).SequenceEqual(original))
             throw new InvalidDataException("Ownership changed during replacement profile publication. Both ownership versions are retained for review.");
@@ -226,6 +233,28 @@ public static class RetainedReplacementProfile
         if(!RetainedFileReplacement.Read(path,8192).SequenceEqual(original))throw new FileChangedException();
         var displaced=Path.Combine(directory,"profile-v4-displaced.json");if(File.Exists(displaced))throw new InvalidDataException("A prior saved file move publication requires review.");
         observe?.Invoke("beforeSharedRenameProfilePublication");File.Replace(staged,path,displaced,ignoreMetadataErrors:false);observe?.Invoke("sharedRenameProfilePublished");VerifyUnlocked(store.StateDirectory,owner,rootHash);
+    }
+
+    // The current exclusive workspace writer calls this immediately before its
+    // first incompatible v2 record. This method never persists sync work.
+    public static void PrepareObservedAbsenceRename(TextPackStore store,Action<string>? observe=null)
+    {
+        PrepareSharedRename(store);
+        using var migration=MigrationLease(store.StateDirectory);
+        var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,AccountRootOwnership.FileName),8192))!;
+        var rootHash=TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root));VerifyUnlocked(store.StateDirectory,owner,rootHash);
+        var directory=DirectoryFor(store.StateDirectory);var path=Path.Combine(directory,"profile.json");
+        var original=RetainedFileReplacement.Read(path,8192);var marker=JsonSerializer.Deserialize<Marker>(original)!;
+        if(marker.Version==6)return;
+        if(marker.Version!=5)throw new InvalidDataException("Invalid generation-aware move prior profile.");
+        Publish(Path.Combine(directory,"profile-v5.json"),original);observe?.Invoke("observedAbsenceProfilePreserved");
+        var staged=Path.Combine(directory,".profile-v6-"+Guid.NewGuid().ToString("N"));
+        RetainedFileReplacement.Create(staged,JsonSerializer.SerializeToUtf8Bytes(marker with{Version=6}));observe?.Invoke("observedAbsenceProfileStaged");
+        if(!RetainedFileReplacement.Read(path,8192).SequenceEqual(original))throw new FileChangedException();
+        var displaced=Path.Combine(directory,"profile-v5-displaced.json");
+        if(File.Exists(displaced))throw new InvalidDataException("A prior generation-aware move publication requires review.");
+        observe?.Invoke("beforeObservedAbsenceProfilePublication");File.Replace(staged,path,displaced,ignoreMetadataErrors:false);
+        observe?.Invoke("observedAbsenceProfilePublished");VerifyUnlocked(store.StateDirectory,owner,rootHash);
     }
 
 }

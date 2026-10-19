@@ -191,7 +191,8 @@ public sealed partial class ReplacementRecoveryRegistry
     }
     // Private diagnostic seam: caller has already attested exact owner/root.
     // Existing production validation remains owner-verifying by default.
-    Dictionary<string,string> ReadCompletedHistory(string principalHash)
+    Dictionary<string,string> ReadCompletedHistory(string principalHash)=>ReadCompletedHistoryForItem(principalHash,null);
+    internal Dictionary<string,string> ReadCompletedHistoryForItem(string principalHash,string? itemId)
     {
         if(!RetainedFileReplacement.ValidHash(principalHash))throw new InvalidDataException("Invalid attested principal.");
         Dictionary<string,string> Snapshot()
@@ -210,6 +211,10 @@ public sealed partial class ReplacementRecoveryRegistry
                 CheckFields(bytes);var entry=JsonSerializer.Deserialize<Entry>(bytes)??throw new InvalidDataException("Invalid recovery metadata.");
                 Validate(entry,verifyOwner:false,verified:verified);
                 if(entry.Operation!=id||entry.OwnerHash!=principalHash)throw new InvalidDataException("Recovery principal changed.");
+                // Unrelated entries retain their existing native recovery lane.
+                // Their index schemas/owner still validate; never inspect or
+                // classify another item's retained operation here.
+                if(itemId is not null&&entry.ItemId!=itemId)continue;
                 var original=Target(entry,verified);
                 var exact=entry.RecoveryPath is not null?RecoveryLocation(entry,verified):RetainedFileReplacement.OperationDirectory(original,id);
                 // Never call RecoveryFor: its missing-pointer branch searches for relocation.

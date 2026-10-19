@@ -165,10 +165,10 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             return file.ItemId==itemId&&file.Path==cp.Path&&(file.Hash==cp.ProjectedHash||cp.Pending);
         }catch(Exception error)when(error is IOException or InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException or UnauthorizedAccessException){return false;}
     }
-    internal static List<string> ReconcileAcknowledgements(TextPackStore store,SyncEngine.State state) {
+    internal static List<string> ReconcileAcknowledgements(TextPackStore store,SyncEngine.State state,IReadOnlySet<string>? inspectOnlyItems=null) {
         var completed=new List<string>();var root=System.IO.Path.Combine(store.StateDirectory,"shared-editing");if(!System.IO.Directory.Exists(root))return completed;
         foreach(var file in System.IO.Directory.EnumerateFiles(root,"acknowledge.json",SearchOption.AllDirectories)) {
-            var cp=Read<SharedCheckpoint>(file)!;if(cp.Version!=1||cp.Pending||!ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision))throw new InvalidDataException("Invalid checkpoint acknowledgement.");
+            var cp=Read<SharedCheckpoint>(file)!;if(inspectOnlyItems?.Contains(cp.ItemId)==true)continue;if(cp.Version!=1||cp.Pending||!ValidHash(cp.ProjectedHash)||!ValidHash(cp.AcknowledgedRevision))throw new InvalidDataException("Invalid checkpoint acknowledgement.");
             if(File.Exists(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(file)!,"intent.json")))continue;
             var projection=FollowLocalProjection(store,cp.ItemId);
             if(projection!=null&&projection.Path!=cp.Path) {
@@ -321,6 +321,18 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             });}catch{lease.Dispose();throw;}
         }finally{gate.Release();}
     }
+    void ValidateRequestedProjection(string itemId,string path,string expectedHash) {
+        var ownerPath=System.IO.Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);
+        var ownerBytes=RetainedFileReplacement.Read(ownerPath,8192);
+        RetainedFileReplacement.JsonFields(ownerBytes,["Version","Origin","WorkspaceId","AccountId","RootHash"],["Version","Origin","WorkspaceId","AccountId","RootHash"]);
+        var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(ownerBytes)??throw new SharedAccountMismatchException();
+        if(principalAccountId is null||owner.AccountId!=principalAccountId)throw new SharedAccountMismatchException();
+        var scope=new ProtectedRenameScope(owner.Origin,owner.WorkspaceId,owner.AccountId);
+        var proof=store.GenerationProtectionSnapshot(itemId,scope);
+        var inventory=store.InspectGenerationInventory();var found=inventory.Files.Where(file=>file.ItemId==itemId).ToArray();
+        if(inventory.Errors.Count!=0||found.Length!=1||found[0].Path!=path||found[0].Hash!=expectedHash)throw new FileChangedException();
+        if(TextPackStore.Hash(store.ReadGenerationProjection(path,itemId,scope))!=expectedHash||store.GenerationProtectionSnapshot(itemId,scope)!=proof)throw new FileChangedException();
+    }
     public async Task<PackFile> CheckpointAsync(string sessionToken,string expectedHash,byte[] textPack,SharedCheckpoint checkpoint,CancellationToken ct=default) {
         await gate.WaitAsync(ct);try {
             ObjectDisposedException.ThrowIf(disposed,this);
@@ -328,7 +340,17 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
             string? acknowledgedDirectory=null;
             var result=store.WithExclusiveMutation(() => {
                 var prior=Recover(session.ItemId);
-                if(checkpoint.Path!=session.Path&&checkpoint.Path!=prior?.Path)throw new InvalidDataException("Checkpoint identity mismatch.");
+                if(checkpoint.Path!=session.Path&&checkpoint.Path!=prior?.Path) {
+                    Validate(store,checkpoint);RequireAccount(checkpoint);
+                    if(checkpoint.ItemId!=session.ItemId||TextPackStore.Identity(textPack)!=session.ItemId||TextPackStore.Hash(textPack)!=checkpoint.ProjectedHash)throw new InvalidDataException("Checkpoint identity mismatch.");
+                    if(prior is not null) {
+                        Validate(store,prior);RequireAccount(prior);
+                        if(prior.ItemId!=session.ItemId||prior.RetiredReason is not null||checkpoint.JournalGeneration<=prior.JournalGeneration)throw new InvalidOperationException("Newer or protected shared edits are retained.");
+                    }
+                    // This native editor request may follow an actual same-item raw
+                    // move. It grants neither a server name change nor generation evidence.
+                    ValidateRequestedProjection(session.ItemId,checkpoint.Path,expectedHash);
+                }
                 prior=FollowLocalProjection(store,session.ItemId);
                 if(prior==null&&!File.Exists(store.Resolve(session.Path))) {
                     var moved=UniqueProjection(store,session.ItemId);

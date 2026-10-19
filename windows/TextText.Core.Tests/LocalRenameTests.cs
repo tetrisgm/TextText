@@ -95,6 +95,7 @@ static class LocalRenameTests
         await VerifyOrdering(temp, "restored-lifecycle", assert);
         await VerifyRefusal(temp, "duplicate", assert);
         await VerifyRefusal(temp, "collision", assert);
+        foreach(var invalid in new[]{"foreign-path","foreign-payload","duplicate"})await VerifyRequestedRelocationRefusal(temp,invalid,assert);
         await VerifyAnnouncement(temp, "lost-reply", assert);
         await VerifyAnnouncement(temp, "closed-reply", assert);
         await VerifyAnnouncement(temp, "moved-during-reply", assert);
@@ -141,6 +142,19 @@ static class LocalRenameTests
             assert(saved.Path==target&&files.Read(target).SequenceEqual(next)&&Retained(files).Pending,
                 "raw rename continues pending checkpoint after "+ordering);
         }
+    }
+    static async Task VerifyRequestedRelocationRefusal(string temp,string kind,Action<bool,string> assert) {
+        var files=Test.OwnedPathStore(Path.Combine(temp,"requested-"+kind),Path.Combine(temp,"requested-state-"+kind));
+        var initial=files.Write("Original.textpack",Pack("baseline"));var sync=Test.NewOwnedPathSync(files,new Test.Fake());await sync.SyncAsync();
+        using var editing=new SharedEditingStore(files,sync,Test.PathAccount);var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
+        var pending=Pack("retained pending writing");await editing.CheckpointAsync(session.SessionToken,initial.Hash,pending,Checkpoint(initial.Path,initial.Hash,pending,1));
+        const string target="Moved.textpack";File.Move(files.Resolve(initial.Path),files.Resolve(target));
+        if(kind=="duplicate")File.Copy(files.Resolve(target),files.Resolve("Copy.textpack"));
+        if(kind=="foreign-path")File.WriteAllBytes(files.Resolve("Foreign.textpack"),Pack("other item","other-id"));
+        var directory=Path.Combine(files.StateDirectory,"shared-editing",Identity);var before=Directory.GetFiles(directory).ToDictionary(path=>path,path=>File.ReadAllBytes(path));
+        var path=kind=="foreign-path"?"Foreign.textpack":target;var next=Pack("next writing",kind=="foreign-payload"?"other-id":Identity);var refused=false;
+        try{await editing.CheckpointAsync(session.SessionToken,TextPackStore.Hash(pending),next,Checkpoint(path,initial.Hash,next,2));}catch(Exception error)when(error is IOException or InvalidDataException){refused=true;}
+        assert(refused&&before.All(pair=>File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value))&&Directory.GetFiles(directory).Length==before.Count&&File.ReadAllBytes(files.Resolve(target)).SequenceEqual(pending),"requested raw relocation refuses "+kind+" before rebasing or changing exact pending journals");
     }
     static async Task VerifyRefusal(string temp,string scenario,Action<bool,string> assert)
     {

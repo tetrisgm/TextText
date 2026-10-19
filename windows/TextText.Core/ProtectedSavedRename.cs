@@ -11,13 +11,16 @@ public static class ProtectedSavedRename
 {
     public enum Phase { Pending, TerminalRejected, Stopped }
     public sealed record Context(string RootHash,ProtectedRenameScope Scope);
-    public sealed record Resolution(string LocalPath,string RemotePath,string LocalLifecycle,string RemoteLifecycle);
+    public sealed record Resolution(string LocalPath,string RemotePath,string? LocalLifecycle,string? RemoteLifecycle,
+        MirrorGeneration? LocalGeneration=null,MirrorGeneration? RemoteGeneration=null);
     [JsonConverter(typeof(RecordConverter))]
     public sealed record Record(int Version,string RootHash,ProtectedRenameRequest Request,ProtectedRenameScope Scope,
-        string BaselineHash,string Lifecycle,Phase Phase,ProtectedRenameReceipt? Receipt,Resolution? Resolution);
+        string BaselineHash,string? Lifecycle,Phase Phase,ProtectedRenameReceipt? Receipt,Resolution? Resolution,MirrorGeneration? Generation=null) {
+        public MirrorGeneration ObservedGeneration=>Version==1?MirrorGeneration.FromLegacy(Lifecycle):Generation??MirrorGeneration.Unknown;
+    }
     public sealed record Observation(string RootHash,ProtectedRenameScope Scope,string LocalPath,string RemotePath,
         string? LocalLifecycle,string? RemoteLifecycle,string RemoteRevision,string CheckpointPath,
-        bool CheckpointReady,bool LocalUnique,bool OrganizePermitted);
+        bool CheckpointReady,bool LocalUnique,bool OrganizePermitted,MirrorGeneration? LocalGeneration=null,MirrorGeneration? RemoteGeneration=null);
     public sealed record ArchiveProof(string OperationId,string RootHash,ProtectedRenameScope Scope,string RecordHash,bool Durable);
     public sealed record Outcome(string? MovedRevision,Record? Rejected);
     public sealed record Normalization(Record? Record,bool LegacyNeedsReview,SyncEngine.Operation RetainedLegacy);
@@ -45,10 +48,16 @@ public static class ProtectedSavedRename
     }
     public static void Validate(Record record,string rootHash,ProtectedRenameScope scope) {
         ValidateScope(scope);
-        if(record is null||record.Request is null||record.Version!=1||!Digest(rootHash)||record.RootHash!=rootHash||record.Scope!=scope||
-           !Digest(record.BaselineHash)||!Text(record.Lifecycle,512)||!Digest(record.Request.BaseRevision)||
+        if(record is null||record.Request is null||record.Version is not(1 or 2)||!Digest(rootHash)||record.RootHash!=rootHash||record.Scope!=scope||
+           !Digest(record.BaselineHash)||!Digest(record.Request.BaseRevision)||
            !Guid.TryParseExact(record.Request.OperationId,"D",out var operation)||operation.ToString("D")!=record.Request.OperationId||
            !Segment(record.Request.ItemId)||!Path(record.Request.Source)||!Path(record.Request.Destination)||record.Request.Source==record.Request.Destination)throw Invalid();
+        if(record.Version==1) {
+            if(!Text(record.Lifecycle,512)||record.Generation is not null)throw Invalid();
+        } else {
+            if(record.Lifecycle is not null||record.Generation is null)throw Invalid();
+            MirrorGeneration.Validate(record.Generation);if(!record.Generation.Known)throw Invalid();
+        }
         if(record.Phase==Phase.Pending) {
             if(record.Receipt is not null||record.Resolution is not null)throw Invalid();
             return;
@@ -63,7 +72,11 @@ public static class ProtectedSavedRename
         }
         var resolution=record.Resolution;
         if(resolution is null||receipt.Deleted||receipt.Revision is null||!Path(resolution.LocalPath)||!Path(resolution.RemotePath)||
-           resolution.RemotePath!=receipt.RelativePath||resolution.LocalLifecycle!=record.Lifecycle||resolution.RemoteLifecycle!=record.Lifecycle)throw Invalid();
+           resolution.RemotePath!=receipt.RelativePath)throw Invalid();
+        if(record.Version==1) {
+            if(resolution.LocalLifecycle!=record.Lifecycle||resolution.RemoteLifecycle!=record.Lifecycle||resolution.LocalGeneration is not null||resolution.RemoteGeneration is not null)throw Invalid();
+        } else if(resolution.LocalLifecycle is not null||resolution.RemoteLifecycle is not null||resolution.LocalGeneration is null||resolution.RemoteGeneration is null||
+                  !record.ObservedGeneration.Matches(resolution.LocalGeneration)||!record.ObservedGeneration.Matches(resolution.RemoteGeneration))throw Invalid();
     }
     public static void ValidateMap(IReadOnlyDictionary<string,Record> records,string rootHash,ProtectedRenameScope scope) {
         if(records.Count>1000)throw Invalid();
@@ -129,6 +142,10 @@ public static class ProtectedSavedRename
         var record=new Record(1,rootHash,request,scope,baselineHash,lifecycle,Phase.Pending,null,null);
         Validate(record,rootHash,scope);return record;
     }
+    public static Record Pending(string rootHash,ProtectedRenameRequest request,ProtectedRenameScope scope,string baselineHash,MirrorGeneration generation) {
+        var record=new Record(2,rootHash,request,scope,baselineHash,null,Phase.Pending,null,null,generation);
+        Validate(record,rootHash,scope);return record;
+    }
     /// Legacy flags are not authenticated rejection receipts. The existing
     /// owner must retain the old ambiguous record/review status until its exact
     /// request can be replayed or inspected; normalization never clears it.
@@ -168,7 +185,7 @@ public static class ProtectedSavedRename
     /// shared policy must own suppression/replay/staging eligibility.
     public static bool StoppedFactsMatch(Record record,string localPath,string remotePath,string? localLifecycle,string? remoteLifecycle,bool unique) {
         Validate(record,record.RootHash,record.Scope);
-        return record.Phase==Phase.Stopped&&unique&&record.Resolution is {} resolution&&
+        return record.Version==1&&record.Phase==Phase.Stopped&&unique&&record.Resolution is {} resolution&&
             resolution.LocalPath==localPath&&resolution.RemotePath==remotePath&&resolution.LocalLifecycle==localLifecycle&&resolution.RemoteLifecycle==remoteLifecycle;
     }
     /// Caller supplies facts freshly revalidated under its existing lease.
@@ -179,8 +196,20 @@ public static class ProtectedSavedRename
            replacement.Request.ItemId!=stopped.Request.ItemId||replacement.Request.OperationId==stopped.Request.OperationId||
            observed.RootHash!=stopped.RootHash||observed.Scope!=stopped.Scope||!observed.CheckpointReady||!observed.LocalUnique||!observed.OrganizePermitted||
            observed.CheckpointPath!=observed.LocalPath||observed.LocalPath==resolution.LocalPath||observed.RemotePath!=resolution.RemotePath||
-           observed.LocalLifecycle!=stopped.Lifecycle||observed.RemoteLifecycle!=stopped.Lifecycle||replacement.Lifecycle!=stopped.Lifecycle||
+           !FreshGenerationMatches(stopped,replacement,observed)||
            replacement.Request.Destination!=observed.LocalPath||replacement.Request.Source!=observed.RemotePath||replacement.Request.BaseRevision!=observed.RemoteRevision)throw Changed();
+    }
+    static bool FreshGenerationMatches(Record stopped,Record replacement,Observation observed) {
+        if(stopped.Version!=replacement.Version)return false;
+        if(stopped.Version==1)return observed.LocalGeneration is null&&observed.RemoteGeneration is null&&
+            observed.LocalLifecycle==stopped.Lifecycle&&observed.RemoteLifecycle==stopped.Lifecycle&&replacement.Lifecycle==stopped.Lifecycle;
+        return observed.LocalLifecycle is null&&observed.RemoteLifecycle is null&&observed.LocalGeneration is {} local&&observed.RemoteGeneration is {} remote&&
+            stopped.ObservedGeneration.Matches(local)&&stopped.ObservedGeneration.Matches(remote)&&stopped.ObservedGeneration.Matches(replacement.ObservedGeneration);
+    }
+    public static bool StoppedFactsMatch(Record record,string localPath,string remotePath,MirrorGeneration local,MirrorGeneration remote,bool unique) {
+        Validate(record,record.RootHash,record.Scope);
+        return record.Phase==Phase.Stopped&&unique&&record.Resolution is {} resolution&&resolution.LocalPath==localPath&&resolution.RemotePath==remotePath&&
+            record.ObservedGeneration.Matches(local)&&record.ObservedGeneration.Matches(remote);
     }
     public static byte[] ArchiveBytes(Record record) {
         using var document=JsonDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(record));
@@ -208,7 +237,7 @@ public static class ProtectedSavedRename
         if(expected is not null&&replacement is not null) {
             Validate(replacement,basis.RootHash,basis.Scope);
             if(expected.Request==replacement.Request) {
-                if(expected.BaselineHash!=replacement.BaselineHash||expected.Lifecycle!=replacement.Lifecycle||
+                if(expected.Version!=replacement.Version||expected.Generation!=replacement.Generation||expected.BaselineHash!=replacement.BaselineHash||expected.Lifecycle!=replacement.Lifecycle||
                    expected.Phase==Phase.TerminalRejected&&replacement.Receipt!=expected.Receipt||
                    !(expected==replacement||expected.Phase==Phase.Pending&&replacement.Phase==Phase.TerminalRejected||expected.Phase==Phase.TerminalRejected&&replacement.Phase==Phase.Stopped))throw Changed();
             } else {
@@ -241,7 +270,11 @@ public static class ProtectedSavedRename
         var flag=value.GetProperty("deleted");if(flag.ValueKind is not(JsonValueKind.True or JsonValueKind.False))throw Invalid();
         return new(Request(value.GetProperty("request")),Scope(value.GetProperty("scope")),String(value,"status"),String(value,"relativePath"),NullableString(value,"revision"),flag.GetBoolean());
     }
-    static Resolution ResolutionValue(JsonElement value) {
+    static Resolution ResolutionValue(JsonElement value,int version) {
+        if(version==2) {
+            Keys(value,"localPath","remotePath","localGeneration","remoteGeneration");
+            return new(String(value,"localPath"),String(value,"remotePath"),null,null,JsonSerializer.Deserialize<MirrorGeneration>(value.GetProperty("localGeneration")),JsonSerializer.Deserialize<MirrorGeneration>(value.GetProperty("remoteGeneration")));
+        }
         Keys(value,"localPath","remotePath","localLifecycle","remoteLifecycle");
         return new(String(value,"localPath"),String(value,"remotePath"),String(value,"localLifecycle"),String(value,"remoteLifecycle"));
     }
@@ -251,17 +284,27 @@ public static class ProtectedSavedRename
         public override Record Read(ref Utf8JsonReader reader,Type type,JsonSerializerOptions options) {
             using var document=JsonDocument.ParseValue(ref reader);var value=document.RootElement;
             if(Encoding.UTF8.GetByteCount(value.GetRawText())>32768)throw Invalid();
-            Keys(value,"version","rootHash","request","scope","baselineHash","lifecycle","phase","receipt","resolution");
+            var version=value.GetProperty("version").GetInt32();
+            Keys(value,"version","rootHash","request","scope","baselineHash",version==2?"generation":"lifecycle","phase","receipt","resolution");
             var phase=String(value,"phase") switch{"pending"=>Phase.Pending,"terminal-rejected"=>Phase.TerminalRejected,"stopped"=>Phase.Stopped,_=>throw Invalid()};
             var record=new Record(value.GetProperty("version").GetInt32(),String(value,"rootHash"),Request(value.GetProperty("request")),Scope(value.GetProperty("scope")),
-                String(value,"baselineHash"),String(value,"lifecycle"),phase,value.GetProperty("receipt").ValueKind==JsonValueKind.Null?null:Receipt(value.GetProperty("receipt")),
-                value.GetProperty("resolution").ValueKind==JsonValueKind.Null?null:ResolutionValue(value.GetProperty("resolution")));
+                String(value,"baselineHash"),version==2?null:String(value,"lifecycle"),phase,value.GetProperty("receipt").ValueKind==JsonValueKind.Null?null:Receipt(value.GetProperty("receipt")),
+                value.GetProperty("resolution").ValueKind==JsonValueKind.Null?null:ResolutionValue(value.GetProperty("resolution"),version),
+                version==2?JsonSerializer.Deserialize<MirrorGeneration>(value.GetProperty("generation")):null);
             Validate(record,record.RootHash,record.Scope);return record;
         }
         public override void Write(Utf8JsonWriter writer,Record value,JsonSerializerOptions options) {
             Validate(value,value.RootHash,value.Scope);
             // Explicit field names and nulls make the stored schema independent
             // of the surrounding State serializer's options.
+            if(value.Version==2) {
+                JsonSerializer.Serialize(writer,new {version=2,rootHash=value.RootHash,
+                    request=new{operationId=value.Request.OperationId,itemId=value.Request.ItemId,source=value.Request.Source,destination=value.Request.Destination,baseRevision=value.Request.BaseRevision},
+                    scope=new{origin=value.Scope.Origin,workspaceId=value.Scope.WorkspaceId,accountId=value.Scope.AccountId},baselineHash=value.BaselineHash,generation=value.Generation,
+                    phase=value.Phase switch{Phase.Pending=>"pending",Phase.TerminalRejected=>"terminal-rejected",_=>"stopped"},receipt=ReceiptValue(value.Receipt),
+                    resolution=value.Resolution is {} r2?new{localPath=r2.LocalPath,remotePath=r2.RemotePath,localGeneration=r2.LocalGeneration,remoteGeneration=r2.RemoteGeneration}:null});
+                return;
+            }
             var data=new {version=value.Version,rootHash=value.RootHash,request=new{operationId=value.Request.OperationId,itemId=value.Request.ItemId,source=value.Request.Source,destination=value.Request.Destination,baseRevision=value.Request.BaseRevision},
                 scope=new{origin=value.Scope.Origin,workspaceId=value.Scope.WorkspaceId,accountId=value.Scope.AccountId},baselineHash=value.BaselineHash,lifecycle=value.Lifecycle,
                 phase=value.Phase switch{Phase.Pending=>"pending",Phase.TerminalRejected=>"terminal-rejected",_=>"stopped"},receipt=ReceiptValue(value.Receipt),

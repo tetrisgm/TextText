@@ -197,7 +197,8 @@ public sealed partial class TextPackStore
         return true;
     }
     public IReadOnlyList<PackFile> Scan() => ScanInventory().Files;
-    public WorkspaceInventory ScanInventory()
+    public WorkspaceInventory ScanInventory()=>ScanInventory(null,null);
+    WorkspaceInventory ScanInventory(IReadOnlySet<string>? noRecoveryItems,ProtectedRenameScope? generationScope)
     {
         var folders=new List<string>();var found = new Dictionary<string,PackFile>();var duplicated=new HashSet<string>();var errors=new List<ScanError>();
         string Relative(string path)=>System.IO.Path.GetRelativePath(Root,path).Replace('\\','/');
@@ -212,14 +213,29 @@ public sealed partial class TextPackStore
                     if(ProviderPaths.IsUnsafeReparse(path)){Error(path,"Linked workspace entry is unsupported.");continue;}
                     if(Directory.Exists(path)){Visit(path);continue;}
                     if(!path.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase))continue;
-                    var entry=Describe(Relative(path));
+                    PackFile entry;
+                    if(noRecoveryItems is {Count:>0}) {
+                        var discovery=ReadProjection(Resolve(Relative(path)));var id=Identity(discovery);
+                        if(noRecoveryItems.Contains(id)) {
+                            try {
+                                var bytes=ReadGenerationProjection(Relative(path),id,generationScope??throw new SharedAccountMismatchException());
+                                entry=new(Relative(path),Hash(bytes),id);
+                            } catch(Exception error)when(error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) {
+                                Error(path,"Generation inspection is unavailable; bytes remain retained.",id);continue;
+                            }
+                        } else entry=Describe(Relative(path));
+                    } else entry=Describe(Relative(path));
                     if(duplicated.Contains(entry.ItemId)){Error(path,"Duplicate document identity.",entry.ItemId);continue;}
                     if(found.Remove(entry.ItemId,out var previous)){duplicated.Add(entry.ItemId);Error(Resolve(previous.Path),"Duplicate document identity.",entry.ItemId);Error(path,"Duplicate document identity.",entry.ItemId);continue;}
                     found.Add(entry.ItemId,entry);
                 }catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or DecoderFallbackException){Error(path,"File is invalid or temporarily unavailable. Its contents have been preserved.");}
             }
         }
-        lock(gate){FolderCases.VerifyExistingProfile();AssertFolderRenameReadable();CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
+        lock(gate){FolderCases.VerifyExistingProfile();
+            if(noRecoveryItems is not {Count:>0})AssertFolderRenameReadable();
+            // Candidate reads validate fixed folder history without repair.
+            // Unrelated files retain their ordinary per-read recovery path.
+            CheckLinks(Root);Visit(Root);LastScanErrors=errors.ToArray();}return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
     }
 
     public static void AtomicWrite(string path, byte[] bytes, bool overwrite = true)
