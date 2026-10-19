@@ -221,7 +221,7 @@ export function validateConfig(config) {
   }
   if (config.assetProof) {
     if ((config.pattern ?? 'append') !== 'append' || config.rounds > 100 ||
-        ['assetReplacement','assetReplacements','diagnosticSameEntryRace','leafMove','folderCaseMove','restart','offline','transientInvalid','malformedRepair','closeProbe','browserClose','closeDuringTraffic','soak','multiField','fileWrites','sustainedTyping','undoRedo','lostAck'].some(key=>config[key] !== undefined))
+        ['assetReplacement','assetReplacements','diagnosticSameEntryRace','leafMove','folderCaseMove','restart','offline','transientInvalid','malformedRepair','closeProbe','browserClose','closeDuringTraffic','multiField','fileWrites','sustainedTyping','undoRedo','lostAck'].some(key=>config[key] !== undefined))
       fail('assetProof supports only unchanged-path/assets plain append or compatible mixedSchedule, at most100rounds');
     if (!config.expectedIdentities || ROLES.some(role=>!config.expectedIdentities[role])) fail('assetProof requires all six identity pins');
     for(const role of ROLES) try { normalizeIdentity(config.expectedIdentities[role],role,{expected:true}); } catch { fail('assetProof identity pin invalid'); }
@@ -351,6 +351,23 @@ export class Coordinator {
       }
       if(prior.assetProofEvidence.at(-1).documentSha256!==this.config.expectedDocumentHash)
         throw Error('Asset-proof reopen final snapshot differs');
+      if(this.config.soak) {
+        const proof=prior.soakEvidence?.assetProof;
+        if(proof?.version!==1 || canonicalJSON(proof.fixture)!==canonicalJSON(this.config.fixture) ||
+           proof.documentSha256!==this.config.expectedDocumentHash || canonicalJSON(proof.assetHashes)!==canonicalJSON(this.config.expectedAssetHashes) ||
+           !Array.isArray(proof.samples) || proof.samples.length!==SOAK_LIMITS.samples)throw Error('Reopen requires complete prior soak asset proof');
+        let digest=null,stable=0;
+        for(const [index,sample] of proof.samples.entries()) {
+          if(sample.id!==`${prior.runId}:soak:${index}` || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(sample.sampleId??'') || ids.has(sample.sampleId) ||
+             sample.documentSha256!==this.config.expectedDocumentHash || sample.assetHashesSha256!==sha256(canonicalJSON(proof.assetHashes)) ||
+             !sample.archives || Object.keys(sample.archives).length!==6 || ROLES.some(role=>!/^[a-f0-9]{64}$/.test(sample.archives[role]??'')))throw Error('Prior soak asset sample invalid');
+          ids.add(sample.sampleId);
+          const next=canonicalJSON({documentSha256:sample.documentSha256,archives:sample.archives});stable=next===digest?stable+1:1;digest=next;
+          if(sample.stableWaves!==stable)throw Error('Prior soak stable count invalid');
+        }
+        if(stable<3 || proof.stableWaves!==stable)throw Error('Prior soak final stability invalid');
+      }
+
     }
     if(this.config.folderCaseMove){
       this.folderOperationId='fc-'+sha256(this.runId+'\0'+canonicalJSON(this.config.folderCaseMove)).slice(0,32);
@@ -566,6 +583,10 @@ export class Coordinator {
         const observed = documentObservation(state.documentSnapshot);
         return observed.hash === this.finalDocumentHash && observed.snapshot.content.body === state.text;
       }});
+    const assetOracle=this.config.assetProof?this.makeAssetOracle(SOAK_LIMITS.responseMs):null;
+    const assetSamples=[];let assetRequest,assetResult,assetLedgerBytes=0;
+    const assetEvidence=()=>({version:1,fixture:this.config.fixture,documentSha256:assetResult.documentSha256,
+      assetHashes:assetResult.assetHashes,samples:assetSamples,stableWaves:assetResult.stableWaves});
     let current, resolveSample, rejectSample, fatal;
     const listeners = [], abort = new AbortController();
     const fail = error => { fatal ??= error; rejectSample?.(fatal); abort.abort(); };
@@ -575,11 +596,26 @@ export class Coordinator {
         try {
           const sample = validateSoakSample(state.soakSample,this.runId);
           if (!sample || !current || state.round !== round) throw Error('Missing or stale soak correlation');
+          if(assetOracle) {
+            this.trackAssetOutput(role,state);
+            assetOracle.add(role,this.assetReply(role,state),clock());
+          }
           states.set(role,state);
-          const complete = soak.receive({sampleId:sample.id,role,identity:sha256(canonicalJSON({attestation:this.attestations[role],editor:EDITOR_ROLES.includes(role)?state.editor:null})),observation:state,evidenceBytes:Buffer.byteLength(JSON.stringify({sampleId:sample.id,role,hash:documentObservation(state.documentSnapshot).hash,editor:state.editor??null}))},clock());
+          const compact={sampleId:sample.id,role,hash:documentObservation(state.documentSnapshot).hash,editor:state.editor??null,
+            ...(assetOracle?{assetProof:state.assetProof,identitySha256:sha256(canonicalJSON(state.identity)),session:state.session}:{})};
+          const complete = soak.receive({sampleId:sample.id,role,identity:sha256(canonicalJSON({attestation:this.attestations[role],editor:EDITOR_ROLES.includes(role)?state.editor:null})),observation:state,evidenceBytes:Buffer.byteLength(JSON.stringify(compact))},clock());
           if (complete) {
             this.checkRoundContent(states,round,expectedEditIds);
             if (!this.checkAssets(states,round) || checkMultiFieldAccounting(this.documentBaseline,this.documentStates(states),fieldOperations(this.plannedRounds()),this.accountingOptions()) !== this.finalDocumentHash) throw Error('Soak full oracle mismatch');
+            if(assetOracle) {
+              assetResult=assetOracle.finish(clock());
+              if(assetResult.documentSha256!==this.finalDocumentHash)throw Error('Soak asset full document drift');
+              assetSamples.push({id:sample.id,sampleId:assetResult.sampleId,documentSha256:assetResult.documentSha256,
+                assetHashesSha256:sha256(canonicalJSON(assetResult.assetHashes)),
+                archives:Object.fromEntries(ROLES.map(role=>[role,assetResult.replies[role].proof.archiveSha256])),stableWaves:assetResult.stableWaves});
+              assetLedgerBytes=Buffer.byteLength(JSON.stringify(assetEvidence()));
+              if(soak.bytes+assetLedgerBytes>SOAK_LIMITS.evidenceBytes)throw Error('Soak combined compact evidence budget exceeded');
+            }
             resolveSample();
           }
         } catch(error) { fail(new StressFailure('soak-sample-failed',{role,sampleId:current?.sampleId??null,reason:String(error.message).slice(0,200)})); }
@@ -595,14 +631,16 @@ export class Coordinator {
         while(clock()<due) { if(fatal) throw fatal; await this.soakSleep(Math.max(1,due-clock()),abort.signal); }
         if(fatal) throw fatal;
         states.clear();current=soak.begin(clock());
+        if(assetOracle)assetRequest=assetOracle.begin(randomUUID(),clock());
         let timer;
         const pending=new Promise((resolve,reject)=>{resolveSample=resolve;rejectSample=reject;timer=setTimeout(()=>reject(new StressFailure('soak-response-timeout',{sampleId:current.sampleId,missing:ROLES.filter(role=>!states.has(role))})),Math.max(1,current.deadlineMs-clock()));});
-        this.broadcast({type:'observe',round,soakSample:{version:1,id:current.sampleId},expectedEditIds,expectedAssetPaths:assetPathsOf(this.config),documentSnapshot:true});
+        this.broadcast({type:'observe',round,soakSample:{version:1,id:current.sampleId},...(assetOracle?{assetProof:assetRequest}:{}),expectedEditIds,expectedAssetPaths:assetPathsOf(this.config),documentSnapshot:true});
         try {await pending;} finally {clearTimeout(timer);resolveSample=rejectSample=null;}
         if(fatal)throw fatal;
         this.record('soak-sample',{sampleId:current.sampleId,index,elapsedMs:clock()-start,documentHash:this.finalDocumentHash,roles:ROLES});
       }
-      this.soakEvidence=soak.result(clock());
+      if(assetOracle && (!assetResult?.stable || assetSamples.length!==SOAK_LIMITS.samples))throw Error('Soak asset waves incomplete or unstable');
+      this.soakEvidence={...soak.result(clock()),...(assetOracle?{evidenceBytes:soak.bytes+assetLedgerBytes}:{}),...(assetOracle?{assetProof:assetEvidence()}:{})};
     } finally {abort.abort();listeners.forEach(remove=>remove());}
   }
 
@@ -642,17 +680,34 @@ export class Coordinator {
     const bytes=Buffer.byteLength(JSON.stringify(final));
     const ids=plans.flatMap(plan=>plan.edits.map(edit=>edit.id));
     const phases=this.config.rounds===0?1:this.config.rounds+1;
-    const replies=this.config.rounds===0?6:1+3*this.config.rounds+3*phases;
+    const dwellReplies=this.config.soak && this.config.rounds>0?SOAK_LIMITS.samples:0;
+    const replies=(this.config.rounds===0?6:1+3*this.config.rounds+3*phases)+dwellReplies;
     const largestPin=Math.max(...ROLES.map(role=>Buffer.byteLength(JSON.stringify(this.assetProofPins[role]))));
     const replyBound=bytes+Buffer.byteLength(JSON.stringify(final.content.body))+Buffer.byteLength(JSON.stringify(ids))+
       largestPin+2*Buffer.byteLength(JSON.stringify(this.config.expectedAssetHashes))+8192;
+    const compactSoakReply=2*Buffer.byteLength(JSON.stringify(this.config.expectedAssetHashes))+largestPin+4096;
+    if(dwellReplies*6*compactSoakReply>SOAK_LIMITS.evidenceBytes)throw new StressFailure('asset-proof-soak-evidence-budget',{});
     if(replyBound>256*1024 || replies*replyBound>64*1024*1024)
       throw new StressFailure('asset-proof-output-budget',{});
   }
 
-  makeAssetOracle() {
+  makeAssetOracle(timeoutMs=this.config.timeoutMs) {
     return createAssetProofOracle({fixture:this.config.fixture,pins:this.assetProofPins,
-      timeoutMs:Math.min(this.config.timeoutMs,120000),expectedAssetHashes:this.config.expectedAssetHashes});
+      timeoutMs:Math.min(timeoutMs,120000),expectedAssetHashes:this.config.expectedAssetHashes});
+  }
+
+  assetReply(role,state) {
+    if(!role.endsWith('-cli') && state.editor?.sessionId!==state.session?.id)throw Error('Proof is not bound to observed editor');
+    return {assetProof:state.assetProof,documentSnapshot:state.documentSnapshot,
+      assetProofRequiresValidatedLiveSnapshot:state.assetProofRequiresValidatedLiveSnapshot,
+      identity:state.identity,session:state.session};
+  }
+
+  trackAssetOutput(role,message) {
+    this.assetOutputBytes??={};
+    const bytes=(this.assetOutputBytes[role]??0)+Buffer.byteLength(JSON.stringify(message));
+    this.assetOutputBytes[role]=bytes;
+    if(bytes>64*1024*1024)throw new StressFailure('asset-proof-output-budget',{role});
   }
 
   async observeAssetWaves(round,expectedEditIds,phase) {
@@ -672,10 +727,7 @@ export class Coordinator {
         if(expectedHash!==this.finalDocumentHash)throw Error('Asset-wave full document changed outside accepted operations');
         for(const role of ROLES) {
           const state=states.get(role);
-          if(!role.endsWith('-cli') && state.editor?.sessionId!==state.session?.id)throw Error('Proof is not bound to observed editor');
-          oracle.add(role,{assetProof:state.assetProof,documentSnapshot:state.documentSnapshot,
-            assetProofRequiresValidatedLiveSnapshot:state.assetProofRequiresValidatedLiveSnapshot,
-            identity:state.identity,session:state.session},performance.now());
+          oracle.add(role,this.assetReply(role,state),performance.now());
         }
         result=oracle.finish(performance.now());
         waves.push({sampleId:result.sampleId,documentSha256:result.documentSha256,
@@ -734,10 +786,7 @@ export class Coordinator {
           err: () => done(() => reject(new StressFailure('adapter-error', { round, role }))),
           m: (message) => {
             if(this.config.assetProof) {
-              this.assetOutputBytes??={};
-              const bytes=(this.assetOutputBytes[role]??0)+Buffer.byteLength(JSON.stringify(message));
-              this.assetOutputBytes[role]=bytes;
-              if(bytes>64*1024*1024)return done(()=>reject(new StressFailure('asset-proof-output-budget',{role})));
+              try {this.trackAssetOutput(role,message);}catch(error){return done(()=>reject(error));}
             }
             if (type === 'applied' && message.type === 'traffic-progress' && this.config.closeDuringTraffic?.trafficRole === role) return;
             if (message.type === 'error') {
