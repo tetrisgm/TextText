@@ -279,7 +279,7 @@ static class Stress
                     await Open(ct);
                     if (request.TryGetProperty("identitySchema", out var schema) && schema.GetInt32() == 1)
                         return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
-                            finiteSoakCorrelation = 1, machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId, identity = ObservedIdentity() };
+                            finiteSoakCorrelation = 1, binaryAssetObservation = 1, machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId, identity = ObservedIdentity() };
                     return new { type = "attest", round = 0, mode = "real", workspaceId = config.WorkspaceId, itemId = config.ItemId,
                         finiteSoakCorrelation = 1, machineId = System.Net.Dns.GetHostName(), adapter = adapterName, generation, sessionId };
                 }

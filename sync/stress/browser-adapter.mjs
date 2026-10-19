@@ -323,7 +323,7 @@ async function main() {
           deploymentId: build.buildId, driverSourceCommit: source.sourceCommit, sourceReceiptSha256: source.sourceReceiptSha256,
           artifacts: { ...source.artifacts, ...await observeAssets() } };
       }
-      return { type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: !isRestart && profile.created, generation, ...(identity ? { identity } : {}) };
+      return { type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: 'real', adapter: ADAPTER_NAME, workspaceId: config.workspaceId, itemId: config.itemId, machineId: hostname(), browser: platform.browser, sessionId, auth: config.auth, profileCreated: !isRestart && profile.created, generation, ...(identity ? { binaryAssetObservation: 1, identity } : {}) };
   }
   const handlers = {
     async hello(m) {

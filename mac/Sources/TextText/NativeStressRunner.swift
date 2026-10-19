@@ -700,7 +700,7 @@ final class NativeStressRunner {
         var result: [String: Any] = ["type": "attest", "round": 0, "mode": "real", "workspaceId": config.workspaceId,
             "itemId": config.itemId, "machineId": NativeStressActor.hostName(), "adapter": adapterName, "sessionId": sessionId,
             "generation": try mailboxGeneration(), "windowGeneration": windowGeneration, "finiteSoakCorrelation": 1]
-        if includeIdentity { result["identity"] = try observedIdentity() }
+        if includeIdentity { result["identity"] = try observedIdentity(); result["binaryAssetObservation"] = 1 }
         return result
     }
 

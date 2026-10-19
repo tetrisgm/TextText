@@ -288,7 +288,7 @@ export function createActor(config, { platform = process.platform, machineId = h
           assetHashes: assetHashesOf(pack, paths) };
       }
       return { type: 'attest', round: 0, finiteSoakCorrelation: 1, mode: 'real', workspaceId: config.workspaceId, itemId: config.itemId, machineId, adapter: 'file-adapter',
-        ...(identity ? { identity, initialPack } : {}) };
+        ...(identity ? { binaryAssetObservation: 1, identity, initialPack } : {}) };
     },
     async prepare(m) {
       requireRun();
