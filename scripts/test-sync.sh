@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 if [ "${1:-}" != "--native-only" ]; then
   exec node sync/verify.mjs "$@"
 fi
-node --test windows/scripts/handoff-publication-proof.test.mjs windows/scripts/stress-browser-relay.test.mjs
+node --test windows/scripts/handoff-publication-proof.test.mjs windows/scripts/stress-browser-relay.test.mjs sync/stress/resource-sampler.test.mjs
 # SwiftPM's Store manifest omits Sparkle; preserve the standalone resolution.
 lock_copy=$(mktemp)
 cp mac/Package.resolved "$lock_copy"
