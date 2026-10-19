@@ -46,6 +46,29 @@ import TextTextWorkspaceCore
 // config.json: { "file": "/abs/.../Six-client acceptance X.textpack",
 //                "itemId": "<uuid>", "workspaceId": "<id>",
 //                "title": "Six-client acceptance X", "totalMinutes": 20 }
+enum NativeStressReaderAction {
+    // Match the two production reader actions, never a similarly named library action.
+    // The selected-item/shared-session checks remain in the actor around this transition.
+    private static let action = #"""
+    (activate => {
+      const visible = element => !!element && !element.closest('[hidden],[inert]')
+        && element.getClientRects().length > 0
+        && getComputedStyle(element).visibility === 'visible';
+      const body = document.querySelector('[aria-label="Document body"]');
+      if (body?.isContentEditable && visible(body)) return true;
+      const actions = [...document.querySelectorAll('.vault-note-display .vault-note-display-actions > button[aria-label="Edit card"], .vault-story-display .vault-story-display-actions > button')]
+        .filter(button => visible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true'
+          && (button.matches('.vault-note-display .vault-note-display-actions > button[aria-label="Edit card"]')
+            || button.textContent.trim() === 'Edit story'));
+      if (actions.length !== 1) return false;
+      if (activate) actions[0].click();
+      return true;
+    })
+    """#
+    static let ready = action + "(false)"
+    static let activate = action + "(true)"
+}
+
 enum NativeStressActor {
     static let bundleIdentifierOfInstalledApp = "app.texttext.mac"
     static let roleServed = "mac-app"
@@ -691,12 +714,12 @@ final class NativeStressRunner {
             try await self.evaluate("document.querySelector('.vault-context-location h2')?.textContent?.trim() === \(self.expectedTitle)") == "true"
         }
         try await until("Test reader did not expose its edit action.") {
-            try await self.evaluate("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true"
+            try await self.evaluate(NativeStressReaderAction.ready) == "true"
         }
-        _ = try await evaluate("(document.querySelector('button[aria-label=\"Edit card\"]')?.click(), true)")
+        _ = try await evaluate(NativeStressReaderAction.activate)
         try await Task.sleep(for: .seconds(1))
         if try await evaluate("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") != "true" {
-            _ = try await evaluate("(document.querySelector('button[aria-label=\"Edit card\"]')?.click(), true)")
+            _ = try await evaluate(NativeStressReaderAction.activate)
         }
         try await until("Test item did not enter the real document editor.") {
             try await self.evaluate("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true"
