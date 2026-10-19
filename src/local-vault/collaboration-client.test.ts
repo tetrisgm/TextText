@@ -1,3 +1,4 @@
+import type { FileCollaborationOptions } from "./collaboration-client";
 import { prepareHandoffUpdate } from "./handoff-update";
 import unavailableProjection from "../../sync/fixtures/checkpoint-unavailable.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -2071,4 +2072,56 @@ describe("durable journal retirement", () => {
     await expect(editor.clearRetiredAfterRecoveryDurably()).rejects.toThrow("tombstone failed");
     expect(editor.hasPendingChanges).toBe(true); expect(documentSnapshotFromYDoc(editor.doc)).toEqual(before);
   });
+});
+
+describe("opt-in logical request diagnostics", () => {
+  type Boundary = { request(method: "read" | "push", params: Record<string, unknown>, poll?: boolean): Promise<unknown> };
+  function diagnosticClient(request: FileCollaborationOptions["request"], diagnostics = true) {
+    const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal: new Journal(), request, diagnostics });
+    clients.push(editor); return editor;
+  }
+  it("preserves exact results and detached zero-retention gauges for 25 cycles", async () => {
+    for (const enabled of [false, true]) {
+      for (let n = 0; n < 25; n++) {
+        const result = { exact: n }, editor = diagnosticClient(async () => result, enabled);
+        expect(await (editor as unknown as Boundary).request("read", {})).toBe(result);
+        const snapshot = editor.diagnostics;
+        expect(snapshot.controllers).toBe(0); expect(snapshot.requests.physicalInFlight).toBeNull();
+        expect(snapshot.requests.durableCommits).toBeNull(); expect(snapshot.requests.enabled).toBe(enabled);
+        if (snapshot.requests.enabled) expect(snapshot.requests.classes?.read).toEqual({ started: 1, succeeded: 1, failed: 0, canceled: 0, logicalInFlight: 0 });
+        editor.destroy(); expect(editor.diagnostics.currentDocumentSlot).toBe(0);
+        expect(snapshot.currentDocumentSlot).toBe(1);
+      }
+    }
+  });
+  it("settles cancellation exactly once when transport ignores abort and resolves late", async () => {
+    let resolve!: (value: unknown) => void;
+    const editor = diagnosticClient(() => new Promise(done => { resolve = done; }));
+    const pending = (editor as unknown as Boundary).request("read", {});
+    const rejected = expect(pending).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(15_000); await rejected;
+    expect(editor.diagnostics.requests.classes?.read).toEqual({ started: 1, succeeded: 0, failed: 0, canceled: 1, logicalInFlight: 0 });
+    resolve({ late: true }); await Promise.resolve();
+    expect(editor.diagnostics.requests.classes?.read.canceled).toBe(1);
+    expect(editor.diagnostics.requests.physicalInFlight).toBeNull();
+  });
+  it("does not invoke a diagnostics accessor", () => {
+    const options = { server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal: new Journal(), request: async () => null };
+    Object.defineProperty(options, "diagnostics", { get() { throw Error("getter invoked"); } });
+    const editor = new FileCollaborationClient(options); clients.push(editor);
+    expect(editor.diagnostics.requests.enabled).toBe(false);
+  });
+});
+
+it("logical accounting overflows to incomplete without throwing or exposing mutable counts", async () => {
+  const { LogicalRequestLedger } = await import("@/sync/engine/diagnostics");
+  const ledger = new LogicalRequestLedger("test-epoch");
+  const token = ledger.begin("push"); ledger.finish(token, "failed"); ledger.finish(token, "failed");
+  expect(ledger.snapshot().classes?.push.failed).toBe(1);
+  const snapshot = ledger.snapshot(); expect(Object.isFrozen(snapshot.classes?.push)).toBe(true);
+  const internal = ledger as unknown as { counts: { read: { started: number } } };
+  internal.counts.read.started = Number.MAX_SAFE_INTEGER;
+  expect(() => ledger.begin("read")).not.toThrow();
+  expect(ledger.snapshot()).toMatchObject({ complete: false, classes: null, physicalInFlight: null, durableCommits: null });
+  expect(snapshot.classes?.push.failed).toBe(1);
 });

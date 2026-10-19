@@ -22,6 +22,20 @@ type Entry<T extends OwnedSession> = { session: T; lifecycle: string; ready: Pro
 export class SessionOwner<T extends OwnedSession> {
   private entries = new Map<string, Entry<T>>();
   get size() { return this.entries.size; }
+  /** Detached scalar gauges only; never invokes the owned session. */
+  get diagnostics() {
+    const phases: Record<SessionPhase, number> = { opening: 0, ready: 0, reconnecting: 0, draining: 0, "retained-error": 0, closed: 0 };
+    let refs = 0, closing = 0, operationBusy = 0;
+    for (const entry of this.entries.values()) {
+      refs += entry.refs; phases[entry.phase]++; closing += Number(entry.closing); operationBusy += Number(entry.operationBusy);
+    }
+    const complete = [this.entries.size, refs, closing, operationBusy, ...Object.values(phases)]
+      .every(n => Number.isSafeInteger(n) && n >= 0);
+    return Object.freeze({ version: 1 as const, complete, entries: complete ? this.entries.size : null,
+      attachedRefs: complete ? refs : null, closing: complete ? closing : null,
+      operationBusy: complete ? operationBusy : null, storedPhaseCounts: complete ? Object.freeze(phases) : null });
+  }
+
   /** Application shutdown includes retained owners whose views already left. */
   async flushAll(): Promise<boolean> {
     const captured = [...this.entries.entries()];

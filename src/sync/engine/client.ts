@@ -1,3 +1,4 @@
+import { LogicalRequestLedger, disabledLogicalRequests } from "./diagnostics";
 import * as Y from "yjs";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc, documentText, hasDocumentSnapshot } from "@/lib/collab/document";
 import { replaceSharedText } from "@/lib/collab/text-transactions";
@@ -50,6 +51,8 @@ export type FileCollaborationJournal = Cursor & { version: 1; accountId?: string
 export type FileCollaborationCheckpoint = { journal: FileCollaborationJournal; document: DocumentSnapshot };
 type StateResponse = Cursor & { presentation?: FileCollaborationPresentation; update: string; canEditContent: boolean; canComment: boolean };
 export type FileCollaborationOptions = {
+  /** Opt-in logical request counts for controlled diagnostics; disabled by default. */
+  diagnostics?: boolean;
   server: string; workspaceId: string; itemId: string; request: FileCollaborationRequest;
   /** Stable server-resolved user ID, never a bearer or token fingerprint. */
   accountId?: string;
@@ -466,6 +469,7 @@ function browserOwnership(): FileCollaborationOwnership {
 /** One canonical server baseline, one durable upload queue, and one visible long poll. */
 export class FileCollaborationClient {
   private liveDoc = new Y.Doc();
+  private readonly diagnosticRequests: LogicalRequestLedger | null;
   private readonly lifecycleId = crypto.randomUUID();
   /** The current shared document. Automatic epoch recovery replaces it; see `onDocumentReplaced`. */
   get doc(): Y.Doc { return this.liveDoc; }
@@ -523,12 +527,26 @@ export class FileCollaborationClient {
   private revivedRetirement: string | null = null;
 
   constructor(options: FileCollaborationOptions) {
+    this.diagnosticRequests = Object.getOwnPropertyDescriptor(options, "diagnostics")?.value === true ? new LogicalRequestLedger(this.lifecycleId) : null;
     this.options = options; this.storage = options.journal ?? localJournal; this.active = options.active ?? true; this.inactiveReason = options.inactiveReason ?? "paused";
     this.supportsEpochRecovery = options.supportsEpochRecovery ?? !options.checkpoint;
     this.initialFileReconciled = !options.initialFileChange;
     this.legacyJournalKey = options.accountId ? fileCollaborationJournalKey({ ...options, accountId: undefined }) : null;
     this.ownedJournalKey = fileCollaborationJournalKey(options);
     this.doc.on("update", this.changed);
+  }
+  /** No document, journal, callback, handle or timer object escapes this snapshot. */
+  get diagnostics() {
+    return Object.freeze({ version: 1 as const, currentDocumentSlot: this.dead ? 0 : 1,
+      pendingUpdateCount: this.pending.length, batchUpdateCount: this.batch?.updates.length ?? 0,
+      unqueuedDirty: this.unqueuedDirty, controllers: this.controllers.size,
+      pollController: Number(this.pollController !== null), pushTimer: Number(this.pushTimer !== null),
+      pollTimer: Number(this.pollTimer !== null), checkpointTimer: Number(this.checkpointTimer !== null),
+      checkpointRunning: Number(this.checkpointRunning !== null), checkpointQueued: Number(this.checkpointQueued !== null),
+      checkpointWaiters: this.checkpointProgress.size, starting: Number(this.starting !== null),
+      flushing: Number(this.flushing !== null), recovering: Number(this.recovering !== null),
+      frozen: this.frozen, dead: this.dead, initialized: this.initialized,
+      requests: this.diagnosticRequests?.snapshot() ?? disabledLogicalRequests });
   }
   get recoveryJournal(): FileCollaborationJournal | null { return this.saved; }
   get hasUnreadableJournal(): boolean { return this.unreadableJournal; }
@@ -920,8 +938,15 @@ export class FileCollaborationClient {
         controller.abort();
       }, timeoutMs);
     });
-    try { return await Promise.race([this.options.request(method, params, controller.signal), canceled]); }
+    let ticket: ReturnType<LogicalRequestLedger["begin"]> = null;
+    let diagnosticOutcome: "succeeded" | "failed" | "canceled" = "failed";
+    try {
+      ticket = this.diagnosticRequests?.begin(method === "read" && poll ? "poll" : method) ?? null;
+      const result = await Promise.race([this.options.request(method, params, controller.signal), canceled]);
+      diagnosticOutcome = "succeeded"; return result;
+    }
     catch (error) {
+      diagnosticOutcome = controller.signal.aborted ? "canceled" : "failed";
       // A 204/canceled response without our own cancellation is a transient
       // service interruption, not permission to silently stop reconnecting.
       if (!controller.signal.aborted && (error as { name?: string })?.name === "AbortError") {
@@ -929,6 +954,7 @@ export class FileCollaborationClient {
       }
       throw new RequestFailure(error);
     } finally {
+      this.diagnosticRequests?.finish(ticket, diagnosticOutcome);
       clearTimeout(timer);
       if (aborted) controller.signal.removeEventListener("abort", aborted);
       this.controllers.delete(controller); if (this.pollController === controller) this.pollController = null;

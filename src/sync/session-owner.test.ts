@@ -145,3 +145,44 @@ describe("page session ownership", () => {
   });
 
 });
+
+describe("detached ownership diagnostics", () => {
+  it("reads only stored scalars and returns no owned references across 25 cycles", async () => {
+    const owner = new SessionOwner();
+    for (let n = 0; n < 25; n++) {
+      const value = session(), handle = owner.acquire(`private-${n}`, () => value); await handle.ready;
+      const connected = Object.getOwnPropertyDescriptor(value, "connected")!;
+      Object.defineProperty(value, "connected", { configurable: true, get() { throw Error("diagnostics invoked session getter"); } });
+      const snapshot = owner.diagnostics;
+      expect(snapshot.entries).toBe(1); expect(snapshot.attachedRefs).toBe(1);
+      expect(Object.isFrozen(snapshot)).toBe(true); expect(Object.isFrozen(snapshot.storedPhaseCounts)).toBe(true);
+      expect(JSON.stringify(snapshot)).not.toContain("private-");
+      Object.defineProperty(value, "connected", connected);
+      await handle.release(); expect(owner.diagnostics.entries).toBe(0);
+      expect(snapshot.entries).toBe(1); expect(value.close).toHaveBeenCalledOnce();
+    }
+  });
+  it("reports retained failures without calling recovery", async () => {
+    const owner = new SessionOwner(), value = session(); value.save = vi.fn(async () => false);
+    const handle = owner.acquire("secret", () => value); await handle.ready; await handle.release();
+    const calls = vi.mocked(value.save).mock.calls.length;
+    expect(owner.diagnostics.storedPhaseCounts?.["retained-error"]).toBe(1);
+    expect(vi.mocked(value.save).mock.calls.length).toBe(calls);
+    value.save = vi.fn(async () => true); await owner.acquire("secret", () => value).release();
+  });
+});
+
+it("diagnostics count the closed external-write tombstone without calling it an active document", async () => {
+  const owner = new SessionOwner(), value = session(), external = gate<void>();
+  const handle = owner.acquire("private", () => value); await handle.ready;
+  const action = handle.runExclusive(async () => {
+    expect(await handle.closeExclusive()).toBe(true);
+    expect(owner.diagnostics).toMatchObject({ entries: 1, attachedRefs: 0, closing: 1, operationBusy: 1, storedPhaseCounts: { closed: 1 } });
+    expect(() => owner.acquire("private", session)).toThrow("finishing a save");
+    await external.promise;
+  });
+  await vi.waitFor(() => expect(value.close).toHaveBeenCalledOnce());
+  expect(owner.diagnostics.entries).toBe(1);
+  external.resolve(); await action;
+  expect(owner.diagnostics).toMatchObject({ entries: 0, attachedRefs: 0, closing: 0, operationBusy: 0, storedPhaseCounts: { closed: 0 } });
+});
