@@ -12,6 +12,40 @@ static class ReplacementBridgeTests
         using(var writer=new StreamWriter(archive.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: \""+id+"\"\n---\n"+text);
         return output.ToArray();
     }
+    // This fixture needs a completed native create/refresh cycle before it
+    // tests profile preparation. The separate stalled transport intentionally
+    // cannot download and remains reserved for the blocked-worker fixtures.
+    sealed class StableHandoffTransport : ISyncTransport
+    {
+        readonly object gate=new();
+        readonly Dictionary<string,RemotePack> packs=[];
+        readonly Dictionary<string,(string ItemId,string Path,string? BaseRevision,string Hash,string Revision)> receipts=[];
+        public WorkspaceCapabilities Capabilities {get {lock(gate)return new(true,true,[],packs.Keys.ToDictionary(id=>id,_=>true));}}
+        public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default) {
+            cancellation.ThrowIfCancellationRequested();
+            lock(gate)return Task.FromResult<IReadOnlyList<RemoteItem>>(packs.Select(pair=>new RemoteItem(pair.Key,pair.Value.RelativePath,pair.Value.Revision,CanEditContent:true)).ToArray());
+        }
+        public Task<RemotePack> DownloadAsync(string itemId,CancellationToken cancellation=default) {
+            cancellation.ThrowIfCancellationRequested();
+            lock(gate){var pack=packs[itemId];return Task.FromResult(pack with{Data=pack.Data.ToArray()});}
+        }
+        public Task<string> UploadAsync(string itemId,string path,byte[] data,string? baseRevision,string operationId,CancellationToken cancellation=default) {
+            cancellation.ThrowIfCancellationRequested();
+            if(TextPackStore.Identity(data)!=itemId)throw new InvalidDataException("Fixture upload identity mismatch.");
+            var hash=TextPackStore.Hash(data);
+            lock(gate) {
+                if(receipts.TryGetValue(operationId,out var receipt)) {
+                    if(receipt.ItemId!=itemId||receipt.Path!=path||receipt.BaseRevision!=baseRevision||receipt.Hash!=hash)throw new InvalidDataException("Fixture upload replay changed.");
+                    return Task.FromResult(receipt.Revision);
+                }
+                if(packs.TryGetValue(itemId,out var existing)?existing.Revision!=baseRevision:baseRevision is not null)throw new SyncConflictException();
+                packs[itemId]=new(data.ToArray(),path,hash);receipts[operationId]=(itemId,path,baseRevision,hash,hash);
+                return Task.FromResult(hash);
+            }
+        }
+        public Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default)=>throw new InvalidOperationException("Unexpected stable handoff rename.");
+        public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default)=>throw new InvalidOperationException("Unexpected stable handoff deletion.");
+    }
     public static async Task Run(string temporary,Action<bool,string> check)
     {
         if(OperatingSystem.IsWindows()) {
@@ -22,7 +56,7 @@ static class ReplacementBridgeTests
             var recoveryFile=stableStore.Write("Recovery.textpack",Pack("retained recovery","stable-recovery-item"));
             typeof(RetainedReplacementProfile).GetMethod("PrepareFolderSync",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static)!.Invoke(null,[stableStore,null]);
             var stableContext=new WorkspaceContext(stableRoot,"workspace",stableOrigin,()=>Task.FromResult("fixture"),(_,_)=>Task.CompletedTask,AccountId:"account-a",MirrorPolicyFactory:()=>NativePolicyTestHost.Create("account-a"));
-            var stableTransport=new StalledTransport();stableTransport.Release.TrySetResult();
+            var stableTransport=new StableHandoffTransport();
             using var stableBridge=new WindowsBridge(stableContext,stableTransport,stableState);
             var priorProfile=File.ReadAllBytes(Path.Combine(stableState,"retained-replacement-profile","profile.json"));
             foreach(var malformed in new object[]{new {itemId=stableFile.ItemId,path=stableFile.Path,localHandoffVersion=1},new {itemId=stableFile.ItemId,path=stableFile.Path,hash=42,localHandoffVersion=1}}) {
@@ -43,6 +77,17 @@ static class ReplacementBridgeTests
                     catch(HandoffNotOpenException)when(attempt<49){await Task.Delay(20);}
                 }
             }
+            // This fixture tests profile preparation after the initial file
+            // writes are durable, independently of the background worker's
+            // startup ordering. A pending-sync refusal is not a profile retry.
+            using(var readyDeadline=new CancellationTokenSource(TimeSpan.FromSeconds(10))) {
+                while(true) {
+                    var readiness=JsonSerializer.SerializeToElement(await stableBridge.InvokeAsync("files.ready",Json(new {itemId=stableFile.ItemId}),readyDeadline.Token));
+                    if(readiness.GetProperty("ready").GetBoolean())break;
+                    await Task.Delay(20,readyDeadline.Token);
+                }
+            }
+            check(true,"stable handoff fixture reaches durable file readiness before joining");
             var firstOpen=JsonSerializer.SerializeToElement(await RetryCertifiedOpen());
             await stableBridge.InvokeAsync("collaboration.recover",Json(new {sessionToken=firstOpen.GetProperty("sessionToken").GetString(),recoveryPath=recoveryFile.Path,recoveryHash=recoveryFile.Hash}),CancellationToken.None);
             using(var writer=new FileStream(Path.Combine(stableState,"retained-replacement-profile.lock"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
