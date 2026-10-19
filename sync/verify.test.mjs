@@ -112,14 +112,17 @@ test('normal Windows and manual native gates require private actor proofs withou
   assert.ok(!manual.includes('run --project windows/TextText.LiveAcceptance/TextText.LiveAcceptance.csproj'));
 });
 
-test('manual native gate selects and requires both native handoff suites', async () => {
+test('manual native gate selects and requires handoff and retained-work suites', async () => {
   const manual = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
   const filter = manual.match(/--filter '([^']+)'/);
   assert.ok(filter, 'explicit native filter is required');
-  for (const suite of ['LocalHandoffProfile', 'LocalHandoffBridge']) {
+  const required = [...manual.matchAll(/for suite in ([^;\n]+); do/g)]
+    .flatMap(match => match[1].trim().split(/\s+/));
+  for (const suite of ['LocalHandoffProfile', 'LocalHandoffBridge', 'MirrorTombstoneIntegration',
+    'SharedRenameProfile', 'ProtectedRenameTransport', 'MissingManifestVisibility', 'QueuedUploadPathAdoption']) {
     assert.ok(filter[1].split('|').includes(`${suite}Tests`), `${suite} is selected`);
+    assert.ok(required.includes(suite), `${suite} must execute`);
   }
-  assert.match(manual, /for suite in [^\n]*LocalHandoffProfile LocalHandoffBridge; do/);
   assert.ok(manual.includes('Required native creation suite did not execute: ${suite}Tests'));
 });
 

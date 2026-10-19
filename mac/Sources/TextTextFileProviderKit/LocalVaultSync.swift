@@ -149,6 +149,8 @@ public actor LocalVaultSync {
     private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
     private var running = false
+    private var deferredQueuedUploads: Set<String> = []
+    private enum QueuedUploadPathFailure: Error { case changedDurableState }
     private weak var workspaceWriter: LocalVaultDocumentLease?
     private struct SharedSession { var token: String; var path: String; var hash: String; let lease: LocalVaultDocumentLease; let workspaceLease: LocalVaultDocumentLease; var retired = false }
     private var sharedSessions: [String: SharedSession] = [:]
@@ -1495,58 +1497,126 @@ public actor LocalVaultSync {
     }
     private func adoptQueuedUploadPath(_ pending: Pending, remote: LocalVaultRemoteItem?, budget: Int,
                                        report: inout LocalVaultSyncReport) async throws -> Pending? {
-        guard pending.action == nil, let remote, !remote.isDeleted,
-              remote.relativePath != pending.path, remote.revision == pending.baseRevision,
-              remote.lifecycle == pending.lifecycle,
-              var baseline = state.baselines[pending.itemId] else { return pending }
-        guard try !sharedProtection(itemId: pending.itemId) else { return nil }
-        var replacement = pending
-        replacement.path = remote.relativePath
-        replacement.operationId = UUID().uuidString.lowercased()
-        guard await canSend(replacement) else { return nil }
-        try assertReplacementReadable(itemId: pending.itemId)
-        let store = LocalVaultDocumentStore(root: root)
-        let paths = try store.list()
-        let pathSet = Set(paths)
-        var identities = (state.identities ?? [:]).filter { pathSet.contains($0.key) }
-        let unknown = paths.filter { identities[$0] == nil }
-        for path in unknown.prefix(budget) {
-            let document = try store.read(path: path)
-            guard let id = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId else {
-                throw LocalVaultSyncFailure.invalidResponse
+        // This policy only owns adoption of an existing queued upload to a
+        // different authoritative live path. Ordinary sends keep their owner.
+        guard pending.action == nil, let remote, !remote.isDeleted, remote.relativePath != pending.path else { return pending }
+        deferredQueuedUploads.insert(pending.operationId)
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        let id = pending.itemId, binding = state.binding, savedAccount = state.accountId
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let device = LocalVaultDeviceState.directory(root: root)
+        let ownerURL = device.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        func ownerBytes() throws -> Data? {
+            guard FileManager.default.fileExists(atPath: ownerURL.path) else { return nil }
+            return try StableFileSnapshot.read(ownerURL, maximumBytes: 4096)
+        }
+        struct Target: Encodable {
+            let accountId: String?
+            let pending: Pending?, baseline: Baseline?, conflict: Conflict?, lifecycle: String?, binary: BinaryPending?
+            let binaryBaselines: [String: String]?, binaryRevision: String?
+            let saved: LocalVaultSharedRename.Record?, pull: Bool?, folder: LocalVaultFolderCaseSync.Command?
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        func target(_ value: State) throws -> Data {
+            try encoder.encode(Target(accountId: value.accountId, pending: value.outbox[id], baseline: value.baselines[id], conflict: value.conflicts[id],
+                lifecycle: value.lifecycles?[id], binary: value.binaryOutbox?[id], binaryBaselines: value.binaryBaselines?[id], binaryRevision: value.binaryRevisions?[id], saved: value.sharedRenames?[id],
+                pull: value.sharedDownloads?[id], folder: value.folderCaseCommand))
+        }
+        func diskTarget() throws -> Data {
+            do { return try target(Self.decodeState(StableFileSnapshot.read(directory.appendingPathComponent("state.json"), maximumBytes: 90 * 1024 * 1024), root: root, binding: binding)) }
+            catch { throw QueuedUploadPathFailure.changedDurableState }
+        }
+        func projectionSnapshot() throws -> [String: String] {
+            var hashes: [String: String] = [:]
+            let shared = device.appendingPathComponent("shared-editing").appendingPathComponent(id)
+            for name in ["projection.textpack", "binary-next.textpack"] {
+                let url = shared.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    hashes[name] = TextTextStableDigest.sha256Hex(try StableFileSnapshot.read(url, maximumBytes: 64 * 1024 * 1024))
+                }
             }
-            identities[path] = id
+            return hashes
         }
-        state.identities = identities
-        try persist()
-        guard unknown.count <= budget else { report.hasMore = true; return nil }
-        let localPaths = identities.filter { $0.value == pending.itemId }.map(\.key)
-        guard localPaths.count == 1, let path = localPaths.first,
-              path == pending.path || path == remote.relativePath,
-              baseline.path == pending.path || baseline.path == remote.relativePath else { return pending }
-        let current = try store.read(path: path)
-        guard MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == pending.itemId else {
-            throw LocalVaultSyncFailure.changed
+        let captured = try target(state), durable = try diskTarget(), baseline = state.baselines[id]
+        guard captured == durable else { throw QueuedUploadPathFailure.changedDurableState }
+        do {
+            let owner = try ownerBytes(), transportBinding = transport.protectedRenameBinding
+            let context = try? Self.sharedRenameContext(root: root, binding: binding, accountId: accountId)
+            let authorityVerified = context != nil && transportBinding == context?.scope
+            let projections = try projectionSnapshot()
+            let protection = try sharedStore.protectionSnapshot(itemId: id), live = sharedSessions[id]
+            let deletion = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id)
+            let path = try uniqueSameIdentityPath(itemId: id, excluding: "")
+            let metadata = try path.map { try LocalVaultDocumentStore(root: root).readMetadata(path: $0) }
+            let staged = try StableFileSnapshot.read(payload(pending), maximumBytes: 64 * 1024 * 1024)
+            try validate(.init(data: staged, relativePath: pending.path, revision: pending.hash), itemId: id, path: pending.path)
+            func current() throws {
+                try Task.checkCancellation()
+                guard try diskTarget() == durable else { throw QueuedUploadPathFailure.changedDurableState }
+                try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
+                if let accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: accountId) }
+                let freshContext = try? Self.sharedRenameContext(root: root, binding: binding, accountId: accountId)
+                guard freshContext?.rootHash == context?.rootHash, freshContext?.scope == context?.scope,
+                      root.standardizedFileURL.resolvingSymlinksInPath() == canonicalRoot,
+                      LocalVaultDeviceState.directory(root: root) == device, state.binding == binding, state.accountId == savedAccount,
+                      transport.protectedRenameBinding == transportBinding, try ownerBytes() == owner,
+                      try target(state) == captured, try projectionSnapshot() == projections,
+                      try sharedStore.protectionSnapshot(itemId: id) == protection,
+                      try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id) == deletion,
+                      sharedSessions[id]?.token == live?.token, sharedSessions[id]?.path == live?.path,
+                      sharedSessions[id]?.hash == live?.hash, sharedSessions[id]?.retired == live?.retired,
+                      try uniqueSameIdentityPath(itemId: id, excluding: "") == path,
+                      try StableFileSnapshot.read(payload(pending), maximumBytes: 64 * 1024 * 1024) == staged else { throw LocalVaultSyncFailure.changed }
+                if let path, let metadata {
+                    let fresh = try LocalVaultDocumentStore(root: root).readMetadata(path: path)
+                    guard fresh.hash == metadata.hash, MarkdownIdentityCodec.extract(from: fresh.contents.markdown)?.itemId == id else { throw LocalVaultSyncFailure.changed }
+                }
+                try assertReplacementReadable(itemId: id)
+            }
+            try current()
+            let permitted = await transport.canWrite(itemId: id, path: remote.relativePath, existing: true); try current()
+            let deletionObject = try deletion.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let deletionPath = deletionObject?["path"] as? String
+            let intentPresent = protection.fingerprints.keys.contains { $0.hasSuffix("intent.json") }
+            let observed = LocalVaultMirrorQueuedUploadPathObservation(pendingKind: "upload", pendingConflicted: state.conflicts[id] != nil,
+                pendingUnique: state.outbox[id] == pending, pendingPath: pending.path, pendingBaseRevision: pending.baseRevision,
+                pendingLifecycle: pending.lifecycle, baselinePath: baseline?.path, baselineRevision: baseline?.revision,
+                baselineLifecycle: state.lifecycles?[id], remotePath: remote.relativePath, remoteRevision: remote.revision,
+                remoteLifecycle: remote.lifecycle, remoteDeleted: remote.isDeleted, remoteAuthoritative: true,
+                localPath: path, localUnique: path != nil, localIdentityVerified: metadata.flatMap { MarkdownIdentityCodec.extract(from: $0.contents.markdown)?.itemId } == id,
+                stagedPayloadVerified: true, editorOwned: live != nil || protection.protected,
+                recoveryBlocked: state.conflicts[id] != nil || state.binaryOutbox?[id] != nil || state.sharedRenames?[id] != nil || state.sharedDownloads?[id] == true || state.folderCaseCommand != nil || intentPresent,
+                permitted: permitted && authorityVerified, intentKind: deletion != nil ? "delete" : intentPresent ? "other" : "none", intentPath: deletionPath, intentDestination: nil)
+            let decision = try await mirrorPolicy.queuedUploadPath(observed); try current()
+            guard decision.action == "reissue-at-remote-path" else { return nil }
+            let fresh = try await transport.manifest().filter { $0.itemId == id }; try current()
+            guard fresh.count == 1, fresh[0] == remote else { throw LocalVaultSyncFailure.changed }
+            let finalPermission = await transport.canWrite(itemId: id, path: remote.relativePath, existing: true)
+            try current()
+            guard finalPermission else { return nil }
+            guard let path, let metadata, var baseline else { throw LocalVaultSyncFailure.changed }
+            var replacement = pending; replacement.path = remote.relativePath; replacement.operationId = UUID().uuidString.lowercased()
+            // The captured bytes and command remain recoverable until the new
+            // command and its payload are durable under this same State owner.
+            try writeVaultSyncJournal(staged, to: payload(replacement))
+            if path != remote.relativePath { try moveLocal(from: path, to: remote.relativePath, expectedHash: metadata.hash) }
+            let previous = state
+            state.identities?.removeValue(forKey: path); state.identities?[remote.relativePath] = id
+            baseline.path = remote.relativePath; state.baselines[id] = baseline; state.outbox[id] = replacement
+            try persist(restoring: previous)
+            try? FileManager.default.removeItem(at: payload(pending))
+            return replacement
+        } catch {
+            // An unsuccessful await is still a reentrancy boundary. Never
+            // continue to the final State save over a changed durable target.
+            guard try diskTarget() == durable else { throw QueuedUploadPathFailure.changedDurableState }
+            throw error
         }
-        let bytes = try Data(contentsOf: payload(pending))
-        guard TextTextStableDigest.sha256Hex(bytes) == pending.hash else { throw LocalVaultSyncFailure.invalidResponse }
-        // Keep the original staged content and attribution. A different path
-        // needs a new receipt identity; never mutate the original command.
-        try writeVaultSyncJournal(bytes, to: payload(replacement))
-        if path != remote.relativePath { try moveLocal(from: path, to: remote.relativePath, expectedHash: current.hash) }
-        state.identities?.removeValue(forKey: path)
-        state.identities?[remote.relativePath] = pending.itemId
-        baseline.path = remote.relativePath
-        state.baselines[pending.itemId] = baseline
-        state.outbox[pending.itemId] = replacement
-        try persist()
-        try? FileManager.default.removeItem(at: payload(pending))
-        return replacement
     }
 
     private func send(_ pending: Pending, report: inout LocalVaultSyncReport, preselected: Bool = false) async throws {
         try assertReplacementReadable(itemId: pending.itemId)
-        guard state.outbox[pending.itemId] == pending else { return }
+        guard !deferredQueuedUploads.contains(pending.operationId), state.outbox[pending.itemId] == pending else { return }
         if !preselected {
             guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
             let editorOwned = try sharedProtection(itemId: pending.itemId)
@@ -1557,7 +1627,7 @@ public actor LocalVaultSync {
                 recoveryBlocked: false, permitted: permitted)], budget: 1))
             guard selected.operationIds == [pending.operationId] else { return }
         }
-        guard state.outbox[pending.itemId] == pending,
+        guard !deferredQueuedUploads.contains(pending.operationId), state.outbox[pending.itemId] == pending,
               try !sharedProtection(itemId: pending.itemId), await canSend(pending),
               state.outbox[pending.itemId] == pending else { return }
         try assertReplacementReadable(itemId: pending.itemId)
@@ -1975,7 +2045,8 @@ public actor LocalVaultSync {
         guard !running else { throw LocalVaultSyncFailure.busy }
         let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         running = true
-        defer { running = false }
+        deferredQueuedUploads.removeAll()
+        defer { running = false; deferredQueuedUploads.removeAll() }
         guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
         try await mirrorPolicy.ready()
         var report = LocalVaultSyncReport()
@@ -2031,6 +2102,10 @@ public actor LocalVaultSync {
                 capturedPending.append(current)
                 candidates.append(.init(operationId: current.operationId, conflicted: false,
                     editorOwned: editorOwned, recoveryBlocked: false, permitted: permitted))
+            } catch QueuedUploadPathFailure.changedDurableState {
+                // Do not let this actor's final whole-State write replace a
+                // changed durable target. The next owned pass reloads it.
+                throw LocalVaultSyncFailure.changed
             } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         let selection = try await mirrorPolicy.queue(.init(candidates: candidates, budget: budget))
@@ -2075,6 +2150,7 @@ public actor LocalVaultSync {
         let start = min(state.cursor, ids.count - 1)
         let count = min(budget, ids.count - start)
         for id in ids[start..<(start + count)] {
+            if let pending = state.outbox[id], deferredQueuedUploads.contains(pending.operationId) { continue }
             var activePath = localByID[id]?.first ?? remoteByID[id]?.relativePath ?? state.baselines[id]?.path ?? id
             do {
                 if state.sharedRenames?[id] != nil {
@@ -2314,6 +2390,7 @@ public actor LocalVaultSync {
         }
         if report.downloaded > 0 { manifest = try await transport.manifest() }
         for remote in manifest where !remote.isDeleted {
+            if let pending = state.outbox[remote.itemId], deferredQueuedUploads.contains(pending.operationId) { continue }
             if state.baselines[remote.itemId]?.revision == remote.revision, let lifecycle = remote.lifecycle {
                 if state.lifecycles == nil { state.lifecycles = [:] }
                 state.lifecycles?[remote.itemId] = lifecycle
@@ -2322,7 +2399,7 @@ public actor LocalVaultSync {
         state.cursor = (start + count) % ids.count
         report.hasMore = report.hasMore || !indexComplete || start + count < ids.count
         var remainingCandidates: [LocalVaultMirrorQueueCandidate] = []
-        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) {
+        for pending in state.outbox.values.sorted(by: { $0.path < $1.path }) where !deferredQueuedUploads.contains(pending.operationId) {
             do {
                 let editorOwned = try sharedProtection(itemId: pending.itemId)
                 let permitted = await canSend(pending)
@@ -2337,6 +2414,9 @@ public actor LocalVaultSync {
         } catch { try report.failed(error, message: "The shared sync policy is unavailable. Reopen the workspace to retry.") }
         try await reconcileManagedFolders()
         try await captureFolderCaseBaseline(manifest)
+        if state.outbox.values.contains(where: { deferredQueuedUploads.contains($0.operationId) }) {
+            report.errors.append("A queued file update needs review before its path can change. Your file is kept on this device.")
+        }
         try persist()
         return report
     }

@@ -372,7 +372,7 @@ final class LocalVaultSyncTests: XCTestCase {
     private func engine(_ transport: FakeVaultTransport) throws -> LocalVaultSync {
         try makeTestSync(root: root,
             binding: LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"),
-            transport: transport)
+            transport: transport, accountId: queuedFixtureAccount)
     }
 
     func testRebindArchivesPreviousJournalAndKeepsLocalPack() throws {
@@ -842,12 +842,45 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(after, count)
     }
 
+    private var queuedFixtureAccount: String?
+    private func prepareQueuedOwnedFixture() throws -> (URL?, URL) {
+        let device = FileManager.default.temporaryDirectory.appendingPathComponent("queued-positive-device-" + UUID().uuidString)
+        let previous = LocalVaultDeviceState.exchangeConfiguredBase(device)
+        do { try LocalVaultAccountRootOwnership.open(root: root, binding: .init(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace"), accountId: "account-a") }
+        catch { _ = LocalVaultDeviceState.exchangeConfiguredBase(previous); try? FileManager.default.removeItem(at: device); throw error }
+        queuedFixtureAccount = "account-a"
+        return (previous, device)
+    }
+    private func queuedPack(_ body: String) throws -> Data {
+        let archive = try Archive(data: pack(body), accessMode: .update)
+        let marker = Data(#"{"version":1,"generation":"queued-generation"}"#.utf8)
+        try archive.addEntry(with: "texttext-lifecycle.json", type: .file, uncompressedSize: Int64(marker.count)) { position, size in marker.subdata(in: Int(position)..<Int(position)+size) }
+        return try XCTUnwrap(archive.data)
+    }
+    private func queuedRetainedSnapshot() throws -> [String: Data] {
+        let device = LocalVaultDeviceState.directory(root: root), raw = try JSONSerialization.jsonObject(with: Data(contentsOf: device.appendingPathComponent("sync/state.json"))) as! [String: Any]
+        var target: [String: Any] = [:]
+        for key in ["outbox", "baselines", "lifecycles", "conflicts", "binaryOutbox", "binaryBaselines", "binaryRevisions", "sharedRenames", "sharedDownloads"] { target[key] = (raw[key] as? [String: Any])?[itemId] ?? NSNull() }
+        for key in ["binding", "accountId", "folderCaseCommand"] { target[key] = raw[key] ?? NSNull() }
+        var value = ["targetState": try JSONSerialization.data(withJSONObject: target, options: [.sortedKeys])]
+        let pending = (raw["outbox"] as? [String: [String: Any]])?[itemId]
+        if let operation = pending?["operationId"] as? String { value["payload"] = try Data(contentsOf: device.appendingPathComponent("sync/outbox/\(operation).textpack")) }
+        value["payloadNames"] = try JSONSerialization.data(withJSONObject: (try? FileManager.default.contentsOfDirectory(atPath: device.appendingPathComponent("sync/outbox").path).sorted()) ?? [])
+        for path in [self.path, "Archive/Queued/Note.textpack"] { let url = root.appendingPathComponent(path); if FileManager.default.fileExists(atPath: url.path) { value["projection:"+path] = try Data(contentsOf: url) } }
+        for name in ["checkpoint.json", "intent.json", "move-intent.json", "binary-intent.json", "projection.textpack", "binary-next.textpack"] { let url = device.appendingPathComponent("shared-editing/\(itemId)/\(name)"); if FileManager.default.fileExists(atPath: url.path) { value["shared:"+name] = try Data(contentsOf: url) } }
+        value["owner"] = try Data(contentsOf: device.appendingPathComponent(LocalVaultAccountRootOwnership.fileName))
+        if let deletion = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: itemId) { value["deletion"] = deletion }
+        return value
+    }
     func testPersistedUploadFollowsRemoteFolderMoveWithLaterEdit() async throws {
-        let original = try pack("Initial")
-        let queued = try pack("Queued edit")
-        let later = try pack("Queued edit plus later edit")
+        let (previous, device) = try prepareQueuedOwnedFixture()
+        defer { queuedFixtureAccount = nil; _ = LocalVaultDeviceState.exchangeConfiguredBase(previous); try? FileManager.default.removeItem(at: device) }
+        let original = try queuedPack("Initial")
+        let queued = try queuedPack("Queued edit")
+        let later = try queuedPack("Queued edit plus later edit")
         try putLocal(original)
-        let transport = FakeVaultTransport()
+        let transport = FakeVaultTransport(scope: .init(origin: "https://texttext.test", workspaceId: "workspace", accountId: "account-a"))
+        await transport.restore(itemId: itemId, path: path, data: original, lifecycle: "queued-generation")
         _ = try await engine(transport).sync()
         try putLocal(queued)
         await transport.failNextUploadBeforeCommit()
@@ -858,6 +891,7 @@ final class LocalVaultSyncTests: XCTestCase {
             baseRevision: TextTextStableDigest.sha256Hex(original), operationId: UUID().uuidString)
         try putLocal(later)
         let report = try await engine(transport).sync()
+        try await queuedLegacyEvidence("later-edit", transport: transport)
         XCTAssertTrue(report.errors.isEmpty)
         XCTAssertTrue(report.conflicts.isEmpty)
         let remote = try await transport.download(itemId: itemId)
@@ -871,11 +905,32 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(after, count)
     }
 
+    private func queuedLegacyEvidence(_ name: String, transport: FakeVaultTransport) async throws {
+        guard let folder = ProcessInfo.processInfo.environment["TEXTTEXT_QUEUED_LEGACY_EVIDENCE"] else { return }
+        let device = LocalVaultDeviceState.directory(root: root)
+        let state = try JSONSerialization.jsonObject(with: Data(contentsOf: device.appendingPathComponent("sync/state.json"))) as! [String: Any]
+        let remote = await transport.manifest().first { $0.itemId == itemId }
+        let pending = (state["outbox"] as? [String: [String: Any]])?[itemId]
+        var value: [String: Any] = ["pending": pending ?? [:], "baseline": (state["baselines"] as? [String: [String: Any]])?[itemId] ?? [:],
+            "localLifecycle": (state["lifecycles"] as? [String: String])?[itemId] ?? NSNull(),
+            "remoteLifecycle": remote?.lifecycle as Any? ?? NSNull(), "remoteRevision": remote?.revision as Any? ?? NSNull(),
+            "remotePath": remote?.relativePath as Any? ?? NSNull(), "accountId": state["accountId"] ?? NSNull(),
+            "ownerPresent": FileManager.default.fileExists(atPath: device.appendingPathComponent(LocalVaultAccountRootOwnership.fileName).path)]
+        if let operation = pending?["operationId"] as? String {
+            let bytes = try Data(contentsOf: device.appendingPathComponent("sync/outbox/\(operation).textpack"))
+            value["stagedHash"] = TextTextStableDigest.sha256Hex(bytes)
+        }
+        try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys,.prettyPrinted]).write(to: URL(fileURLWithPath: folder).appendingPathComponent(name + ".json"), options: .withoutOverwriting)
+    }
+
     private func verifyQueuedMoveOrdering(_ ordering: String) async throws {
-        let original = try pack("Initial")
-        let queued = try pack("Queued edit")
+        let (previous, device) = try prepareQueuedOwnedFixture()
+        defer { queuedFixtureAccount = nil; _ = LocalVaultDeviceState.exchangeConfiguredBase(previous); try? FileManager.default.removeItem(at: device) }
+        let original = try queuedPack("Initial")
+        let queued = try queuedPack("Queued edit")
         try putLocal(original)
-        let transport = FakeVaultTransport()
+        let transport = FakeVaultTransport(scope: .init(origin: "https://texttext.test", workspaceId: "workspace", accountId: "account-a"))
+        await transport.restore(itemId: itemId, path: path, data: original, lifecycle: "queued-generation")
         await transport.setFolders(["Notes", "Notes/Empty"], authoritative: true)
         _ = try await engine(transport).sync()
         try putLocal(queued)
@@ -893,8 +948,25 @@ final class LocalVaultSyncTests: XCTestCase {
             try FileManager.default.moveItem(at: root.appendingPathComponent(path), to: root.appendingPathComponent(movedPath))
         }
         if ordering == "denied" { await transport.setWritable(false) }
+        let retainedBefore = ordering == "lost-ack" ? try queuedRetainedSnapshot() : nil
+        let operationsBefore = await transport.operations()
         let report = try await engine(transport).sync()
-        XCTAssertTrue(report.errors.isEmpty)
+        try await queuedLegacyEvidence(ordering, transport: transport)
+        if let retainedBefore {
+            // Same bytes are not a terminal receipt for the old upload after a
+            // peer path change. Keep its immutable request for review.
+            XCTAssertTrue(report.errors.contains("A queued file update needs review before its path can change. Your file is kept on this device."))
+            XCTAssertFalse(report.hasMore)
+            XCTAssertEqual(try queuedRetainedSnapshot(), retainedBefore)
+            _ = try await engine(transport).sync()
+            XCTAssertEqual(try queuedRetainedSnapshot(), retainedBefore)
+            let operationsAfter = await transport.operations(); XCTAssertEqual(operationsAfter, operationsBefore)
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), queued)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(movedPath).path))
+            return
+        }
+        if ordering == "denied" { XCTAssertTrue(report.errors.contains("A queued file update needs review before its path can change. Your file is kept on this device.")) }
+        else { XCTAssertTrue(report.errors.isEmpty) }
         XCTAssertTrue(report.conflicts.isEmpty)
         if ordering == "denied" {
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), queued)
@@ -914,7 +986,7 @@ final class LocalVaultSyncTests: XCTestCase {
 
     func testQueuedMoveRecoversInterruptedLocalAdoption() async throws { try await verifyQueuedMoveOrdering("interrupted") }
     func testQueuedMoveDefersUntilFreshPermissionReturns() async throws { try await verifyQueuedMoveOrdering("denied") }
-    func testQueuedMoveReplaysLostAcknowledgement() async throws { try await verifyQueuedMoveOrdering("lost-ack") }
+    func testQueuedMoveRetainsLostAcknowledgementAfterPeerPathMove() async throws { try await verifyQueuedMoveOrdering("lost-ack") }
 
     func testRemoteMoveDefersWhileSharedEditorOwnsFile() async throws {
         let original = try pack("Initial")
@@ -1407,6 +1479,8 @@ final class LocalVaultSyncTests: XCTestCase {
 }
 
 actor FakeVaultTransport: LocalVaultSyncTransport {
+    nonisolated let protectedRenameBinding: LocalVaultProtectedRenameScope?
+    init(scope: LocalVaultProtectedRenameScope? = nil) { protectedRenameBinding = scope }
     private var writable = true
     func setWritable(_ value: Bool) { writable = value }
     func canWrite(itemId: String, path: String, existing: Bool) async -> Bool { writable }
