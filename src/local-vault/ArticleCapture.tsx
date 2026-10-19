@@ -5,12 +5,13 @@ import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { vaultRequest } from "./bridge";
 
-export function ArticleCapture({ document, readCurrent, update, beforeCapture, onMediaPending }: {
+export function ArticleCapture({ document, readCurrent, update, beforeCapture, onMediaPending, onCapturePending }: {
   document: DocumentSnapshot;
   readCurrent: () => DocumentSnapshot;
   update: (transform: (current: DocumentSnapshot) => DocumentSnapshot) => void;
   beforeCapture: () => Promise<boolean>;
   onMediaPending?: () => void;
+  onCapturePending?: (pending: boolean) => void;
 }) {
   const source = articleSource(document);
   const active = useRef(true), running = useRef(false), attempted = useRef(false);
@@ -19,7 +20,7 @@ export function ArticleCapture({ document, readCurrent, update, beforeCapture, o
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const capture = useCallback(async () => {
     if (running.current) return;
-    running.current = true; setBusy(true); setNotice("");
+    running.current = true; onCapturePending?.(true); setBusy(true); setNotice("");
     let base: DocumentSnapshot | undefined;
     try {
       if (!await beforeCapture() || !active.current) return;
@@ -41,8 +42,8 @@ export function ArticleCapture({ document, readCurrent, update, beforeCapture, o
         try { update((current) => ({ ...current, content: { ...current.content, fields: { ...current.content.fields, captureStatus: "failed" } } })); } catch { /* Keep unresolved file conflicts intact. */ }
       }
       setNotice(error instanceof Error ? error.message : "Could not capture the article. Your link is saved.");
-    } finally { running.current = false; if (active.current) setBusy(false); }
-  }, [beforeCapture, onMediaPending, readCurrent, update]);
+    } finally { running.current = false; onCapturePending?.(false); if (active.current) setBusy(false); }
+  }, [beforeCapture, onMediaPending, onCapturePending, readCurrent, update]);
   useEffect(() => {
     let cancelled = false;
     // New links are already durable before this component mounts. Extraction

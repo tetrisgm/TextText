@@ -29,6 +29,14 @@ static class ReplacementBridgeTests
             var wrongAccount=new StalledTransport();var refused=false;
             try{using var wrong=new WindowsBridge(context with{AccountId="account-b"},wrongAccount,state);}catch(SharedAccountMismatchException){refused=true;}
             check(refused&&!wrongAccount.ManifestStarted.Task.IsCompleted,"owned factory accepts attested profile two and refuses another principal before discovery");
+            var handoffConfig=JsonSerializer.SerializeToElement(await bridge.InvokeAsync("collaboration.localHandoffConfig",Json(new {}),CancellationToken.None));
+            check(handoffConfig.GetProperty("version").GetInt32()==1&&handoffConfig.GetProperty("profileVersion").GetInt32()==4,"native handoff configuration advertises owned private support");
+            foreach(var version in new object[]{true,0,2,"1"}) {
+                refused=false;try{await bridge.InvokeAsync("collaboration.open",Json(new {itemId=file.ItemId,path=file.Path,hash=file.Hash,localHandoffVersion=version}),CancellationToken.None);}catch(InvalidDataException){refused=true;}
+                check(refused,"native handoff refuses noninteger or unsupported requested version before lease");
+            }
+            refused=false;try{await bridge.InvokeAsync("collaboration.localHandoffConfig",Json(new {future=true}),CancellationToken.None);}catch(InvalidDataException){refused=true;}
+            check(refused,"native handoff config refuses unknown request fields");
             object Scope(string requestedRoot,string requestedWorkspace="workspace",string? account="account-a")=>new {workspaceRoot=requestedRoot,workspaceId=requestedWorkspace,accountId=account};
             foreach(var invalid in new[]{Scope(root+"-other"),Scope(root,"other-workspace"),Scope(root,account:"account-b")}) {
                 refused=false;try{await bridge.InvokeAsync("files.replacementList",Json(invalid),CancellationToken.None);}catch(Exception error)when(error is IOException or SharedAccountMismatchException){refused=true;}

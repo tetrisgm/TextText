@@ -1,7 +1,8 @@
+import { isLocalHandoffCapability, type LocalHandoffCapability } from "./local-handoff-capability";
 import { VaultError, vaultRequest, type VaultFile } from "./bridge";
 import { packIdentity } from "./pack";
 
-export type NativeSharedSession = { sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null; capabilities?: string[] };
+export type NativeSharedSession = { localHandoff?: LocalHandoffCapability; sessionToken: string; path: string; hash: string; projectedHash?: string | null; acknowledgedRevision: string; journal: string | null; retiredReason: string | null; capabilities?: string[] };
 
 /** Reread a same-identity file if sync or a CLI edit wins the read/open race. */
 export async function openLocalSharedSession(
@@ -9,12 +10,15 @@ export async function openLocalSharedSession(
   initial: VaultFile,
   request: typeof vaultRequest = vaultRequest,
   unchangedRetryMs = 20_000,
+  localHandoff?: LocalHandoffCapability,
 ): Promise<{ native: NativeSharedSession; file: VaultFile }> {
+  if (localHandoff !== undefined && !isLocalHandoffCapability(localHandoff)) throw new VaultError("This recovery format is not supported.", "handoff_unverified");
   let file = initial;
   const deadline = Date.now() + unchangedRetryMs;
   for (let attempt = 0; attempt < 16; attempt++) {
     try {
-      const native = await request<NativeSharedSession>("collaborationOpen", { itemId, path: file.path, hash: file.hash });
+      const native = await request<NativeSharedSession>("collaborationOpen", { itemId, path: file.path, hash: file.hash, ...(localHandoff ? { localHandoffVersion: 1 } : {}) });
+      if (localHandoff && !isLocalHandoffCapability(native.localHandoff)) throw new VaultError("The shared editor could not verify its recovery format. Keep this document open.", "handoff_unverified");
       return { native, file };
     } catch (error) {
       if (!(error instanceof VaultError) || error.code !== "local_changed" || attempt === 15) throw error;

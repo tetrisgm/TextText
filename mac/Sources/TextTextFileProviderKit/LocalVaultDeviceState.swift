@@ -14,6 +14,19 @@ public enum LocalVaultDeviceState {
         lock.unlock()
     }
 
+    static func exchangeConfiguredBase(_ base: URL?) -> URL? {
+        lock.lock(); defer { lock.unlock() }
+        let previous = configuredBase; configuredBase = base?.standardizedFileURL.resolvingSymlinksInPath(); return previous
+    }
+
+    // Scoped configuration for isolated in-process fixtures; never used by app startup.
+    static func withConfiguredBase<T>(_ base: URL?, _ body: () throws -> T) rethrows -> T {
+        lock.lock(); let previous = configuredBase
+        configuredBase = base?.standardizedFileURL.resolvingSymlinksInPath()
+        defer { configuredBase = previous; lock.unlock() }
+        return try body()
+    }
+
     public static func directory(root: URL) -> URL {
         lock.lock()
         let base = configuredBase
@@ -28,6 +41,27 @@ public enum LocalVaultDeviceState {
         return base.standardizedFileURL.resolvingSymlinksInPath()
             .appendingPathComponent("VaultDeviceState", isDirectory: true)
             .appendingPathComponent(digest, isDirectory: true)
+    }
+
+    /// Handoff records are private to this configured device state, never the portable root.
+    public static func supportsLocalHandoff(root: URL) throws -> Bool {
+        lock.lock(); let base = configuredBase; lock.unlock()
+        guard let base else { return false }
+        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+        guard base.path != canonical.path, !base.path.hasPrefix(canonical.path + "/"),
+              !isCloudManaged(root: base) else { return false }
+        let state = directory(root: canonical, base: base)
+        guard state.resolvingSymlinksInPath().path == state.path else { return false }
+        let ownerURL = state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        guard FileManager.default.fileExists(atPath: ownerURL.path) else { return false }
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: canonical)
+        let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: StableFileSnapshot.read(ownerURL, maximumBytes: 4096))
+        try LocalVaultAccountRootOwnership.open(root: canonical, binding: owner.binding, accountId: owner.accountId)
+        return true
+    }
+    public static func prepareLocalHandoff(root: URL) throws {
+        guard try supportsLocalHandoff(root: root) else { throw LocalVaultAccountRootOwnership.Failure.future }
+        try RetainedReplacementProfile.prepareLocalHandoff(root: root)
     }
 
     /// A provider may hide a file while it is downloading or the account is

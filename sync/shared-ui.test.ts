@@ -56,9 +56,17 @@ describe("shared product UI boundary", () => {
   });
   it("keeps editor, collection and collaboration composition in the shared app", () => {
     const app = inspect(read("src/local-vault/VaultApp.tsx"));
-    for (const component of ["UnifiedDocumentEditor", "WorkspaceOverview", "CollaborativeVaultEditor"]) expect(app.rendered).toContain(component);
+    for (const component of ["HostedVaultEditor", "VaultEditorSurface", "WorkspaceOverview", "CollaborativeVaultEditor"]) expect(app.rendered).toContain(component);
+    expect(app.imports).toContain("./editor-surface-host");
     for (const file of ["WorkspaceOverview.tsx", "FolderPresentation.tsx"]) expect(inspect(read(`src/local-vault/${file}`)).rendered).toContain("VaultDocumentGrid");
-    expect(inspect(read("src/local-vault/CollaborativeVaultEditor.tsx")).rendered).toContain("UnifiedDocumentEditor");
+    const shared = inspect(read("src/local-vault/CollaborativeVaultEditor.tsx"));
+    expect(shared.rendered).toContain("HostedVaultEditor");
+    expect(shared.imports).toContain("./editor-surface-host");
+    const surface = inspect(read("src/local-vault/editor-surface-host.tsx"));
+    expect(surface.imports).toContain("@/components/document/UnifiedDocumentEditor");
+    expect(surface.rendered.filter(name => name === "UnifiedDocumentEditor")).toHaveLength(2); // hosted surface and ordinary unhosted fallback
+    expect(app.rendered).not.toContain("UnifiedDocumentEditor");
+    expect(shared.rendered).not.toContain("UnifiedDocumentEditor");
   });
   it("both native build paths package the same builder output, with transport-only entry selection", () => {
     const builder=read("scripts/build-local-vault.mjs");

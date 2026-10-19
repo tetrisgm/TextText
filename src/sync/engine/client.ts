@@ -761,6 +761,29 @@ export class FileCollaborationClient {
     if (!this.initialized || !this.canEdit || this.frozen || this.dead) throw new Error("This collaboration document is not editable.");
     change(this.doc);
   }
+  /** Readonly target for the exact synchronous local transfer just applied. */
+  get localDurabilityTarget(): { workspaceId: string; itemId: string; lifecycle: string; generation: number; epoch: number | null } {
+    return { workspaceId: this.options.workspaceId, itemId: this.options.itemId,
+      lifecycle: JSON.stringify([this.options.workspaceId, this.options.itemId, this.current?.epoch ?? null, this.lifecycleId]),
+      generation: this.journalGeneration, epoch: this.current?.epoch ?? null };
+  }
+  /** Apply only a previously persisted exact update in its original epoch.
+   * Reapplying already included Yjs IDs emits no update and mints no generation. */
+  applyLocalHandoffUpdate(update: Uint8Array, expectedEpoch: number): number | null {
+    if (!this.initialized || !this.canEdit || this.frozen || this.dead || this.current?.epoch !== expectedEpoch ||
+        encode(update).length > MAX_UPDATE_CHARS) return null;
+    const probe = new Y.Doc();
+    try {
+      Y.applyUpdate(probe, Y.encodeStateAsUpdate(this.doc)); Y.applyUpdate(probe, update);
+      if (probe.store.pendingStructs || probe.store.pendingDs) return null;
+      const snapshot = documentSnapshotFromYDoc(probe);
+      if (snapshot.content.assets.some(asset => asset.src.startsWith("blob:") || asset.poster?.startsWith("blob:")) ||
+          (typeof snapshot.content.fields.cover === "string" && snapshot.content.fields.cover.startsWith("blob:"))) return null;
+    } catch { return null; }
+    finally { probe.destroy(); }
+    this.mutate(doc => Y.applyUpdate(doc, update, "local-handoff"));
+    return this.frozen || this.storageSaveFailed ? null : this.journalGeneration;
+  }
   /** Merge a native file revision without replacing the Y.Doc or editor binding. */
   reconcileExternalDocument(base: DocumentSnapshot, external: DocumentSnapshot): boolean {
     if (!this.initialized || !this.canEdit || this.frozen || this.dead) return false;

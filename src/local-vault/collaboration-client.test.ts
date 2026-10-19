@@ -1,3 +1,4 @@
+import { prepareHandoffUpdate } from "./handoff-update";
 import unavailableProjection from "../../sync/fixtures/checkpoint-unavailable.json";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireBuiltinTemplate } from "@/lib/presentation/templates";
@@ -55,6 +56,89 @@ class Server {
   };
 }
 const clients: FileCollaborationClient[] = [];
+describe("persisted exact handoff intent replay", () => {
+  it("reopens after acknowledged transfer and peer append without duplicate text, operation or generation", async () => {
+    const server = new Server(), journal = new Journal(), first = client(server, journal);
+    await first.start();
+    const base = documentSnapshotFromYDoc(first.doc), local = structuredClone(base); local.content.body = "Hello L";
+    const update = prepareHandoffUpdate(first.doc, base, local)!;
+    // This exact byte array represents the durable draft retained across crash.
+    expect(first.applyLocalHandoffUpdate(update, first.epoch!)).not.toBeNull();
+    expect(await first.flush()).toBe(true); first.destroy();
+    const peer = client(server); await peer.start(); peer.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " R"));
+    expect(await peer.flush()).toBe(true); peer.destroy();
+    const reopened = client(server, journal); await reopened.start();
+    const target = reopened.localDurabilityTarget.generation, operations = server.pushes.length;
+    expect(reopened.applyLocalHandoffUpdate(update, reopened.epoch!)).toBe(target);
+    expect(reopened.applyLocalHandoffUpdate(update, reopened.epoch!)).toBe(target);
+    expect(documentSnapshotFromYDoc(reopened.doc).content.body).toBe("Hello L R");
+    expect(await reopened.flush()).toBe(true); expect(server.pushes.length).toBe(operations);
+    expect(reopened.localDurabilityTarget.generation).toBe(target);
+  });
+  it("restores the native checkpoint journal and deduplicates an acknowledged intent after a peer append", async () => {
+    const server = new Server(); let native: string | null = null;
+    const open = () => {
+      const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+        journal: new Journal(), request: server.request, retainedJournal: native,
+        checkpoint: async value => { native = JSON.stringify(value.journal); } });
+      clients.push(editor); return editor;
+    };
+    const first = open(); await first.start(); const base = documentSnapshotFromYDoc(first.doc), local = structuredClone(base); local.content.body += " L";
+    const exact = prepareHandoffUpdate(first.doc, base, local)!;
+    expect(first.applyLocalHandoffUpdate(exact, first.epoch!)).not.toBeNull(); expect(await first.flush()).toBe(true);
+    expect(native).not.toBeNull(); first.destroy();
+    const peer = client(server); await peer.start(); peer.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " R")); expect(await peer.flush()).toBe(true); peer.destroy();
+    const restored = open(); await restored.start(); const before = restored.localDurabilityTarget.generation;
+    expect(restored.applyLocalHandoffUpdate(exact, restored.epoch!)).toBe(before);
+    expect(documentSnapshotFromYDoc(restored.doc).content.body).toBe("Hello L R");
+    expect((await restored.flushLocalResult()).outcome).toBe("durable");
+  });
+  it("refuses changed epochs and corrupt bytes before any mutation", async () => {
+    const server = new Server(), current = client(server); await current.start();
+    const before = Y.encodeStateAsUpdate(current.doc), target = current.localDurabilityTarget.generation;
+    expect(current.applyLocalHandoffUpdate(new Uint8Array([255]), current.epoch!)).toBeNull();
+    expect(current.applyLocalHandoffUpdate(new Uint8Array([0, 0]), current.epoch! + 1)).toBeNull();
+    expect(Y.encodeStateAsUpdate(current.doc)).toEqual(before); expect(current.localDurabilityTarget.generation).toBe(target);
+  });
+  it("keeps exact handoff recovery when the native checkpoint commits but its reply fails", async () => {
+    const server = new Server(); let native: string | null = null, loseReply = false;
+    const open = () => {
+      const editor = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1",
+        journal: new Journal(), retainedJournal: native, request: server.request,
+        checkpoint: async value => { native = JSON.stringify(value.journal); if (loseReply) throw Error("controlled uncertain checkpoint reply"); } });
+      clients.push(editor); return editor;
+    };
+    const first = open(); await first.start();
+    const base = documentSnapshotFromYDoc(first.doc), local = structuredClone(base); local.content.body += " L";
+    const exact = prepareHandoffUpdate(first.doc, base, local)!; loseReply = true;
+    expect(first.applyLocalHandoffUpdate(exact, first.epoch!)).not.toBeNull();
+    expect((await first.flushLocalResult()).outcome).not.toBe("durable"); expect(native).not.toBeNull(); first.destroy();
+    const peer = client(server); await peer.start(); peer.mutate(doc => documentText(doc, "body").insert(documentText(doc, "body").length, " R")); expect(await peer.flush()).toBe(true); peer.destroy();
+    // The failed native acknowledgement may prevent L from reaching the server;
+    // its insertion is then concurrent with R. Preserve actual Yjs ordering.
+    const expected = new Y.Doc();
+    Y.applyUpdate(expected, Uint8Array.from(atob(JSON.parse(native!).update), value => value.charCodeAt(0)));
+    Y.applyUpdate(expected, Uint8Array.from(atob(server.state.update), value => value.charCodeAt(0)));
+    const expectedBody = documentSnapshotFromYDoc(expected).content.body; expected.destroy();
+    expect(expectedBody.replace(" L", "").replace(" R", "")).toBe("Hello");
+    loseReply = false; const restored = open(); await restored.start(); const before = restored.localDurabilityTarget.generation;
+    expect(restored.applyLocalHandoffUpdate(exact, restored.epoch!)).toBe(before);
+    expect(documentSnapshotFromYDoc(restored.doc).content.body).toBe(expectedBody);
+    expect((await restored.flushLocalResult()).outcome).toBe("durable");
+  });
+  it("refuses durability after local storage fails while retaining the updated in-memory journal", async () => {
+    const server = new Server(), journal = new Journal(), current = client(server, journal); await current.start();
+    const base = documentSnapshotFromYDoc(current.doc), local = structuredClone(base); local.content.body += " L";
+    const exact = prepareHandoffUpdate(current.doc, base, local)!; journal.fail = true;
+    expect(current.applyLocalHandoffUpdate(exact, current.epoch!)).toBeNull();
+    expect(documentSnapshotFromYDoc(current.doc).content.body).toBe("Hello L");
+    const retained = current.recoveryJournal; expect(retained).not.toBeNull();
+    const recovery = new Y.Doc(); Y.applyUpdate(recovery, Uint8Array.from(atob(retained!.update), value => value.charCodeAt(0)));
+    expect(documentSnapshotFromYDoc(recovery).content.body).toBe("Hello L"); recovery.destroy();
+    expect((await current.flushLocalResult()).outcome).not.toBe("durable"); expect(server.pushes).toEqual([]);
+  });
+});
+
 function client(server: Server, journal = new Journal(), request = server.request) {
   const result = new FileCollaborationClient({ server: "https://texttext.test", workspaceId: "workspace", itemId: "item-1", journal, request });
   clients.push(result); return result;

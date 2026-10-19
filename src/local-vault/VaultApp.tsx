@@ -1,4 +1,14 @@
 "use client";
+import * as Y from "yjs";
+import { Awareness } from "y-protocols/awareness";
+import { applyDocumentSnapshot } from "@/lib/collab/document";
+import { HostedVaultEditor, VaultEditorSurfaceHost, VaultEditorSurfaceController, VaultEditorSurface } from "./editor-surface-host";
+import { isLocalHandoffCapability } from "./local-handoff-capability";
+import { handoffLocalToShared } from "./local-shared-handoff";
+import { prepareHandoffUpdate } from "./handoff-update";
+import { acquireVaultDocument, type VaultDocumentHandle } from "./document-session";
+import type { NativeHandoffScope, NativeHandoffDraftOwner } from "./native-handoff-draft";
+import { NativeHandoffDraftOwner as HandoffDraftOwner, parseNativeHandoffDraft, decodeHandoffUpdate } from "./native-handoff-draft";
 import { createVaultDocumentReferences, vaultReferenceChoices } from "./reference-choices";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { reconcileFolderLocation } from "./folder-location";
@@ -14,7 +24,7 @@ import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DocumentBoundary } from "./DocumentBoundary";
-import { UnifiedDocumentEditor, type EditorImagePasteRequest, type EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
+import type { EditorImagePasteRequest, EditorImagePasteResult } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentEngineStyles } from "@/components/document/DocumentEngineStyles";
 import { validateTemplateDefinition, type TemplateDefinition } from "@/lib/presentation/schema";
 import { prepareSavedLook } from "./saved-look";
@@ -88,7 +98,14 @@ function mapStrings<T>(value: T, substitutions: Map<string, string>): T {
   return value;
 }
 
-function VaultEditor({ documentReferences, onOpenReference, referenceChoices, readOnly = false, initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled }: VaultEditorProps) {
+type LocalEditorHandoff = {
+  capture(): { generation: number; document: DocumentSnapshot };
+  recoveryDocument(): DocumentSnapshot;
+  pauseAndDrain(): Promise<{ file: VaultFile; base: DocumentSnapshot }>;
+  begin(scope: NativeHandoffScope, proof: import("./local-handoff-capability").LocalHandoffCapability): NativeHandoffDraftOwner;
+  assertCurrent(): void;
+};
+function VaultEditor({ documentReferences, onOpenReference, referenceChoices, readOnly = false, initial, root, onChanged, onRemoved, onTitleChange, registerFlush, startEditing, focusNewNote, focusNewNoteTitle, focusNewNoteOrigin, focusNewNoteSelection, onNewNoteFocusHandled, registerHandoff }: VaultEditorProps & { registerHandoff?: (owner: LocalEditorHandoff | null) => void }) {
   const recoveryKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(initial.markdown)])}`;
   const legacyRecoveryKey = useRef(`texttext:vault-draft:${root}:${initial.path}`).current;
   const initialDocument = useMemo(() => readDocument(initial), [initial]);
@@ -101,7 +118,27 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   }, [initial.path, initial.markdown]);
   const baseline = useRef(initialDocument);
   const current = useRef(initialDocument);
+  const localGeneration = useRef(0), fileWriterPaused = useRef(false);
+  const handoffDraft = useRef<NativeHandoffDraftOwner | null>(null);
+  const handoffStorageFailed = useRef(false);
+  const alive = useRef(true);
+  const [localDocument] = useState(() => { const doc = new Y.Doc(); applyDocumentSnapshot(doc, initialDocument); return doc; });
+  const [localAwareness] = useState(() => new Awareness(localDocument));
+  useEffect(() => () => { alive.current = false; localAwareness.destroy(); localDocument.destroy(); }, [localAwareness, localDocument]);
+
   const running = useRef<Promise<boolean> | null>(null);
+  const fileOperations = useRef(new Set<Promise<void>>());
+  const captureFinish = useRef<(() => void) | null>(null);
+  const capturePending = useCallback((pending: boolean) => {
+    if (pending) {
+      if (captureFinish.current) return;
+      let finish!: () => void;
+      const operation = new Promise<void>(resolve => { finish = resolve; });
+      fileOperations.current.add(operation);
+      captureFinish.current = () => { fileOperations.current.delete(operation); finish(); captureFinish.current = null; };
+    } else captureFinish.current?.();
+  }, []);
+
   const refreshing = useRef(false);
   const conflict = useRef(false);
   const missing = useRef(false);
@@ -142,10 +179,16 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   useEffect(() => () => { for (const url of assets.backward.keys()) URL.revokeObjectURL(url); }, [assets]);
   const remember = useCallback(() => {
     try {
+      if (handoffDraft.current) {
+        const captured = handoffDraft.current.capture();
+        if (localGeneration.current > captured.generation) handoffDraft.current.remember(current.current, localGeneration.current);
+        else handoffDraft.current.assertCurrent();
+        return true;
+      }
       if (equal(current.current, baseline.current) && !pendingLook.current) localStorage.removeItem(recoveryKey);
       else localStorage.setItem(recoveryKey, JSON.stringify({ base: baseline.current, document: current.current, look: pendingLook.current }));
       return true;
-    } catch { setNotice("The recovery copy could not be saved. Keep this document open until its file saves."); return false; }
+    } catch { handoffStorageFailed.current = true; setNotice("The recovery copy could not be saved. Keep this document open until its file saves."); return false; }
   }, [recoveryKey]);
   const acceptRemote = useCallback((remote: VaultFile): boolean => {
     if (remote.hash === file.current.hash) { file.current = { ...file.current, path: remote.path }; return true; }
@@ -175,12 +218,14 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   }, [remember]);
   const flush = useCallback((): Promise<boolean> => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    if (running.current) return running.current;
+    if (fileWriterPaused.current) return Promise.resolve(false);
+    if (running.current) return running.current.then(saved => saved && !fileWriterPaused.current);
     if (conflict.current) return Promise.resolve(false);
     const save = async () => {
       let retries = 0;
       while (!equal(current.current, baseline.current) || pendingLook.current) {
         if (conflict.current) return false;
+        if (fileWriterPaused.current) return true;
         const submitted = current.current;
         const submittedLook = pendingLook.current;
         try {
@@ -201,7 +246,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
       return true;
     };
     running.current = save().finally(() => { running.current = null; });
-    return running.current;
+    return running.current.then(saved => saved && !fileWriterPaused.current);
   }, [acceptRemote, onChanged, remember]);
   const retrySave = async () => {
     if (!await flush()) return;
@@ -216,13 +261,46 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
   };
   const change = useCallback((next: DocumentSnapshot) => {
     if (equal(next, current.current)) return;
-    current.current = next; remember();
+    current.current = next; localGeneration.current++; remember();
     onTitleChange?.(file.current.path, next.content.title);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { void flush(); }, 350);
+    if (!fileWriterPaused.current) timer.current = setTimeout(() => { void flush(); }, 350);
   }, [flush, onTitleChange, remember]);
+  useEffect(() => {
+    if (!registerHandoff) return;
+    const assertCurrent = () => {
+      if (!alive.current || conflict.current || handoffStorageFailed.current || pendingLook.current) throw Error("This editor has retained work that needs recovery before connecting.");
+      handoffDraft.current?.assertCurrent();
+    };
+    registerHandoff({
+      capture: () => { assertCurrent(); return { generation: localGeneration.current, document: structuredClone(current.current) }; },
+      recoveryDocument: () => structuredClone(current.current),
+      pauseAndDrain: async () => {
+        assertCurrent(); fileWriterPaused.current = true;
+        if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+        const pending = running.current;
+        if (pending && !await pending) throw Error("The pending file write could not be verified.");
+        await Promise.all([...fileOperations.current]);
+        assertCurrent();
+        return { file: { ...file.current }, base: structuredClone(baseline.current) };
+      },
+      begin: (scope, proof) => {
+        assertCurrent();
+        if (!fileWriterPaused.current) throw Error("The file writer is still active.");
+        if (!handoffDraft.current) handoffDraft.current = new HandoffDraftOwner(localStorage, recoveryKey,
+          { generation: localGeneration.current, base: baseline.current, document: current.current }, scope, proof);
+        return handoffDraft.current;
+      }, assertCurrent,
+    });
+    return () => registerHandoff(null);
+  }, [registerHandoff, recoveryKey]);
+  useEffect(() => { applyDocumentSnapshot(localDocument, external, "external-file"); }, [localDocument, external]);
   const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
+    let finish!: () => void;
+    const operation = new Promise<void>(resolve => { finish = resolve; });
+    fileOperations.current.add(operation);
     try {
+      if (fileWriterPaused.current) throw Error("Finish connecting this note before pasting an image. Your clipboard is unchanged.");
       if (conflict.current) throw new Error("Resolve the file conflict before pasting an image.");
       if (!await flush()) throw new Error("Save the current text before pasting an image.");
       const sourceDocument = current.current;
@@ -233,26 +311,24 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
         files: request.files,
         occupiedFilenames: file.current.assets?.map(asset => asset.filename),
       });
+      if (fileWriterPaused.current) throw Error("The editor started connecting. Paste the image again after it connects.");
       if (!equal(sourceDocument, current.current)) throw new Error("The document changed. Paste the image again.");
       const written = await vaultRequest<VaultFile>("write", {
         ...writePayload(file.current, edit.document),
         addedAssets: edit.addedAssets,
       });
-      const saved = readDocument(written);
-      file.current = written;
-      baseline.current = saved;
-      current.current = saved;
-      setOpenedFile(written);
-      setExternal(saved);
-      remember();
+      // An already issued asset write is drained before native ownership.
+      // Reconcile its reply with text accepted while it was in flight.
+      if (!acceptRemote(written)) throw Error("The image file saved, but newer edits need recovery. Both versions are kept.");
+      localGeneration.current++; remember();
       onChanged();
       setNotice("");
       return { caret: edit.caret };
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The image could not be pasted. Your text is still here.");
       return undefined;
-    }
-  }, [flush, onChanged, remember]);
+    } finally { fileOperations.current.delete(operation); finish(); }
+  }, [acceptRemote, flush, onChanged, remember]);
   const readCurrent = useCallback(() => current.current, []);
   const updateArticle = useCallback((transform: (document: DocumentSnapshot) => DocumentSnapshot) => {
     if (conflict.current) throw new Error("Resolve the file conflict before capturing the article.");
@@ -266,7 +342,7 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
     return saved.revision === file.current.hash ? saved.revision : false;
   }, [flush]);
   const saveStoryDetails = useCallback(async (details: StoryDetails) => {
-    if (!await publishFlush()) return false;
+    if (!await publishFlush() || fileWriterPaused.current) return false;
     updateArticle(document => applyStoryDetails(document, details));
     return publishFlush();
   }, [publishFlush, updateArticle]);
@@ -280,6 +356,10 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
       }
       if (saved) {
         const draft = JSON.parse(saved);
+        if (Object.prototype.hasOwnProperty.call(draft, "version")) {
+          conflict.current = true; setHasConflict(true);
+          throw Error("This draft requires its verified shared recovery session before editing.");
+        }
         if (draft.look) {
           const template = validateTemplateDefinition(draft.look.template);
           pendingLook.current = { template, sourceJSON: draft.look.sourceJSON };
@@ -291,9 +371,9 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
         if (result.status === "merged") { current.current = result.document; setExternal(result.document); void flush(); }
         else { current.current = draft.document; setExternal(draft.document); conflict.current = true; setHasConflict(true); setNotice("A recovered draft and this file have different edits. Save a separate copy to keep both."); }
       }
-    } catch (error) { setNotice(`Could not restore the draft: ${error instanceof Error ? error.message : "invalid recovery data"}`); }
+    } catch (error) { handoffStorageFailed.current = true; setNotice(`Could not restore the draft: ${error instanceof Error ? error.message : "invalid recovery data"}`); }
     const changed = () => {
-      if (refreshing.current) return;
+      if (fileWriterPaused.current || refreshing.current) return;
       refreshing.current = true;
       void (async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -360,20 +440,27 @@ function VaultEditor({ documentReferences, onOpenReference, referenceChoices, re
     finally { setCopying(false); }
   };
   const saveLook = async (name: string) => {
-    if (!await flush()) return { ok: false, message: "Save this item before keeping its look." };
-    const original = readTemplate(file.current, current.current);
-    const metadata = prepareSavedLook(current.current, original, name, file.current.templateAuthoringSourceJSON);
-    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
-      ...metadata });
-    onChanged();
-    return { ok: true, message: `Saved in ${fresh.path}` };
+    if (fileWriterPaused.current) return { ok: false, message: "Finish connecting this item before keeping its look." };
+    let finish!: () => void;
+    const operation = new Promise<void>(resolve => { finish = resolve; });
+    fileOperations.current.add(operation);
+    try {
+      if (!await flush() || fileWriterPaused.current) return { ok: false, message: "Finish saving and connecting this item before keeping its look." };
+      const original = readTemplate(file.current, current.current);
+      const metadata = prepareSavedLook(current.current, original, name, file.current.templateAuthoringSourceJSON);
+      const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
+        ...metadata });
+      onChanged();
+      return { ok: true, message: `Saved in ${fresh.path}` };
+    } finally { fileOperations.current.delete(operation); finish(); }
   };
   const display = useMemo(() => mapStrings(external, assets.forward), [external, assets]);
   const post = useMemo(() => asPost(display, initial.path), [display, initial.path]);
   const displayTemplate = templates.find((candidate) => candidate.id === external.presentation.template.id && candidate.version === external.presentation.template.version) ?? initialTemplate;
   const experience = templateExperience(displayTemplate);
   if (readOnly) return <section className="vault-document"><p className="vault-notice">Read only</p><DocumentRenderer document={display} template={displayTemplate} /></section>;
-  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void retrySave()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} sourceBody={external.content.body} template={displayTemplate} itemId={packIdentity(openedFile.markdown)} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onEdit={() => setReading(false)} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onToggleTask={(index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } })} /> : <UnifiedDocumentEditor onOpenReference={onOpenReference} referenceChoices={referenceChoices} documentReferences={documentReferences} transport="local" renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} renderNoteCardLinkPicker={props => <VaultCardLinkPicker {...props} />} externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+  return <section className="vault-document">{notice && <div className="vault-notice" role="status">{notice}{hasConflict ? <button disabled={copying} onClick={() => void saveCopy()}>{copying ? "Saving copy…" : "Save my edits as a copy"}</button> : <button onClick={() => void retrySave()}>Retry save</button>}</div>}<ArticleCapture document={external} readCurrent={readCurrent} update={updateArticle} beforeCapture={flush} onCapturePending={capturePending} onMediaPending={() => queueArticleEnrichment(root, file.current.path)} />{articleSource(external) && <div className="vault-reading-switch"><button aria-pressed={reading} onClick={() => void flush().then((saved) => { if (saved) { setExternal(current.current); setReading(true); } })}>Read</button><button aria-pressed={!reading} onClick={() => setReading(false)}>Edit</button></div>}{reading ? articleSource(external) ? <ArticleReader document={display} template={displayTemplate} update={updateArticle} /> : experience === "article" ? <VaultStoryDisplay document={display} template={displayTemplate} onEdit={() => setReading(false)} /> : <VaultNoteDisplay document={display} sourceBody={external.content.body} template={displayTemplate} itemId={packIdentity(openedFile.markdown)} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onEdit={() => setReading(false)} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onToggleTask={(index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } })} /> : <HostedVaultEditor localDocument={registerHandoff ? localDocument : undefined} localPresence={registerHandoff ? { awareness: localAwareness, peers: [] } : undefined} onOpenReference={onOpenReference} referenceChoices={referenceChoices} documentReferences={documentReferences} transport="local" renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} renderNoteCardLinkPicker={props => <VaultCardLinkPicker {...props} />} externalDocument={external} resolveDocumentAssets={(document) => mapStrings(document, assets.forward)} blog={localBlog} post={post} template={displayTemplate} availableTemplates={templates} onPasteImages={pasteImages} onSaveAsLook={saveLook} renderTemplateLibrary={(props) => <LocalTemplateLibrary currentTemplate={pendingLook.current?.template ?? readTemplate(file.current, current.current)} onClose={props.onClose} onApply={(template, sourceJSON) => {
+    if (fileWriterPaused.current) { setNotice("Finish connecting this note before changing its look."); return; }
     pendingLook.current = { template, sourceJSON };
     setTemplates((values) => [template, ...values.filter((value) => value.id !== template.id || value.version !== template.version)]);
     props.onApply(template); remember();
@@ -395,19 +482,112 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const [resumeEditor, setResumeEditor] = useState<{ target: "body" | "title"; selection: { anchor: number; head: number; direction?: "forward" | "backward" | "none" } | null; focused: boolean } | null>(null);
   const localRoot = useRef<HTMLDivElement>(null);
   const localFlush = useRef<(() => Promise<boolean>) | null>(null);
+  const localOwner = useRef<LocalEditorHandoff | null>(null);
+  const registerLocalOwner = useCallback((owner: LocalEditorHandoff | null) => { localOwner.current = owner; }, []);
+  const [surfaceHost] = useState(() => new VaultEditorSurfaceHost());
+  const [nativeHandoff, setNativeHandoff] = useState<{ config: VaultCollaborationConfig; file: VaultFile; committed: boolean } | null>(null);
+  const nativeHandoffRef = useRef(nativeHandoff); nativeHandoffRef.current = nativeHandoff;
+  const retainedHandle = useRef<VaultDocumentHandle | null>(null);
+  const startupHandle = useRef<VaultDocumentHandle | null>(null);
+  const releaseStartupHandle = useCallback((handle: VaultDocumentHandle) => {
+    const retained = startupHandle.current;
+    if (retained && retained.session === handle.session) { startupHandle.current = null; void retained.release(); }
+  }, []);
+
+  const sharedFlush = useRef<Parameters<VaultEditorProps["registerFlush"]> | null>(null);
+  const handoffAcknowledged = useRef(false);
+  const publishSharedFlush = useCallback((value: Parameters<VaultEditorProps["registerFlush"]>) => {
+    const [flush, currentFile, publish, details, durability] = value;
+    registerFlush(async navigation => Boolean(await flush(navigation)) && handoffAcknowledged.current, currentFile,
+      async () => handoffAcknowledged.current ? publish() : false,
+      async change => handoffAcknowledged.current ? details(change) : false,
+      durability ? async () => { const receipt = await durability(); return receipt && !handoffAcknowledged.current && receipt.outcome === "durable" ? { ...receipt, outcome: "pending" } : receipt; } : undefined);
+  }, [registerFlush]);
+
+  const registerBackgroundFlush = useCallback<VaultEditorProps["registerFlush"]>((...value) => {
+    sharedFlush.current = value;
+    if (nativeHandoffRef.current?.committed) publishSharedFlush(value);
+  }, [publishSharedFlush]);
+
+  const downloadHandoffRecovery = useCallback(() => {
+    const key = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
+    const handle = retainedHandle.current ?? startupHandle.current;
+    const raw = localStorage.getItem(key);
+    let beforeHandoff: string | null = null;
+    try {
+      const hash: unknown = raw ? JSON.parse(raw).handoff?.legacyDraftSha256 : null;
+      if (typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash)) beforeHandoff = localStorage.getItem(key + ":before-handoff-v2:" + hash);
+    } catch { /* The original raw record is still exported for explicit recovery. */ }
+    const value = { version: 1, document: localOwner.current?.recoveryDocument() ?? null,
+      draft: raw, beforeHandoff,
+      journal: handle?.session.hasClient ? handle.session.client.recoveryJournal : null };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = "TextText connecting editor recovery.json"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [root, markdown]);
   const onSharedModeRef = useRef(onSharedMode);
   useEffect(() => { onSharedModeRef.current = onSharedMode; }, [onSharedMode]);
   const registerLocalFlush = useCallback<VaultEditorProps["registerFlush"]>((flush, currentFile, publishFlush, saveStoryDetails, durabilityResult) => {
     localFlush.current = flush;
-    registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult, "local-file");
+    if (!nativeHandoffRef.current?.committed) registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult, "local-file");
   }, [registerFlush]);
   useEffect(() => {
+    if (nativeHandoffRef.current) return;
     let stopped = false;
     const controller = new AbortController();
     const cacheKey = `texttext:collaboration-config:${root}:${packIdentity(markdown)}`;
     const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
-    // Finish a recoverable file draft before switching its persistence mechanism.
-    if (localStorage.getItem(draftKey) || localStorage.getItem(`texttext:vault-draft:${root}:${path}`)) {
+    // A new-format draft cannot enter the old snapshot-rediff/file writer.
+    // Native compatibility and stable scope are verified before its bytes apply.
+    const retainedDraft = localStorage.getItem(draftKey);
+    let draftVersion: unknown;
+    try { if (retainedDraft) draftVersion = JSON.parse(retainedDraft).version; }
+    catch { draftVersion = "invalid"; }
+    if (draftVersion !== undefined) {
+      // No mounted file owner may acknowledge an unopened/future handoff.
+      registerFlush(async () => false, () => initial, async () => false, async () => false);
+      const assertStartup = () => { if (stopped || controller.signal.aborted || localStorage.getItem(draftKey) !== retainedDraft) throw Error("The retained handoff changed or is no longer current."); };
+      void (async () => {
+        if (draftVersion !== 2 || !retainedDraft) throw Error("This retained draft uses an unsupported recovery format.");
+        const config = await retryBootstrap(signal => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }, signal), controller.signal);
+        assertStartup();
+        if (!config?.localFiles || !config.accountId || !isLocalHandoffCapability(config.localHandoff)) throw Error("Open this retained draft with its supported native account session.");
+        const handle = acquireVaultDocument({ ...config, requireLocalHandoff: true }, initial, root);
+        startupHandle.current = handle;
+        await handle.ready; assertStartup();
+        const native = handle.session.native, client = handle.session.client;
+        if (!isLocalHandoffCapability(native?.localHandoff) || !client.epoch) throw Error("The native recovery format was not verified.");
+        const scope = { origin: new URL(config.namespace).origin, accountId: config.accountId, workspaceId: config.workspaceId, itemId: config.itemId, epoch: client.epoch };
+        const saved = parseNativeHandoffDraft(retainedDraft, scope);
+        const draft = new HandoffDraftOwner(localStorage, draftKey, saved, scope, native.localHandoff);
+        let target = client.localDurabilityTarget.generation;
+        for (const intent of saved.handoff.intents) {
+          assertStartup();
+          const applied = client.applyLocalHandoffUpdate(decodeHandoffUpdate(intent.update), scope.epoch);
+          if (applied === null) throw Error("The retained update could not be durably applied. Its original bytes are kept.");
+          target = applied;
+        }
+        const prior = saved.handoff.intents.at(-1)?.sourceDocument ?? saved.base;
+        if (!equal(prior, saved.document)) {
+          const update = prepareHandoffUpdate(client.doc, prior, saved.document);
+          if (!update) throw Error("The retained draft and shared document need separate recovery copies.");
+          draft.record(update, saved.generation, crypto.randomUUID());
+          const applied = client.applyLocalHandoffUpdate(update, scope.epoch);
+          if (applied === null) throw Error("The retained update could not be durably applied.");
+          target = applied;
+        }
+        const lifetime = client.localDurabilityTarget.lifecycle;
+        const receipt = await client.flushLocalResult();
+        if (stopped || controller.signal.aborted || receipt.outcome !== "durable" || receipt.generation < target || receipt.lifecycle !== lifetime || client.epoch !== scope.epoch)
+          throw Error("The recovered handoff has not durably saved its original epoch.");
+        draft.assertCurrent(); draft.acknowledge(saved.generation);
+        if (stopped) return;
+        setSharedInitial(handle.session.file); setMode(config); onSharedModeRef.current?.();
+      })().catch(reason => { if (!stopped) { setRetryable(false); setError(reason instanceof Error ? reason.message : "The retained handoff needs recovery."); } });
+      return () => { stopped = true; controller.abort(); };
+    }
+    // Finish an ordinary recoverable file draft through its existing owner.
+    if (retainedDraft || localStorage.getItem(`texttext:vault-draft:${root}:${path}`)) {
       queueMicrotask(() => { if (!stopped) setMode("local"); });
       return () => { stopped = true; };
     }
@@ -455,11 +635,12 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     // Files created outside the app also join live editing after sync acknowledges them.
     if (mode !== "local") return;
     let stopped = false, running = false, rerun = false;
+    let handoffAbort: AbortController | null = null;
     const draftKey = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
     const config = () => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path });
     const read = () => vaultRequest<VaultFile>("read", { path });
     const check = () => {
-      if (stopped) return;
+      if (stopped || nativeHandoffRef.current) return;
       if (running) { rerun = true; return; }
       running = true;
       void (async () => {
@@ -467,6 +648,74 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
           rerun = false;
           const candidate = await config();
           if (!candidate || stopped || !localFlush.current) continue;
+          if (candidate.localFiles === true && isLocalHandoffCapability(candidate.localHandoff) && localOwner.current) {
+            if (!surfaceHost.hasLocalSurface() || localRoot.current?.closest("[inert]")) continue;
+            const local = localOwner.current;
+            let draft: NativeHandoffDraftOwner | null = null, acknowledgements = 0;
+            const controller = new AbortController(); handoffAbort = controller;
+            const assertCurrent = (handle?: VaultDocumentHandle) => {
+              if (stopped || localOwner.current !== local) throw Error("The editor handoff is no longer current.");
+              local.assertCurrent();
+              if (handle && retainedHandle.current !== handle) throw Error("The shared owner changed.");
+            };
+            const result = await handoffLocalToShared({
+              assertCurrent, capture: () => local.capture(), pauseAndDrain: () => local.pauseAndDrain(),
+              beginOpen: saved => {
+                assertCurrent();
+                const handle = acquireVaultDocument({ ...candidate, requireLocalHandoff: true }, saved.file, root);
+                retainedHandle.current = handle;
+                setNativeHandoff({ config: candidate, file: saved.file, committed: false });
+                const ready = (async () => {
+                  await handle.ready; assertCurrent(handle);
+                  if (!isLocalHandoffCapability(handle.session.native?.localHandoff)) throw Error("The native recovery format was not verified.");
+                  if (!handle.session.client.hasBaseline || !handle.session.client.canEdit) throw Error("The shared document is not ready for editing. The local draft is kept.");
+                  await surfaceHost.waitForSharedSurface(controller.signal); assertCurrent(handle);
+                })();
+                return { handle, ready };
+              },
+              scope: handle => handle.session.client.localDurabilityTarget,
+              merge: (handle, base, localDocument) => {
+                assertCurrent(handle);
+                const client = handle.session.client, native = handle.session.native;
+                if (!candidate.accountId || !client.epoch || !isLocalHandoffCapability(native?.localHandoff)) return null;
+                draft ??= local.begin({ origin: new URL(candidate.namespace).origin, accountId: candidate.accountId,
+                  workspaceId: candidate.workspaceId, itemId: candidate.itemId, epoch: client.epoch }, native.localHandoff);
+                const update = prepareHandoffUpdate(client.doc, base, localDocument);
+                if (!update) return null;
+                const captured = local.capture();
+                if (!equal(captured.document, localDocument)) return null;
+                const previous = draft.retained().handoff.intents.at(-1);
+                if (!previous || previous.sourceGeneration !== captured.generation || !equal(previous.sourceDocument, localDocument))
+                  draft.record(update, captured.generation, crypto.randomUUID());
+                return client.applyLocalHandoffUpdate(update, client.epoch);
+              },
+              durability: async handle => {
+                const receipt = await handle.session.client.flushLocalResult();
+                if (acknowledgements++ === 0) await surfaceHost.waitForComposition(controller.signal);
+                return receipt;
+              },
+              atomicCommit: (handle, generation) => {
+                assertCurrent(handle);
+                if (local.capture().generation !== generation || !sharedFlush.current || !surfaceHost.commitShared()) return false;
+                publishSharedFlush(sharedFlush.current);
+                setNativeHandoff(value => value ? { ...value, committed: true } : value);
+                onSharedModeRef.current?.(); return true;
+              },
+              acknowledgeDraft: async (handle, generation) => {
+                assertCurrent(handle);
+                if (local.capture().generation !== generation) throw Error("Newer local input remains in recovery.");
+                draft?.acknowledge(generation);
+                handoffAcknowledged.current = true;
+                if (sharedFlush.current) publishSharedFlush(sharedFlush.current);
+              },
+              retain: reason => { setError(reason instanceof Error ? reason.message : "The connecting editor retained its recovery copy."); },
+            });
+            if (result.state === "shared") { retainedHandle.current = null; void result.handle.release(); }
+            // Unknown lease/durability outcomes keep the old view, paused file
+            // owner and exact retained handle. Never fall through to legacy.
+            return;
+          }
+
           const body = localRoot.current?.querySelector<HTMLElement>('[aria-label="Document body"]');
           const editingBody = body?.isContentEditable === true;
           const title = localRoot.current?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Title"]');
@@ -497,18 +746,27 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     const sync = (event: Event) => { if ((event as CustomEvent<{ connected?: boolean }>).detail?.connected) check(); };
     window.addEventListener("texttext:vault-sync-status", sync);
     window.addEventListener("texttext:vault-changed", check);
+    let localSurfaceReady = surfaceHost.hasLocalSurface();
+    const unsubscribeSurface = surfaceHost.subscribe(() => {
+      const ready = surfaceHost.hasLocalSurface();
+      if (ready && !localSurfaceReady) check();
+      localSurfaceReady = ready;
+    });
     check();
-    return () => { stopped = true; window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
+    return () => { stopped = true; unsubscribeSurface(); handoffAbort?.abort(); window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
   }, [mode, path, root]);
-  if (mode === "local") return <><div ref={localRoot} inert={promoting}><VaultEditor {...props} registerFlush={registerLocalFlush} /></div>
-    {promoting && <p className="vault-notice" role="status">Connecting this note…</p>}</>;
-  if (mode) return <CollaborativeVaultEditor {...props} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
+  if (mode === "local") return <><div ref={localRoot} inert={promoting} onCompositionStartCapture={() => surfaceHost.setComposing(true)} onCompositionEndCapture={() => surfaceHost.setComposing(false)}>
+    <div hidden={nativeHandoff?.committed}><VaultEditorSurfaceController host={surfaceHost} owner="local"><VaultEditor {...props} registerFlush={registerLocalFlush} registerHandoff={registerLocalOwner} /></VaultEditorSurfaceController></div>
+    {nativeHandoff && <div hidden={!nativeHandoff.committed}><VaultEditorSurfaceController host={surfaceHost} owner="shared"><CollaborativeVaultEditor {...props} initial={nativeHandoff.file} config={nativeHandoff.config} inactiveHandoff={!nativeHandoff.committed} registerFlush={registerBackgroundFlush} onTitleChange={(path, title) => { if (nativeHandoffRef.current?.committed) props.onTitleChange?.(path, title); }} startEditing /></VaultEditorSurfaceController></div>}
+    <section className="vault-document"><VaultEditorSurface host={surfaceHost} /></section>
+    </div>{(error || promoting || nativeHandoff && !nativeHandoff.committed) && <p className="vault-notice" role="status">{error || "Connecting this note…"}{error && <button onClick={downloadHandoffRecovery}>Download recovery</button>}</p>}</>;
+  if (mode) return <CollaborativeVaultEditor {...props} onSessionAcquired={releaseStartupHandle} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
     startEditing={Boolean(resumeEditor) || props.startEditing}
     focusNewNote={Boolean(resumeEditor?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeEditor ? null : props.focusNewNoteOrigin}
     focusNewNoteTitle={resumeEditor ? resumeEditor.target === "title" : props.focusNewNoteTitle}
     focusNewNoteSelection={resumeEditor?.selection} onNewNoteFocusHandled={() => { setResumeEditor(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
-  return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}</div>;
+  return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <><button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button><button onClick={downloadHandoffRecovery}>Download recovery</button></>}</div>;
 }
 
 function selectedIdentity(file: VaultFile): string | null {

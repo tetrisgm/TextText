@@ -119,6 +119,22 @@ async function main() {
           for (const mode of [[], ['--backward-selection'], ['--focus-elsewhere']]) {
             await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-title-promotion.mts', ...mode]);
           }
+          for (const mode of [
+            ['--handoff'], ['--handoff', '--backward-selection'], ['--handoff', '--focus-elsewhere'],
+            ...['--typing-during-promotion', '--typing-during-baseline', '--typing-during-checkpoint']
+              .flatMap(phase => [[phase], [phase, '--body']]),
+            ['--typing-during-promotion', '--continuous'],
+            ['--typing-during-promotion', '--body', '--continuous'],
+            ['--typing-during-promotion', '--ime'],
+            ['--typing-during-promotion', '--body', '--ime'],
+          ]) {
+            await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-title-promotion.mts', ...mode]);
+          }
+          for (const mode of [[], ['--capture'], ['--reader'], ['--drain']]) {
+            await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-native-handoff-controls.mts', ...mode]);
+          }
+          await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-native-handoff-restart.mts']);
+          await run(process.execPath, ['--import', 'tsx', 'src/local-vault/__tests__/verify-web-handoff-bootstrap.mts']);
         }
       } else await run('bash', ['scripts/test-sync.sh', '--native-only']);
     }, () => fingerprint(root));

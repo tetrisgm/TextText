@@ -164,3 +164,19 @@ test('core gate requires title promotion caret, backward selection, and nonsteal
   assert.ok(verifier.includes("for (const mode of [[], ['--backward-selection'], ['--focus-elsewhere']])"));
   assert.ok(verifier.includes("['--import', 'tsx', 'src/local-vault/__tests__/verify-new-note-title-promotion.mts', ...mode]"));
 });
+
+test('native handoff gates include exact replay, controls, web boundary, and pure ownership contracts', async () => {
+  const verifier = await fs.readFile(new URL('./verify.mjs', import.meta.url), 'utf8');
+  for (const name of ['verify-native-handoff-controls.mts', 'verify-native-handoff-restart.mts', 'verify-web-handoff-bootstrap.mts']) {
+    assert.ok(verifier.includes(name), name);
+  }
+  for (const flag of ['--typing-during-promotion', '--typing-during-baseline', '--typing-during-checkpoint', '--continuous', '--ime', '--capture', '--reader', '--drain']) {
+    assert.ok(verifier.includes(flag), flag);
+  }
+  for (const config of ['vitest.config.mts', 'vitest.client.config.mts']) {
+    const source = await fs.readFile(new URL(config, import.meta.url), 'utf8');
+    for (const contract of ['local-shared-handoff', 'native-handoff-draft', 'handoff-update', 'editor-surface-host', 'shared-open']) {
+      assert.ok(source.includes(contract), `${config}: ${contract}`);
+    }
+  }
+});

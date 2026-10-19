@@ -277,7 +277,7 @@ public sealed partial class MainWindow : Window
     {
         switch(method)
         {
-            case "native.status": return new { accountId = workspaceAccount?.AccountId, workspaceId = ActiveWorkspaceId,root,name = ActiveWorkspaceName,connected = account is not null,available = true };
+            case "native.status": return new { localHandoffVersion = 1, accountId = workspaceAccount?.AccountId, workspaceId = ActiveWorkspaceId,root,name = ActiveWorkspaceName,connected = account is not null,available = true };
             case "native.cancel": if(p.TryGetProperty("requestId",out var request) && requests.TryGetValue(request.GetString() ?? "",out var cancellation)) cancellation.Cancel(); return null;
             case "native.http": return await Http(p,ct);
             case "native.openWeb": OpenExternal(new Uri(Origin,"/vault/" + ActiveWorkspaceId).AbsoluteUri); return null;

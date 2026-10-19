@@ -219,7 +219,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
-        or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+        or "collaboration.localHandoffConfig" or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
 
     static object FolderRenameRow(TextPackStore.FolderRenameRecoveryEntry entry) => new {
         id=entry.Id,fromPath=entry.FromPath,toPath=entry.ToPath,expectedIdentity=entry.ExpectedIdentity,
@@ -390,14 +390,28 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             case "files.delete": {
                 var file = Find(Required(p, "itemId")); files.Delete(file.Path, Required(p, "expectedHash")); return null;
             }
+            case "collaboration.localHandoffConfig": {
+                if(p.ValueKind!=JsonValueKind.Object||p.EnumerateObject().Any())throw new InvalidDataException("Invalid local handoff configuration request.");
+                if(string.IsNullOrWhiteSpace(context.AccountId))return null;
+                AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,context.AccountId);
+                return RetainedReplacementProfile.SupportsLocalHandoff(files)?new {version=1,profileVersion=4}:null;
+            }
             case "collaboration.open": {
+                var handoff=p.TryGetProperty("localHandoffVersion",out var requested);
+                if(p.EnumerateObject().Any(field=>field.Name is not("itemId" or "path" or "hash" or "localHandoffVersion")))throw new InvalidDataException("Invalid collaboration open fields.");
+                if(handoff) {
+                    if(requested.ValueKind!=JsonValueKind.Number||!requested.TryGetInt32(out var version)||version!=1)throw new InvalidDataException("Unsupported local handoff version.");
+                    ct.ThrowIfCancellationRequested();
+                    if(string.IsNullOrWhiteSpace(context.AccountId))throw new SharedAccountMismatchException();
+                    AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,context.AccountId);RetainedReplacementProfile.PrepareLocalHandoff(files);
+                }
                 var session = await editing.OpenAsync(Required(p, "itemId"), Required(p, "path"), Required(p, "hash"), ct);
                 return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
                     acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
                     projectedHash = session.Checkpoint?.ProjectedHash,
                     journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason,
                     // The shared client consumes this exact name; only stores that verify and archive authorized epoch adoption may announce it.
-                    capabilities = SharedEditingStore.Capabilities };
+                    capabilities = SharedEditingStore.Capabilities, localHandoff=handoff?new {version=1,profileVersion=4}:null };
             }
             case "collaboration.checkpoint": {
                 var file = Find(Required(p, "itemId"));

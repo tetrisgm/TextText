@@ -104,7 +104,7 @@ enum RetainedReplacementProfile {
         let marker = try JSONDecoder().decode(Marker.self, from: markerBytes)
         let before = try StableFileSnapshot.read(folder.appendingPathComponent("owner-v1.json"), maximumBytes: 4096)
         let original = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: before)
-        guard (1...3).contains(marker.version), marker.ownerVersion == 2, original.version == 1,
+        guard (1...4).contains(marker.version), marker.ownerVersion == 2, original.version == 1,
               owner.rootHash == rootHash, original.rootHash == rootHash,
               marker.originalOwnerHash == digest(before),
               marker.principalHash == (try principalHash(owner)),
@@ -131,7 +131,7 @@ enum RetainedReplacementProfile {
             let profile = directory(root).appendingPathComponent("profile.json")
             let before = try StableFileSnapshot.read(profile, maximumBytes: 4096)
             let marker = try JSONDecoder().decode(Marker.self, from: before)
-            if marker.version == 2 || marker.version == 3 { return }
+            if marker.version >= 2 { return }
             guard marker.version == 1 else { throw Failure.invalidProfile }
             try publishCreateOnly(before, target: directory(root).appendingPathComponent("profile-v1.json"))
             try observe?("folderProfilePreserved")
@@ -155,7 +155,7 @@ enum RetainedReplacementProfile {
             let profile = directory(root).appendingPathComponent("profile.json")
             let before = try StableFileSnapshot.read(profile, maximumBytes: 4096)
             let marker = try JSONDecoder().decode(Marker.self, from: before)
-            if marker.version == 3 { return }
+            if marker.version >= 3 { return }
             guard marker.version == 2 else { throw Failure.invalidProfile }
             try publishCreateOnly(before, target: directory(root).appendingPathComponent("profile-v2.json"))
             try observe?("folderPropagationProfilePreserved")
@@ -170,6 +170,29 @@ enum RetainedReplacementProfile {
         if FileManager.default.fileExists(atPath: target.path) {
             guard try StableFileSnapshot.read(target, maximumBytes: 4096) == bytes else { throw Failure.invalidProfile }
         } else { try RetainedFileReplacement.create(bytes, at: target) }
+    }
+    static func prepareLocalHandoff(root: URL, observe: ((String) throws -> Void)? = nil) throws {
+        guard try LocalVaultDeviceState.supportsLocalHandoff(root: root) else { throw Failure.unsupportedOwner }
+        try prepareFolderPropagation(root: root)
+        let root = root.standardizedFileURL.resolvingSymlinksInPath(), state = LocalVaultDeviceState.directory(root: root)
+        try withMigrationLease(stateDirectory: state) {
+            try prepareUnlocked(root: root, observe: nil)
+            let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self,
+                from: StableFileSnapshot.read(state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName), maximumBytes: 4096))
+            try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
+            let profile = directory(root).appendingPathComponent("profile.json")
+            let before = try StableFileSnapshot.read(profile, maximumBytes: 4096)
+            let marker = try JSONDecoder().decode(Marker.self, from: before)
+            if marker.version == 4 { return }
+            guard marker.version == 3 else { throw Failure.invalidProfile }
+            try publishCreateOnly(before, target: directory(root).appendingPathComponent("profile-v3.json"))
+            try observe?("localHandoffProfilePreserved")
+            let next = Marker(version: 4, ownerVersion: marker.ownerVersion, principalHash: marker.principalHash, originalOwnerHash: marker.originalOwnerHash)
+            _ = try RetainedFileReplacement.replace(profile, expectedHash: digest(before), prepared: encoder().encode(next)) { stage in
+                try observe?("localHandoffProfile:" + stage)
+            }
+            try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
+        }
     }
     /// Owned stores call this before projection mutation. Migration and its
     /// startup verification share one device-private root lease.

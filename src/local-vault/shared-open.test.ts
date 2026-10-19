@@ -45,3 +45,18 @@ it("retries a native baseline race even when the file bytes are unchanged", asyn
   expect((await openLocalSharedSession(itemId, file("old"), request)).native.sessionToken).toBe("session");
   expect(opens).toBe(2);
 });
+
+it("requires the actual private profile proof after a requested native handoff open", async () => {
+  for (const proof of [undefined, { version: 1, profileVersion: 3 }, { version: 2, profileVersion: 4 }, { version: 1, profileVersion: 4, extra: true }]) {
+    let calls = 0;
+    const request = (async <T,>(_method: string, params: Record<string, unknown>): Promise<T> => { calls++; expect(params.localHandoffVersion).toBe(1); return { localHandoff: proof, sessionToken: "possible-acquired-lease", path: file("old").path, hash: "old" } as T; }) as typeof vaultRequest;
+    await expect(openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 })).rejects.toMatchObject({ code: "handoff_unverified" });
+    expect(calls).toBe(1); // No legacy fallback, close or second lease after an uncertain open.
+  }
+  const request = (async <T,>(): Promise<T> => ({ localHandoff: { version: 1, profileVersion: 4 }, sessionToken: "verified", path: file("old").path, hash: "old" }) as T) as typeof vaultRequest;
+  expect((await openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 })).native.sessionToken).toBe("verified");
+});
+it("does not request a new profile for ordinary legacy opens", async () => {
+  const request = (async <T,>(_method: string, params: Record<string, unknown>): Promise<T> => { expect(params).not.toHaveProperty("localHandoffVersion"); return { sessionToken: "legacy", path: file("old").path, hash: "old" } as T; }) as typeof vaultRequest;
+  expect((await openLocalSharedSession(itemId, file("old"), request)).native.sessionToken).toBe("legacy");
+});

@@ -12,7 +12,7 @@ import { currentVaultWindowActive } from "./window-activity";
 import { openLocalSharedSession, type NativeSharedSession } from "./shared-open";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
-export type VaultSessionIdentity = { namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
+export type VaultSessionIdentity = { requireLocalHandoff?: boolean; namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
 export type VaultSessionView = {
   changed(session: VaultDocumentSession): void;
   replaced(next: Y.Doc, previous: Y.Doc, awareness: Awareness): Promise<void>;
@@ -133,7 +133,7 @@ export class VaultDocumentSession {
     if (this.identity.localFiles) window.addEventListener("texttext:vault-changed", this.changed);
     try {
       if (this.identity.localFiles) {
-        const opened = await openLocalSharedSession(this.identity.itemId, this.file, this.request);
+        const opened = await openLocalSharedSession(this.identity.itemId, this.file, this.request, 20_000, this.identity.requireLocalHandoff ? { version: 1, profileVersion: 4 } : undefined);
         this.native = opened.native; this.replaceFile(opened.file);
         if (this.native.hash !== this.file.hash || this.native.path !== this.file.path)
           this.replaceFile(await this.request<VaultFile>("read", { path: this.native.path }));

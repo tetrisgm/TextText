@@ -128,7 +128,7 @@ export type EditorImagePasteResult = { caret: number } | undefined;
 /** Swap the live file-relay document in place; see `registerLocalRebind`. */
 export type LocalDocumentRebind = (next: Y.Doc, awareness: Awareness) => Promise<void>;
 
-type UnifiedDocumentEditorProps = {
+export type UnifiedDocumentEditorProps = {
   /** Local vaults persist through their native file bridge. */
   transport?: "cloud" | "local";
   externalDocument?: DocumentSnapshot;
@@ -703,11 +703,12 @@ export function UnifiedDocumentEditor({
   const [doc, setDoc] = useState(() => localDocument ?? new Y.Doc());
   /** Set between a rebind request and the commit that binds the next document. */
   const rebindRef = useRef<{ next: Y.Doc; body: string; selection: { anchor: number; head: number } | null; focused: boolean;
-    history: CapturedHistory | null; resolve: () => void } | null>(null);
+    history: CapturedHistory | null; textSelection: { field: "title" | "subtitle"; value: string; start: number; end: number; direction: "forward" | "backward" | "none"; element: HTMLTextAreaElement } | null; resolve: () => void } | null>(null);
   /** History recorded on documents replaced by epoch adoption; see EpochUndoHistory. */
   const epochHistoryRef = useRef<EpochUndoHistory | null>(null);
   const capturingRef = useRef(false);
   /** Caret to place once the surface shows the merged text of an adopted epoch. */
+  const textCaretRestoreRef = useRef<{ field: "title" | "subtitle"; value: string; start: number; end: number; direction: "forward" | "backward" | "none"; element: HTMLTextAreaElement } | null>(null);
   const caretRestoreRef = useRef<{ body: string; anchor: number; head: number } | null>(null);
   const [imagePastePending, setImagePastePending] = useState(false);
   const imagePastePendingRef = useRef(false);
@@ -1014,7 +1015,7 @@ export function UnifiedDocumentEditor({
     [onDocumentChange],
   );
   const localPublishRef = useRef(publishDocument);
-  useEffect(() => { localPublishRef.current = publishDocument; }, [publishDocument]);
+  localPublishRef.current = publishDocument;
   useEffect(() => {
     if (transport !== "local") return;
     if (!localDocument) applyDocumentSnapshot(doc, initialDocumentRef.current, localOrigin.current);
@@ -1040,6 +1041,11 @@ export function UnifiedDocumentEditor({
       const surface = bodySurfaceRef.current;
       const focused = Boolean(surface && globalThis.document?.activeElement === surface);
       const selection = focused ? activeBodySelection() : null;
+      const activeText = titleRef.current === globalThis.document?.activeElement ? { field: "title" as const, element: titleRef.current } :
+        subtitleRef.current === globalThis.document?.activeElement ? { field: "subtitle" as const, element: subtitleRef.current } : null;
+      const textSelection = activeText?.element ? { field: activeText.field, element: activeText.element, value: activeText.element.value, start: activeText.element.selectionStart,
+        end: activeText.element.selectionEnd, direction: activeText.element.selectionDirection } : null;
+
       let history: CapturedHistory | null = null;
       const manager = undoManagerRef.current;
       if (manager && (manager.undoStack.length || manager.redoStack.length)) {
@@ -1048,7 +1054,7 @@ export function UnifiedDocumentEditor({
         catch { history = null; }
         finally { capturingRef.current = false; }
       }
-      rebindRef.current = { next, body: documentRef.current.content.body, selection, focused, history, resolve };
+      rebindRef.current = { next, body: documentRef.current.content.body, selection, focused, history, textSelection, resolve };
       bodyMirrorRef.current.value = undefined;
       setAwareness(nextAwareness);
       setDoc(next);
@@ -1056,7 +1062,7 @@ export function UnifiedDocumentEditor({
     registerLocalRebind(rebind);
     return () => { registerLocalRebind(null); rebindRef.current?.resolve(); rebindRef.current = null; };
   }, [registerLocalRebind, transport, hasLocalDocument]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const pending = rebindRef.current;
     if (!pending || pending.next !== doc) return;
     rebindRef.current = null;
@@ -1065,6 +1071,7 @@ export function UnifiedDocumentEditor({
     epochHistoryRef.current = pending.history ? new EpochUndoHistory(pending.history) : null;
     const snapshot = documentSnapshotFromYDoc(doc);
     localPublishRef.current(snapshot);
+    textCaretRestoreRef.current = pending.textSelection;
     if (pending.focused && pending.selection) {
       // Placed once the surface renders the merged text; placing it earlier
       // would clamp the caret to the old text's length.
@@ -1072,6 +1079,17 @@ export function UnifiedDocumentEditor({
     }
     pending.resolve();
   }, [doc]);
+  useLayoutEffect(() => {
+    const restore = textCaretRestoreRef.current;
+    if (!restore) return;
+    textCaretRestoreRef.current = null;
+    const field = restore.field === "title" ? titleRef.current : subtitleRef.current;
+    // Keep another control's newly chosen focus; a handoff does not own it.
+    if (!field || window.document.activeElement !== restore.element) return;
+    const next = document.content[restore.field] ?? "";
+    const mapped = mapSelection(restore.value, next, { anchor: restore.start, head: restore.end });
+    field.setSelectionRange(Math.min(mapped.anchor, mapped.head), Math.max(mapped.anchor, mapped.head), restore.direction);
+  }, [document]);
   useLayoutEffect(() => {
     const restore = caretRestoreRef.current;
     if (!restore || document.content.body !== restore.body) return;

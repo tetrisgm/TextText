@@ -52,7 +52,8 @@ final class LocalVaultCollaboration {
         let workspaceId: String
         let itemId: String
         let accountId: String?
-        var value: [String: Any] { var result: [String: Any] = ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true]; if let accountId { result["accountId"] = accountId }; return result }
+        var localHandoff = false
+        var value: [String: Any] { var result: [String: Any] = ["namespace": namespace, "workspaceId": workspaceId, "itemId": itemId, "localFiles": true]; if let accountId { result["accountId"] = accountId }; if localHandoff { result["localHandoff"] = ["version": 1, "profileVersion": 4] }; return result }
     }
     private let credentials: () -> LocalVaultAccountCredential?
     private let expectedLifetime: LocalVaultCredentialLifetime
@@ -512,7 +513,7 @@ final class LocalVaultCollaboration {
         if let captured, let current { return captured.sameAccount(as: current) }
         return captured == nil && current == nil
     }
-    private func localOperation(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+    private func localOperation(_ method: String, params: [String: Any], root: URL) async throws -> [String: Any] {
         guard let itemId = params["itemId"] as? String, Self.identifier(itemId) else {
             throw LocalVaultCollaborationError(code: "400", message: "Invalid collaboration item.")
         }
@@ -520,11 +521,18 @@ final class LocalVaultCollaboration {
             throw LocalVaultCollaborationError(code: "account_changed", message: "Return to the original account to continue this window's saved work.")
         }
         if method == "collaborationOpen" {
-            guard Set(params.keys) == ["itemId", "path", "hash"],
+            guard (Set(params.keys) == ["itemId", "path", "hash"] || Set(params.keys) == ["itemId", "path", "hash", "localHandoffVersion"]),
                   let path = params["path"] as? String, let hash = params["hash"] as? String,
                   let engine = engine() else { throw LocalVaultCollaborationError(code: "409", message: "This folder is not ready for shared editing.") }
             let owner = credentials()
             guard engine.accountId == owner?.accountId else { throw LocalVaultCollaborationError(code: "account_changed", message: "Saved edits need their original account or explicit recovery.") }
+            let handoff = params["localHandoffVersion"] != nil
+            if handoff {
+                guard let accountId = owner?.accountId, let binding = try LocalVaultSync.binding(root: root) else { throw LocalVaultCollaborationError(code: "account_changed", message: "Verify this account before transferring its draft.") }
+                guard try Self.integer(params["localHandoffVersion"], minimum: 1, maximum: 1) == 1 else { throw LocalVaultCollaborationError(code: "400", message: "Update TextText before transferring this draft.") }
+                try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: accountId)
+                try LocalVaultDeviceState.prepareLocalHandoff(root: root)
+            }
             let opened: LocalVaultSharedSession
             do { opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash) }
             catch LocalVaultSyncFailure.changed {
@@ -541,11 +549,13 @@ final class LocalVaultCollaboration {
             localSessions[opened.sessionToken] = (itemId, engine, owner)
             // The shared client consumes this exact name; only stores that verify
             // and archive authorized epoch adoption may announce it.
-            return ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
+            var result: [String: Any] = ["sessionToken": opened.sessionToken, "path": opened.document.path, "hash": opened.document.hash,
                     "acknowledgedRevision": opened.acknowledgedRevision, "capabilities": Self.localCapabilities,
                     "projectedHash": opened.checkpoint?.projectedHash as Any? ?? NSNull(),
                     "journal": opened.checkpoint?.journal as Any? ?? NSNull(),
                     "retiredReason": opened.checkpoint?.retiredReason as Any? ?? NSNull()]
+            if handoff { result["localHandoff"] = ["version": 1, "profileVersion": 4] }
+            return result
         }
         if method == "collaborationClose" {
             guard Set(params.keys).isSubset(of: ["itemId", "sessionToken", "retiredReason"]),
@@ -614,7 +624,7 @@ final class LocalVaultCollaboration {
             defer { self.tasks.removeValue(forKey: id) }
             do {
                 if ["collaborationOpen", "collaborationCheckpoint", "collaborationClose", "collaborationRecover"].contains(method) {
-                    completion(.success(try await self.localOperation(method, params: params))); return
+                    completion(.success(try await self.localOperation(method, params: params, root: root))); return
                 }
                 guard matchesLifetime(self.credentials()) else { throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.") }
                 let context = try await Task.detached(priority: .utility) { try Self.context(root: root, account: account) }.value
@@ -644,6 +654,10 @@ final class LocalVaultCollaboration {
                     try Task.checkCancellation()
                     guard matchesLifetime(self.credentials()), let current = self.credentials(), let account,
                           account.sameAccount(as: current) else { throw LocalVaultCollaborationError(code: "account_changed", message: "This account changed. Your saved work remains on this device.") }
+                    if configuration != nil, let accountId = context.accountId {
+                        try LocalVaultAccountRootOwnership.open(root: root, binding: context.binding, accountId: accountId)
+                        configuration?.localHandoff = try LocalVaultDeviceState.supportsLocalHandoff(root: root)
+                    }
                     completion(.success(configuration?.value)); return
                 }
                 var request = try Self.request(origin: context.binding.origin, workspaceId: context.binding.workspaceId, token: context.token, method: method, params: params)

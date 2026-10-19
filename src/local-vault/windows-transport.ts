@@ -1,3 +1,4 @@
+import { isLocalHandoffCapability } from "./local-handoff-capability";
 import { extractFolderViewMetadata, FolderViewMetadataCache } from "./folder-view-metadata";
 import { VaultError, type VaultFile, type VaultListing, type VaultTransport } from "./bridge";
 import { createWebVaultTransport } from "./web-transport";
@@ -6,7 +7,7 @@ import { readDocument } from "./model";
 import { executeWindowsAgentTool, executeWindowsFolderAgentTool } from "./windows-agent-tools";
 
 type NativeView = { postMessage(value: unknown): void; addEventListener(type: "message", listener: (event: MessageEvent) => void): void; removeEventListener(type: "message", listener: (event: MessageEvent) => void): void };
-type Status = { accountId?: string; root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
+type Status = { localHandoffVersion?: number; accountId?: string; root: string; workspaceId: string; name: string; connected: boolean; available: boolean };
 type Entry = { itemId: string; relativePath: string; revision: string; canEditContent?: boolean };
 type Manifest = { fullAccess?: boolean; canCreateContent?: boolean; writableFolders?: string[]; root: string; name: string; items: Entry[]; folders?: string[]; revision: string };
 type Read = { path: string; hash: string; data: string };
@@ -264,7 +265,10 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const config = await shared.request(method, params, signal) as { itemId: string };
       const readiness = await rpc.request<{ ready: boolean }>("files.ready", { itemId: config.itemId }, signal);
       if (!readiness.ready) return null;
-      return { ...config, namespace: "https://texttext.app", localFiles: true };
+      const { localHandoff: _remoteCapability, ...remoteConfig } = config as typeof config & { localHandoff?: unknown };
+      const localHandoff = status.localHandoffVersion === 1 ? await rpc.request<unknown>("collaboration.localHandoffConfig", {}, signal) : null;
+      return { ...remoteConfig, namespace: "https://texttext.app", localFiles: true,
+        ...(isLocalHandoffCapability(localHandoff) ? { localHandoff } : {}) };
     }
     if (method === "collaborationCheckpoint") {
       const pack = await read(String(params.itemId), signal);
