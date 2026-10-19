@@ -2,6 +2,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TextText.Core;
 namespace TextText.Windows;
 
@@ -35,7 +36,9 @@ public sealed class PrivateActorWorkspace
     public PrivateActorWorkspace(Isolation isolation,string session,string file,string workspaceId,string itemId,string title) {
         if(isolation.Version!=1||!Path.IsPathFullyQualified(isolation.Root)||!Path.IsPathFullyQualified(isolation.SessionRoot)||!Path.IsPathFullyQualified(session)||!Path.IsPathFullyQualified(file))throw new IOException("Invalid private actor isolation.");
         var parent=Canonical(isolation.SessionRoot);Root=Canonical(isolation.Root);
-        if(!Directory.Exists(parent)||!Directory.Exists(session)||Canonical(Path.GetDirectoryName(Canonical(session))!)!=parent||Root!=Path.Combine(parent,"vault")||Canonical(session)==Root)throw new IOException("Private actor root must belong to its runner session.");
+        var generation=Canonical(session);var relay=Path.GetDirectoryName(generation);var relayParent=relay is null?null:Path.GetDirectoryName(relay);
+        if(!Directory.Exists(parent)||!Directory.Exists(generation)||relay is null||relayParent is null||Canonical(relayParent)!=parent||Root!=Path.Combine(parent,"vault")||relay==Root||
+            !Regex.IsMatch(Path.GetFileName(relay),@"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z")||!Regex.IsMatch(Path.GetFileName(generation),@"^generation-[0-9]{3}\z")||Path.GetFileName(generation)=="generation-000")throw new IOException("Private actor generation must belong to its runner relay session.");
         SafeAncestors(parent);SafeAncestors(session);SafeAncestors(Root);SafeAncestors(file);
         var prefix=Root+Path.DirectorySeparatorChar;var absolute=Path.GetFullPath(file);
         if(!absolute.StartsWith(prefix,StringComparison.Ordinal)||!Guid.TryParseExact(workspaceId,"D",out _)||!Guid.TryParseExact(itemId,"D",out _)||!title.StartsWith("Six-client acceptance ",StringComparison.Ordinal))throw new IOException("Private actor fixture scope is invalid.");

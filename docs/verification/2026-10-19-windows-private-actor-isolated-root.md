@@ -4,7 +4,7 @@ Source-only extension of the existing private acceptance runner. The [installed 
 
 ## Contract
 
-Optional actor config `isolation: {version: 1, root, sessionRoot}` requires an existing runner parent and direct generation directory, with root exactly `sessionRoot/vault`. Fresh root must be empty; all ancestors are checked with `GetAttributes`, including dangling reparse points. Unknown fields, invalid types, future versions, out-of-scope paths, and nonempty roots refuse.
+Optional actor config `isolation: {version: 1, root, sessionRoot}` requires an immutable protected runner parent, a direct relay child with a bounded ordinary name, and exactly `generation-NNN` beneath that child, with root exactly `sessionRoot/vault`. The vault and scope survive distinct fresh relay sessions; one-level, three-level, cross-parent, and malformed generation/relay names refuse. Fresh root must be empty; all ancestors are checked with `GetAttributes`, including dangling reparse points. Unknown fields, invalid types, future versions, out-of-scope paths, and nonempty roots refuse.
 
 Private startup resolves the existing native credential's account identity in memory and authorizes the requested workspace using production `WorkspaceDirectory` before creating the root. It reauthorizes and rereads the captured credential before native bridge publication. The normal production portable binding, account ownership publisher, HTTP transport, sync engine, renderer, and collaboration path remain in use. A separate create-only scope receipt records exact root/workspace/item/title/path and a principal hash; it is not an owner marker and contains no token. Readiness waits for actual native download before checking the real item identity and activating it.
 
@@ -26,6 +26,12 @@ Earlier harness compilation refusals, immediate readiness polling timeouts, and 
 Private evidence: `/private/tmp/texttext-private-actor-isolation-6dd27920` and the same basename in PC LocalAppData/Temp. Final logs are `final-reviewed-{focused,private-wpf,actor-compile,normal-wpf}.log`; `final-reviewed-inputs.json` pins the ten source files. `final-metadata-exclusion.json` records PE inspection. Focused log SHA-256: `ed5e7d04e4beedca0139046901bc1554ea45c539234f23838ada6aaf6bb1642a`.
 
 Postflight at 10:37:33Z: installed PID33756 remained responding with the exact a041 executable; normal legacy owner marker remains absent; no owned child processes; existing WebView2 mitigation unchanged; zero matching Shokunin 4625/4740 events since 10:23:19Z. Unchanged backup helper then reverified all **1,110 files / 7,340,498 bytes** of normal vault/state against the preinstall backup, inventory `16faaf065abc0843f8196e9be33f3181eccca7960a7dba6062a7b00d6cf1f062`, including the original single unbound conflicted outbox entry.
+
+## Fresh-relay hierarchy followup
+
+A genuine standard actor build/seal from `9af324ce` is retained separately with no runtime launch. Preparing its exact relay invocation exposed that the original direct-generation constraint tied the vault to a relay session which the existing relay refuses to reuse. That intermediate seal is not used or relabeled as corrected bootstrap/reopen evidence.
+
+The helper now requires the exact two-level generation ancestry above. Actual PC **38 assertions, no skips**, include strict reopen through two distinct fresh relay children using the same real native owner/state/scope, plus all prior controlled initial-sync and retention checks. Actual PC actor source compilation passed; the Mac's **4 source-contract tests** passed. The two source hashes matched before/after the gate. Evidence: `hierarchy-{focused,actor-compile}.log` and `hierarchy-inputs.json` in the same private evidence root. No production normal path, relay existence guard, timeout, or account/adoption behavior changed.
 
 ## Next boundary
 

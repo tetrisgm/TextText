@@ -17,12 +17,17 @@ static class PrivateActorWorkspaceTests
     public static async Task Run(Action<bool,string> check) {
         void Refuse(Action action,string label){try{action();}catch(Exception e)when(e is IOException or InvalidDataException or JsonException){check(true,label);return;}throw new Exception("Expected refusal: "+label);}
         var parent=Path.Combine(Path.GetTempPath(),"texttext-isolated-actor-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(parent);
-        var session=Path.Combine(parent,"generation-001");Directory.CreateDirectory(session);
+        var session=Path.Combine(parent,"bootstrap-relay","generation-001");Directory.CreateDirectory(session);
         var root=Path.Combine(parent,"vault");var workspace=Guid.NewGuid().ToString();var item=Guid.NewGuid().ToString();var title="Six-client acceptance isolated fixture";var file=Path.Combine(root,"Notes",title+".textpack");var origin=new Uri("https://texttext.app");
         var config=new PrivateActorWorkspace.Isolation(1,root,parent);
         PrivateActorWorkspace Scope(PrivateActorWorkspace.Isolation? value=null,string? path=null)=>new(value??config,session,path??file,workspace,item,title);
         check(PrivateActorWorkspace.ParseIsolation(JsonSerializer.SerializeToElement(new{version=1,root,sessionRoot=parent}))==config,"canonical isolation schema accepted");
         foreach(var raw in new[]{"{\"version\":true,\"root\":\"x\",\"sessionRoot\":\"x\"}","{\"version\":1,\"root\":\"x\",\"sessionRoot\":\"x\",\"extra\":1}","{\"version\":1,\"root\":\"x\"}","null"})Refuse(()=>PrivateActorWorkspace.ParseIsolation(JsonDocument.Parse(raw).RootElement),"invalid isolation shape refused");
+        var oneLevel=Path.Combine(parent,"generation-001");Directory.CreateDirectory(oneLevel);Refuse(()=>new PrivateActorWorkspace(config,oneLevel,file,workspace,item,title),"one-level generation refuses runner scope");
+        var threeLevel=Path.Combine(parent,"extra","relay","generation-001");Directory.CreateDirectory(threeLevel);Refuse(()=>new PrivateActorWorkspace(config,threeLevel,file,workspace,item,title),"three-level generation refuses runner scope");
+        var foreignSession=Path.Combine(parent+"-foreign","relay","generation-001");Directory.CreateDirectory(foreignSession);Refuse(()=>new PrivateActorWorkspace(config,foreignSession,file,workspace,item,title),"cross-parent generation refuses runner scope");
+        var invalidGeneration=Path.Combine(parent,"bootstrap-relay","generation-000");Directory.CreateDirectory(invalidGeneration);Refuse(()=>new PrivateActorWorkspace(config,invalidGeneration,file,workspace,item,title),"invalid generation name refused");
+        var invalidRelay=Path.Combine(parent,"invalid relay","generation-001");Directory.CreateDirectory(invalidRelay);Refuse(()=>new PrivateActorWorkspace(config,invalidRelay,file,workspace,item,title),"invalid relay name refused");
         var scope=Scope();check(!Directory.Exists(root),"isolation validation does not create vault or ownership");
         Refuse(()=>Scope(config with{Version=2}),"future isolation refused");
         Refuse(()=>Scope(config with{Root=Path.Combine(parent,"other")}),"arbitrary root refused");
@@ -57,8 +62,8 @@ static class PrivateActorWorkspaceTests
         RetainedReplacementProfile.Prepare(store);
         var ownerBytes=File.ReadAllBytes(owner);var stateBytes=File.ReadAllBytes(Path.Combine(store.StateDirectory,"sync.json"));var packBytes=File.ReadAllBytes(file);
         scope.VerifyPublished(origin,"account");scope.VerifyFixture();check(true,"genuine production owner and materialized identity verified");
-        var second=Path.Combine(parent,"generation-002");Directory.CreateDirectory(second);var reopened=new PrivateActorWorkspace(config,second,file,workspace,item,title);reopened.PrepareVerified(origin,"account");
-        check(File.ReadAllBytes(owner).SequenceEqual(ownerBytes)&&File.ReadAllBytes(receipt).SequenceEqual(receiptBytes),"reopen preserves actual owner and immutable scope bytes");
+        var second=Path.Combine(parent,"campaign-relay","generation-001");Directory.CreateDirectory(second);var reopened=new PrivateActorWorkspace(config,second,file,workspace,item,title);reopened.PrepareVerified(origin,"account");
+        check(File.ReadAllBytes(owner).SequenceEqual(ownerBytes)&&File.ReadAllBytes(receipt).SequenceEqual(receiptBytes),"distinct fresh relay reopens same root owner and immutable scope bytes");
         Refuse(()=>reopened.PrepareVerified(origin,"foreign"),"foreign principal cannot reopen");
         var foreign=new PrivateActorWorkspace(config,second,file,Guid.NewGuid().ToString(),item,title);Refuse(()=>foreign.PrepareVerified(origin,"account"),"foreign workspace cannot reopen");
         var profile=Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json");var profileBytes=File.ReadAllBytes(profile);var marker=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(profileBytes)!;
@@ -68,7 +73,7 @@ static class PrivateActorWorkspaceTests
         File.Move(file,file+".retained");Refuse(()=>reopened.PrepareVerified(origin,"account"),"missing actual fixture refuses reopen");File.Move(file+".retained",file);
         if(OperatingSystem.IsWindows()) {
             var linkedParent=Path.Combine(Path.GetTempPath(),"texttext-isolated-link-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(linkedParent);
-            var linkedSession=Path.Combine(linkedParent,"generation-001");Directory.CreateDirectory(linkedSession);var linkedRoot=Path.Combine(linkedParent,"vault");
+            var linkedSession=Path.Combine(linkedParent,"relay","generation-001");Directory.CreateDirectory(linkedSession);var linkedRoot=Path.Combine(linkedParent,"vault");
             try {
                 Directory.CreateSymbolicLink(linkedRoot,Path.Combine(linkedParent,"missing-target"));
                 Refuse(()=>new PrivateActorWorkspace(new(1,linkedRoot,linkedParent),linkedSession,Path.Combine(linkedRoot,"fixture.textpack"),workspace,item,title),"actual dangling reparse root refused");
