@@ -173,6 +173,23 @@ enum RetainedReplacementProfile {
     }
     static func prepareLocalHandoff(root: URL, observe: ((String) throws -> Void)? = nil) throws {
         guard try LocalVaultDeviceState.supportsLocalHandoff(root: root) else { throw Failure.unsupportedOwner }
+        // A completed floor needs verification, not another migration writer.
+        // Stable verification shares the lease with other account readers; any
+        // unfinished retained publication still takes the existing exclusive
+        // recovery path before this callback may report readiness.
+        let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+        let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self,
+            from: StableFileSnapshot.read(LocalVaultDeviceState.directory(root: canonical)
+                .appendingPathComponent(LocalVaultAccountRootOwnership.fileName), maximumBytes: 4096))
+        var ready = false
+        if owner.version == 2 {
+            try verify(root: canonical, owner: owner) {
+                let marker = try JSONDecoder().decode(Marker.self,
+                    from: StableFileSnapshot.read(directory(canonical).appendingPathComponent("profile.json"), maximumBytes: 4096))
+                ready = marker.version == 4
+            }
+        }
+        if ready { return }
         try prepareFolderPropagation(root: root)
         let root = root.standardizedFileURL.resolvingSymlinksInPath(), state = LocalVaultDeviceState.directory(root: root)
         try withMigrationLease(stateDirectory: state) {

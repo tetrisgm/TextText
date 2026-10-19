@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 import TextTextWorkspaceCore
 import TextTextSyncTestSupport
 @testable import TextTextFileProviderKit
@@ -50,6 +51,20 @@ final class LocalHandoffBridgeTests: XCTestCase {
         let opened = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "localHandoffVersion": 1], root)
         XCTAssertEqual((opened["localHandoff"] as? [String: Int])?["version"], 1)
         _ = try await request(relay, "collaborationClose", ["itemId": item, "sessionToken": try XCTUnwrap(opened["sessionToken"] as? String)], root)
+        // A stable verifier may hold the shared migration lease while a new
+        // editor opens an already-published floor. No migration is necessary.
+        let stableBytes = try Data(contentsOf: profile)
+        let lease = LocalVaultDeviceState.directory(root: root).appendingPathComponent("retained-replacement-profile.lock")
+        let descriptor = Darwin.open(lease.path, O_RDWR | O_NOFOLLOW)
+        XCTAssertGreaterThanOrEqual(descriptor, 0)
+        guard descriptor >= 0 else { return }
+        defer { _ = flock(descriptor, LOCK_UN); _ = Darwin.close(descriptor) }
+        XCTAssertEqual(flock(descriptor, LOCK_SH | LOCK_NB), 0)
+        let concurrent = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "localHandoffVersion": 1], root)
+        XCTAssertEqual((concurrent["localHandoff"] as? [String: Int])?["profileVersion"], 4)
+        XCTAssertEqual(try Data(contentsOf: profile), stableBytes)
+        _ = flock(descriptor, LOCK_UN)
+        _ = try await request(relay, "collaborationClose", ["itemId": item, "sessionToken": try XCTUnwrap(concurrent["sessionToken"] as? String)], root)
     }
 }
 private actor HandoffBridgeTransport: LocalVaultSyncTransport {
