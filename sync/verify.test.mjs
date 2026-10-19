@@ -121,7 +121,7 @@ test('manual native gate selects and requires handoff and retained-work suites',
     .flatMap(match => match[1].trim().split(/\s+/));
   for (const suite of ['LocalHandoffProfile', 'LocalHandoffBridge', 'MirrorTombstoneIntegration',
     'SharedRenameProfile', 'ProtectedRenameTransport', 'MissingManifestVisibility', 'QueuedUploadPathAdoption',
-    'LocalVaultFileMutationHandoff', 'LocalVaultFileMutationWake']) {
+    'LocalVaultFileMutationHandoff', 'LocalVaultFileMutationWake', 'LocalVaultGeneration', 'LocalVaultAbsentRename', 'ObservedAbsenceProfile']) {
     assert.ok(filter[1].split('|').includes(`${suite}Tests`), `${suite} is selected`);
     assert.ok(required.includes(suite), `${suite} must execute`);
   }
@@ -131,6 +131,14 @@ test('manual native gate selects and requires handoff and retained-work suites',
     'testChangedOwnerDoesNotWakeCapturedConnection', 'testStoppedConnectionDoesNotWakeAfterWrite',
     'testChangedRootDoesNotWakeCapturedConnection']) assert.ok(manual.includes(method));
   assert.ok(manual.includes('Required file mutation handoff cases must not skip.'));
+  assert.ok(manual.includes('testFreshGenerationEvidenceFromActualDirectoryManifest'));
+  assert.ok(manual.includes('Required generation and absent rename cases must not skip.'));
+  for (const method of ['testSixPreservesExactFiveAndNeverDowngrades', 'testInterruptedSixPublicationRetainsFiveAndPendingBytes', 'testForeignFiveBackupCannotBeOverwritten']) assert.ok(manual.includes(method));
+  assert.ok(manual.includes('Required observed absence profile cases must not skip.'));
+  for (const method of ['testDuplicateProfileAuthorityFilesRefuseWithoutRepair', 'testGenerationEvidenceRejectsCredentialRotationDuringBodyRead', 'testRepeatedSameCredentialDoesNotInvalidateHeldGenerationEvidence', 'testCompleteDiscoveryRejectsTruncatedInventoryCount', 'testReadonlyProducerAttestsSixAndRefusesFutureProfileWithoutWrites']) assert.ok(manual.includes(method));
+  for (const method of ['testAbsentNamingUnknownItemEntryRemainsByteExact', 'testAbsentNamingOrphanBinaryStageRemainsByteExact', 'testAbsentNamingIgnoresStaleIdentityCacheForProtection']) assert.ok(manual.includes(method));
+  for (const method of ['testAbsentNamingDoesNotRepairMismatchedCheckpointPath', 'testAbsentNamingRetainedIntentAndRegistryRemainByteExact', 'testSamePathIdleDoesNotFetchGenerationEvidenceOrFullPack', 'testHeldAbsentItemDoesNotDisableUnrelatedPresentRecovery']) assert.ok(manual.includes(method));
+  for (const method of ['testTypedGenerationSavedRenameVectorsRoundTripThroughSharedOwner', 'testLegacyNilWithoutFreshEvidenceRetainsLocalMove', 'testFreshAbsenceMovesWithoutInventingLifecycleOrContentAcknowledgement', 'testLostReplyRetainsExactVersionTwoRequest', 'testRestoreDuringEvidenceAwaitCannotDispatchAbsenceMove', 'testStoppedAbsentNamesPermitIndependentAssetCASWhilePendingTextIsRetained']) assert.ok(manual.includes(method));
   assert.ok(manual.includes('windows/scripts/browser-task-lifetime.test.mjs'));
 });
 
@@ -270,14 +278,14 @@ test('native and hosted file mutation handoff regressions are required and finge
 });
 
 
-test('manual native gate requires genuine readonly asset fixture and both flag suites', async () => {
+test('manual native gate requires genuine readonly asset fixture and all flag suites', async () => {
   const script = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
   assert.ok(script.includes('node --import tsx sync/stress/build-native-asset-inspection-fixture.mts "$asset_fixture"'));
   assert.ok(script.includes('asset_fixture="$asset_fixture_root/schema"'));
   assert.ok(script.includes('TEXTTEXT_ASSET_INSPECTION_FIXTURE="$asset_fixture" TEXTTEXT_STORE=1 swift test'));
   assert.ok(script.includes('-Xswiftc -DTEXTTEXT_STRESS_ACTOR'));
-  assert.ok(script.includes("--filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests'"));
-  for (const method of ['testStrictRequestBeforeReads', 'testActualBytesAssetsAndNoSchemaDuplication', 'testMalformedUTF8ArchiveNamesRefuseBeforeIdentity', 'testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics', 'testReadonlyReadRefusesLinksAndPreservesBytes', 'testActualWKProductSchemaRejectsHiddenInvalidFields', 'testAbsentPrivateDirectoryStaysAbsent', 'testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease', 'testGenuineProfilePublicationNeverRepairsOrCreatesLease', 'testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords', 'testActualSessionTokenAndReadonlyProtection']) assert.ok(script.includes(method), method);
+  assert.ok(script.includes("--filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests|ObservedAbsenceProfileTests'"));
+  for (const method of ['testReadonlyProducerAttestsSixAndRefusesFutureProfileWithoutWrites', 'testStrictRequestBeforeReads', 'testActualBytesAssetsAndNoSchemaDuplication', 'testMalformedUTF8ArchiveNamesRefuseBeforeIdentity', 'testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics', 'testReadonlyReadRefusesLinksAndPreservesBytes', 'testActualWKProductSchemaRejectsHiddenInvalidFields', 'testAbsentPrivateDirectoryStaysAbsent', 'testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease', 'testGenuineProfilePublicationNeverRepairsOrCreatesLease', 'testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords', 'testActualSessionTokenAndReadonlyProtection']) assert.ok(script.includes(method), method);
   assert.ok(script.includes('required private readonly native asset observation gate'));
   assert.ok(script.includes('Required readonly asset observation cases must not skip.'));
   assert.ok(script.includes('cp "$lock_copy" mac/Package.resolved'));

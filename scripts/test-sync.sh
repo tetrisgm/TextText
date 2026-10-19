@@ -12,7 +12,7 @@ cp mac/Package.resolved "$lock_copy"
 test_log=$(mktemp)
 trap 'cp "$lock_copy" mac/Package.resolved; rm -f "$lock_copy" "$test_log"' EXIT
 TEXTTEXT_STORE=1 TEXTTEXT_VAULT_HTTP_TEST=1 swift test --package-path mac --jobs 2 \
-  --filter 'LocalVault(SavedRenameIntegrationTests|FolderPolicyTests|QueuedUploadPathPolicyTests|SavedRenamePolicyTests|SharedRenameTests|SharedPathPolicyTests|FolderCaseSyncTests|FolderCaseHTTPTests|ConflictRetentionTests|ReplacementSyncTests|SharedReplacementFenceTests|RecoveryAssetTests|OpaqueReplacementTests|MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests|ReplacementRecoveryRegistryTests|RetainedFileReplacementTests|RetainedFileRemovalTests|RetainedReplacementProfileTests|FolderCaseRenameTests|FolderRenameBridgeTests|FolderPropagationProfileTests|FolderSyncRecoveryBridgeTests|LocalHandoffProfileTests|LocalHandoffBridgeTests|MirrorTombstoneIntegrationTests|SharedRenameProfileTests|ProtectedRenameTransportTests|MissingManifestVisibilityTests|QueuedUploadPathAdoptionTests|LocalVaultFileMutationHandoffTests|LocalVaultFileMutationWakeTests' 2>&1 | tee "$test_log"
+  --filter 'LocalVault(SavedRenameIntegrationTests|FolderPolicyTests|QueuedUploadPathPolicyTests|SavedRenamePolicyTests|SharedRenameTests|SharedPathPolicyTests|FolderCaseSyncTests|FolderCaseHTTPTests|ConflictRetentionTests|ReplacementSyncTests|SharedReplacementFenceTests|RecoveryAssetTests|OpaqueReplacementTests|MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests|ReplacementRecoveryRegistryTests|RetainedFileReplacementTests|RetainedFileRemovalTests|RetainedReplacementProfileTests|FolderCaseRenameTests|FolderRenameBridgeTests|FolderPropagationProfileTests|FolderSyncRecoveryBridgeTests|LocalHandoffProfileTests|LocalHandoffBridgeTests|MirrorTombstoneIntegrationTests|SharedRenameProfileTests|ProtectedRenameTransportTests|MissingManifestVisibilityTests|QueuedUploadPathAdoptionTests|LocalVaultFileMutationHandoffTests|LocalVaultFileMutationWakeTests|LocalVaultGenerationTests|LocalVaultAbsentRenameTests|ObservedAbsenceProfileTests' 2>&1 | tee "$test_log"
 # Swift exits successfully even if a filter selects zero tests. Fail closed.
 for suite in SavedRenameIntegration FolderPolicy QueuedUploadPathPolicy SavedRenamePolicy SharedRename SharedPathPolicy FolderCaseSync FolderCaseHTTP ConflictRetention ReplacementSync SharedReplacementFence RecoveryAsset OpaqueReplacement MirrorPolicyHost AccountStateAdoption AccountRootOwnership AccountIdentity Sync SharedEditing Recovery DeviceState HTTPContract SessionLifecycle ConnectionController Collaboration; do
   grep -Eq "Test Case '.*LocalVault${suite}Tests .*' passed" "$test_log" || {
@@ -21,7 +21,7 @@ for suite in SavedRenameIntegration FolderPolicy QueuedUploadPathPolicy SavedRen
   }
 done
 
-for suite in DocumentCreation RemoteDocumentStore StableFileSnapshot ReplacementRecoveryRegistry RetainedFileReplacement RetainedFileRemoval RetainedReplacementProfile FolderCaseRename FolderRenameBridge FolderPropagationProfile FolderSyncRecoveryBridge LocalHandoffProfile LocalHandoffBridge MirrorTombstoneIntegration SharedRenameProfile ProtectedRenameTransport MissingManifestVisibility QueuedUploadPathAdoption LocalVaultFileMutationHandoff LocalVaultFileMutationWake; do
+for suite in DocumentCreation RemoteDocumentStore StableFileSnapshot ReplacementRecoveryRegistry RetainedFileReplacement RetainedFileRemoval RetainedReplacementProfile FolderCaseRename FolderRenameBridge FolderPropagationProfile FolderSyncRecoveryBridge LocalHandoffProfile LocalHandoffBridge MirrorTombstoneIntegration SharedRenameProfile ProtectedRenameTransport MissingManifestVisibility QueuedUploadPathAdoption LocalVaultFileMutationHandoff LocalVaultFileMutationWake LocalVaultGeneration LocalVaultAbsentRename ObservedAbsenceProfile; do
   grep -Eq "Test Case '.*${suite}Tests .*' passed" "$test_log" || {
     echo "Required native creation suite did not execute: ${suite}Tests" >&2
     exit 1
@@ -41,6 +41,28 @@ if grep -Eq "Test Case '.*LocalVaultFileMutation(Handoff|Wake)Tests.*' skipped" 
   exit 1
 fi
 
+for method in testMissingBindingPendingGlobalFolderHistoryRefusesWithoutRepair testMissingTransportBindingDoesNotPublishOrInventNewAbsenceAuthority testMissingTransportBindingKeepsVersionTwoRequestAndBytesWithoutDispatch testDuplicateProfileAuthorityFilesRefuseWithoutRepair testGenerationEvidenceRejectsCredentialRotationDuringBodyRead testRepeatedSameCredentialDoesNotInvalidateHeldGenerationEvidence testCompleteDiscoveryRejectsTruncatedInventoryCount testAbsentNamingUnknownItemEntryRemainsByteExact testAbsentNamingOrphanBinaryStageRemainsByteExact testAbsentNamingIgnoresStaleIdentityCacheForProtection testAbsentNamingDoesNotRepairMismatchedCheckpointPath testAbsentNamingRetainedIntentAndRegistryRemainByteExact testSamePathIdleDoesNotFetchGenerationEvidenceOrFullPack testHeldAbsentItemDoesNotDisableUnrelatedPresentRecovery testTypedGenerationSavedRenameVectorsRoundTripThroughSharedOwner testLegacyNilWithoutFreshEvidenceRetainsLocalMove testFreshAbsenceMovesWithoutInventingLifecycleOrContentAcknowledgement testLostReplyRetainsExactVersionTwoRequest testRestoreDuringEvidenceAwaitCannotDispatchAbsenceMove testStoppedAbsentNamesPermitIndependentAssetCASWhilePendingTextIsRetained testSixPreservesExactFiveAndNeverDowngrades testInterruptedSixPublicationRetainsFiveAndPendingBytes testForeignFiveBackupCannotBeOverwritten; do
+  grep -Eq "Test Case '.*${method}.*' passed" "$test_log" || {
+    echo "Required observed absence profile method did not pass: $method" >&2
+    exit 1
+  }
+done
+if grep -Eq "Test Case '.*ObservedAbsenceProfileTests.*' skipped" "$test_log"; then
+  echo 'Required observed absence profile cases must not skip.' >&2
+  exit 1
+fi
+
+# An observed absence must come from the actual authenticated complete manifest,
+# not just a synthetic codec fixture. This gate always enables HTTP tests above.
+if ! grep -Eq "Test Case '.*testFreshGenerationEvidenceFromActualDirectoryManifest.*' passed" "$test_log"; then
+  echo 'Required actual directory manifest generation evidence did not pass.' >&2
+  exit 1
+fi
+if grep -Eq "Test Case '.*LocalVault(Generation|AbsentRename)Tests.*' skipped" "$test_log"; then
+  echo 'Required generation and absent rename cases must not skip.' >&2
+  exit 1
+fi
+
 # BEGIN required private readonly native asset observation gate
 # A file actor has no schema authority. Exercise the actual product validator
 # in a fresh controlled page; never reuse an old fixture or normal app profile.
@@ -49,20 +71,20 @@ asset_fixture="$asset_fixture_root/schema"
 node --import tsx sync/stress/build-native-asset-inspection-fixture.mts "$asset_fixture"
 TEXTTEXT_ASSET_INSPECTION_FIXTURE="$asset_fixture" TEXTTEXT_STORE=1 swift test --package-path mac --jobs 2 \
   -Xswiftc -DTEXTTEXT_STRESS_ACTOR \
-  --filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests' 2>&1 | tee "$test_log"
-for suite in NativeStressAssetProofTests LocalVaultStressObservationTests; do
+  --filter 'NativeStressAssetProofTests|LocalVaultStressObservationTests|ObservedAbsenceProfileTests' 2>&1 | tee "$test_log"
+for suite in NativeStressAssetProofTests LocalVaultStressObservationTests ObservedAbsenceProfileTests; do
   grep -Eq "Test Suite '${suite}' passed" "$test_log" || {
     echo "Required readonly asset observation suite did not pass: $suite" >&2
     exit 1
   }
 done
-for method in testStrictRequestBeforeReads testActualBytesAssetsAndNoSchemaDuplication testMalformedUTF8ArchiveNamesRefuseBeforeIdentity testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics testReadonlyReadRefusesLinksAndPreservesBytes testActualWKProductSchemaRejectsHiddenInvalidFields testAbsentPrivateDirectoryStaysAbsent testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease testGenuineProfilePublicationNeverRepairsOrCreatesLease testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords testActualSessionTokenAndReadonlyProtection; do
+for method in testReadonlyProducerAttestsSixAndRefusesFutureProfileWithoutWrites testStrictRequestBeforeReads testActualBytesAssetsAndNoSchemaDuplication testMalformedUTF8ArchiveNamesRefuseBeforeIdentity testECMAScriptCanonicalRetainsAbsenceAndNumericSemantics testReadonlyReadRefusesLinksAndPreservesBytes testActualWKProductSchemaRejectsHiddenInvalidFields testAbsentPrivateDirectoryStaysAbsent testCompletedFolderHistoryAttestsAndPendingRefusesWithoutCreatingLease testGenuineProfilePublicationNeverRepairsOrCreatesLease testCompletedReplacementHistoryUsesOnlyExactStableRetainedRecords testActualSessionTokenAndReadonlyProtection; do
   grep -Eq "Test Case '.*${method}.*' passed" "$test_log" || {
     echo "Required readonly asset observation method did not pass: $method" >&2
     exit 1
   }
 done
-if grep -Eq "Test Case '.*(NativeStressAssetProofTests|LocalVaultStressObservationTests).*' skipped" "$test_log"; then
+if grep -Eq "Test Case '.*(NativeStressAssetProofTests|LocalVaultStressObservationTests|ObservedAbsenceProfileTests).*' skipped" "$test_log"; then
   echo 'Required readonly asset observation cases must not skip.' >&2
   exit 1
 fi
