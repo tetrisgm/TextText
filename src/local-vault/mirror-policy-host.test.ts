@@ -1,3 +1,4 @@
+import sharedPathVectors from "../../sync/fixtures/mirror-shared-path.json";
 import queueVectors from "../../sync/fixtures/mirror-queue.json";
 import lifecycleVectors from "../../sync/fixtures/mirror-lifecycle.json";
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,18 @@ const scope = { accountId: "account-a", workspaceId: "workspace", lifecycle: "co
 const observed = { localHash: "a".repeat(64), baselineHash: "a".repeat(64), remoteRevision: "remote-a", baselineRevision: "remote-a", refresh: false };
 const request = { version: 1, digest, pageId, generation: 1, scope, requestId: "request-a", observed };
 describe("portable mirror policy host", () => {
+  it("fences protected-path decisions with exact scope, observation and request echo", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of sharedPathVectors) {
+      const input = {...request, observed: vector.observed};
+      expect(host.sharedPath(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.sharedPath({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.sharedPath({...input, scope: {...scope, accountId: "foreign"}})).toThrow("Stale");
+      expect(() => host.sharedPath({...input, observed: {...vector.observed, payload: "forbidden"}})).toThrow();
+    }
+    host.retire();
+    expect(() => host.sharedPath({...request, observed: sharedPathVectors[0].observed})).toThrow("Stale");
+  });
   it("covers all local/remote/refresh combinations, retaining upload CAS on concurrent edits", () => {
     for (const vector of vectors) expect(mirrorDisposition(validateMirrorObservation(vector.observed)), vector.name).toBe(vector.disposition);
   });

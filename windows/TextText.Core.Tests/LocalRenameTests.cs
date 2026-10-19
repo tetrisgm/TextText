@@ -30,6 +30,7 @@ static class LocalRenameTests
         var remote = new Test.Fake();
         var sync = Test.NewSync(files, remote);
         await sync.SyncAsync();
+        await Test.AttestPathGeneration(sync, remote);
         var target = "Archive/Moved.textpack";
         var pending = Pack("pending human edit");
         var next = Pack("pending human edit and more");
@@ -138,7 +139,7 @@ static class LocalRenameTests
     {
         var files=new TextPackStore(Path.Combine(temp,"announcement-"+scenario),Path.Combine(temp,"announcement-state-"+scenario));
         var initial=files.Write("Original.textpack",Pack("baseline"));
-        var remote=new RenameTransport();var sync=Test.NewSync(files,remote);await sync.SyncAsync();
+        var remote=new RenameTransport();var sync=Test.NewSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote.Inner);
         var editing=new SharedEditingStore(files,sync);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
         var pending=Pack("retained pending writing");

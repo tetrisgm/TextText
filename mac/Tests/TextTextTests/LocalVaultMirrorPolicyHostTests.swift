@@ -20,6 +20,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
     }
     private struct Manifest: Decodable { let digest: String }
     private struct LifecycleVector: Decodable { let name: String, observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision }
+    private struct SharedPathVector: Decodable { let name: String, observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision }
     private struct QueueVector: Decodable { let name: String, observed: LocalVaultMirrorQueueObservation, decision: LocalVaultMirrorQueueDecision }
     private struct ScheduleVector: Decodable { let name: String, observed: LocalVaultMirrorScheduleObservation, decision: LocalVaultMirrorScheduleDecision }
     private struct Vector: Decodable { let name: String, observed: LocalVaultMirrorObservation, disposition: LocalVaultMirrorDisposition }
@@ -44,6 +45,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: base.appendingPathComponent("mirror-policy.json")))
         let vectors = try JSONDecoder().decode([Vector].self, from: Data(contentsOf: base.appendingPathComponent("vectors.json")))
         let schedules = try JSONDecoder().decode([ScheduleVector].self, from: Data(contentsOf: base.appendingPathComponent("schedule-vectors.json")))
+        let paths = try JSONDecoder().decode([SharedPathVector].self, from: Data(contentsOf: base.appendingPathComponent("shared-path-vectors.json")))
         let queues = try JSONDecoder().decode([QueueVector].self, from: Data(contentsOf: base.appendingPathComponent("queue-vectors.json")))
         let lifecycles = try JSONDecoder().decode([LifecycleVector].self, from: Data(contentsOf: base.appendingPathComponent("lifecycle-vectors.json")))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("texttext-policy-" + UUID().uuidString)
@@ -88,6 +90,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
             let result = try await policy.schedule(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
         }
+        for vector in paths {
+            let result = try await policy.sharedPath(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
+        }
         for vector in queues {
             let result = try await policy.queue(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
@@ -106,6 +112,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         for vector in schedules {
             let result = try await policy.schedule(vector.observed)
             XCTAssertEqual(result, vector.decision, "Closed host: " + vector.name)
+        }
+        for vector in paths {
+            let result = try await policy.sharedPath(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
         }
         for vector in queues {
             let result = try await policy.queue(vector.observed)

@@ -4,11 +4,15 @@ using System.Text;
 using System.Text.Json;
 static class Test
 {
+ // Positive path fixtures attest a real current remote generation through the
+ // production lifecycle policy before an editor protects the item.
+ public static async Task AttestPathGeneration(SyncEngine sync,Fake remote) {remote.Item=remote.Item! with{Lifecycle="path-fixture-generation"};await sync.SyncAsync();}
  public static SyncEngine NewSync(TextPackStore store,ISyncTransport transport,string? accountId=null) => new(store,transport,accountId,NativePolicyTestHost.Create(accountId));
  static void Assert(bool condition,string label){if(!condition)throw new Exception(label);Console.WriteLine("PASS "+label);}
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--shared-path-fixtures"})) {var sharedBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&sharedBase.StartsWith("/var/"))sharedBase="/private"+sharedBase;var shared=Path.Combine(sharedBase,"texttext-shared-path-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(shared);await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(shared,Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-recovery-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-recovery-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCaseRecoveryTests.Run(folder,Assert);return;}
  if(args.SequenceEqual(new[]{"--local-handoff-fixtures"})) {var handoffTemp=Path.Combine(Path.GetTempPath(),"texttext-local-handoff-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(handoffTemp);LocalHandoffProfileTests.Run(handoffTemp,Assert);return;}
  if(args.SequenceEqual(new[]{"--folder-propagation-fixtures"})) {var folder=Path.Combine(Path.GetTempPath(),"texttext-folder-propagation-fixtures-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);await FolderCasePropagationTests.Run(folder,Assert);return;}
@@ -36,7 +40,7 @@ static class Test
  Assert(policyRefused&&unavailableRemote.ManifestCount==0&&unavailableRemote.UploadCount==0,"missing policy refuses before remote discovery or mutation");
  Assert(unavailableStore.Describe(unavailableFile.Path).Hash==unavailableFile.Hash && (beforeUnavailable is null?!File.Exists(unavailablePath):File.ReadAllBytes(unavailablePath).SequenceEqual(beforeUnavailable)),"missing policy preserves file and durable sync journal");
  await DocumentOwnershipTests.Run(temp,Assert);
- await MirrorPolicyTests.Run(Assert);
+ await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(temp,Assert);
  await MirrorLifecycleTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
  LocalHandoffProfileTests.Run(temp,Assert);await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
@@ -320,7 +324,7 @@ static class Test
  try{SharedEditingStore.RebaseProjection(movingStore,"test-1",occupied.Path);throw new Exception("occupied destination accepted");}catch(FileChangedException){}
  Assert(movingStore.Describe(occupied.Path).Hash==occupied.Hash,"shared move cannot overwrite destination");
  var earlyMoveStore=new TextPackStore(Path.Combine(temp,"early-shared-move"),Path.Combine(temp,"early-shared-move-device"));
- var earlyMoveFile=earlyMoveStore.Write("Notes/Early.textpack",Pack());var earlyMoveRemote=new Fake();var earlyMoveEngine=Test.NewSync(earlyMoveStore,earlyMoveRemote);await earlyMoveEngine.SyncAsync();
+ var earlyMoveFile=earlyMoveStore.Write("Notes/Early.textpack",Pack());var earlyMoveRemote=new Fake();var earlyMoveEngine=Test.NewSync(earlyMoveStore,earlyMoveRemote);await earlyMoveEngine.SyncAsync();await AttestPathGeneration(earlyMoveEngine,earlyMoveRemote);
  using(var earlyEditing=new SharedEditingStore(earlyMoveStore,earlyMoveEngine)) {
    var session=await earlyEditing.OpenAsync("test-1",earlyMoveFile.Path,earlyMoveFile.Hash);
    earlyMoveRemote.Item=earlyMoveRemote.Item! with{RelativePath="Archive/Early.textpack"};
@@ -331,7 +335,7 @@ static class Test
    await earlyMoveEngine.SyncAsync();Assert(earlyMoveEngine.Status.Error==null&&earlyMoveStore.Describe("Archive/Early.textpack").Hash==TextPackStore.Hash(bytes)&&!File.Exists(earlyMoveStore.Resolve(earlyMoveFile.Path)),"first durable checkpoint releases path relocation without losing pending edit");
  }
  var sessionRebaseStore=new TextPackStore(Path.Combine(temp,"active-shared-move"),Path.Combine(temp,"active-shared-move-device"));
- var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=Test.NewSync(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();
+ var sessionRebaseFile=sessionRebaseStore.Write("Notes/Active.textpack",Pack());var sessionRebaseRemote=new Fake();var sessionRebaseEngine=Test.NewSync(sessionRebaseStore,sessionRebaseRemote);await sessionRebaseEngine.SyncAsync();await AttestPathGeneration(sessionRebaseEngine,sessionRebaseRemote);
  using(var editingMove=new SharedEditingStore(sessionRebaseStore,sessionRebaseEngine)) {
    var session=await editingMove.OpenAsync("test-1",sessionRebaseFile.Path,sessionRebaseFile.Hash);
    var pendingBytes=Pack("Pending across move");var pendingHash=TextPackStore.Hash(pendingBytes);

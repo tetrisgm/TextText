@@ -39,6 +39,24 @@ static class MirrorPolicyTests
             var result=await policy.QueueAsync(vector.GetProperty("observed").Deserialize<MirrorQueueObservation>(json)!);
             check(JsonSerializer.Serialize(result,json)==JsonSerializer.Serialize(vector.GetProperty("decision").Deserialize<MirrorQueueDecision>(json),json),"source queue vector: "+vector.GetProperty("name"));
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-shared-path.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            check(await policy.SharedPathAsync(vector.GetProperty("observed").Deserialize<MirrorSharedPathObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorSharedPathDecision>(json),"source protected path vector: "+vector.GetProperty("name"));
+        }
+        foreach(var altered in new[]{"scope","requestId","observed","decision","unknown-field","unknown-observed","missing-lifecycle"}) {
+            var policy=new MirrorPolicy(digest,scope,(script,ct)=>{
+                if(script.Contains(".handshake("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1}));
+                if(script.Contains(".bind("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1,scope},json));
+                var request=JsonNode.Parse(script[(script.IndexOf('(')+1)..^1])!;request["decision"]=JsonSerializer.SerializeToNode(new MirrorSharedPathDecision("hold"),json);
+                if(altered=="unknown-field")request["future"]=1;
+                else if(altered=="unknown-observed")request["observed"]!["future"]=1;
+                else if(altered=="missing-lifecycle")request["observed"]!.AsObject().Remove("localLifecycle");
+                else request[altered]="invalid";
+                return Task.FromResult(request.ToJsonString());
+            });
+            var refused=false;try{await policy.SharedPathAsync(new(true,"a.textpack","a.textpack","a.textpack","a.textpack",true,false,true,false,"g","g",false,true,"none"));}catch(Exception e) when(e is IOException or JsonException or InvalidOperationException){refused=true;}
+            check(refused,"protected path reply refuses forged/unknown fields: "+altered);
+        }
         var unknownLaneRequests=0;
         var unknownLanePolicy=new MirrorPolicy(digest,scope,(script,ct)=>{
             unknownLaneRequests++;throw new IOException("Unknown lane must not reach the policy page.");

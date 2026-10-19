@@ -1,0 +1,596 @@
+[
+  {
+    "name": "unchanged",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "unchanged"
+    }
+  },
+  {
+    "name": "local-move",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/New.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/New.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "announce-local"
+    }
+  },
+  {
+    "name": "remote-move",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "follow-remote"
+    }
+  },
+  {
+    "name": "both-diverged-retains-local-move-for-review",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Local.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Local.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "both-agree",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/New.textpack",
+      "remotePath": "Notes/New.textpack",
+      "checkpointPath": "Notes/New.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "adopt-path"
+    }
+  },
+  {
+    "name": "missing-baseline-inbound-known-retained-generation",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": null,
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "follow-remote"
+    }
+  },
+  {
+    "name": "retained-replay-even-paths-agree",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "replay",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "announce-local"
+    }
+  },
+  {
+    "name": "retained-review-keeps-bytes",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "review",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "retained-replay-lifecycle-mismatch",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "replay",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "local-organize-denied",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/New.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/New.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": false,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "inbound-not-an-organize-mutation",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": false,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "follow-remote"
+    }
+  },
+  {
+    "name": "recovery-blocked",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": true,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "not-protected",
+    "observed": {
+      "protectedProjection": false,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "duplicate-local",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": false,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "not-ready",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": false,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "retired",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": true,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "checkpoint-not-actual-path",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Elsewhere.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "remote-absent",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": null,
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "remote-deleted",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": true,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "local-absent",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": null,
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "matched-without-baseline",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": null,
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "unchanged"
+    }
+  },
+  {
+    "name": "shared-lifecycle-mismatch-no-adoption",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/New.textpack",
+      "remotePath": "Notes/New.textpack",
+      "checkpointPath": "Notes/New.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "outbound-local-move-lifecycle-mismatch",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/New.textpack",
+      "remotePath": "Notes/Old.textpack",
+      "checkpointPath": "Notes/New.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "inbound-move-lifecycle-mismatch-must-hold",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "missing-baseline-with-unknown-generation-must-hold",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": null,
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": null,
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "both-generations-unknown-must-hold",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": null,
+      "remoteLifecycle": null
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "remote-generation-unknown-must-hold",
+    "observed": {
+      "protectedProjection": true,
+      "baselinePath": "Notes/Old.textpack",
+      "localPath": "Notes/Old.textpack",
+      "remotePath": "Notes/Remote.textpack",
+      "checkpointPath": "Notes/Old.textpack",
+      "checkpointReady": true,
+      "checkpointRetired": false,
+      "localUnique": true,
+      "remoteDeleted": false,
+      "blocked": false,
+      "organizePermitted": true,
+      "pendingRename": "none",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": null
+    },
+    "decision": {
+      "action": "hold"
+    }
+  }
+]

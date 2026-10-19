@@ -416,6 +416,46 @@ public actor LocalVaultSync {
     }
     /// Where a non-retired session writes and the bytes it expects there: the
     /// live session, or a closed session's pending checkpoint.
+    /// Host decisions attest facts only. Re-read all local ownership facts and
+    /// the authoritative remote item after its await before a path mutation.
+    private func protectedPathDecision(itemId id: String, localPaths: [String], remote: LocalVaultRemoteItem?) async throws -> LocalVaultMirrorSharedPathDecision {
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        let baseline = state.baselines[id], lifecycle = state.lifecycles?[id], pending = state.outbox[id], conflict = state.conflicts[id]
+        let checkpoint = try readSharedCheckpoint(itemId: id)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let checkpointBytes = try checkpoint.map { try encoder.encode($0) }
+        let live = sharedSessions[id]
+        let path = localPaths.count == 1 ? localPaths[0] : nil
+        let metadata = try path.map { try LocalVaultDocumentStore(root: root).readMetadata(path: $0) }
+        func current() throws {
+            try Task.checkCancellation()
+            guard state.baselines[id] == baseline, state.lifecycles?[id] == lifecycle, state.outbox[id] == pending, state.conflicts[id] == conflict,
+                  sharedSessions[id]?.token == live?.token, sharedSessions[id]?.path == live?.path, sharedSessions[id]?.hash == live?.hash,
+                  sharedSessions[id]?.retired == live?.retired,
+                  try readSharedCheckpoint(itemId: id).map({ try encoder.encode($0) }) == checkpointBytes else { throw LocalVaultSyncFailure.changed }
+            if let path, let metadata {
+                guard try uniqueSameIdentityPath(itemId: id, excluding: "") == path,
+                      try LocalVaultDocumentStore(root: root).readMetadata(path: path).hash == metadata.hash else { throw LocalVaultSyncFailure.changed }
+            }
+            try assertReplacementReadable(itemId: id)
+        }
+        let permitted = await transport.canOrganize(); try current()
+        let observed = LocalVaultMirrorSharedPathObservation(protectedProjection: true, baselinePath: baseline?.path, localPath: path,
+            remotePath: remote?.relativePath, checkpointPath: checkpoint?.path, checkpointReady: checkpoint != nil,
+            checkpointRetired: checkpoint?.retiredReason != nil || live?.retired == true, localUnique: localPaths.count == 1,
+            remoteDeleted: remote?.isDeleted ?? false, localLifecycle: lifecycle, remoteLifecycle: remote?.lifecycle,
+            blocked: pending != nil || conflict != nil, organizePermitted: permitted, pendingRename: "none")
+        let decision = try await mirrorPolicy.sharedPath(observed); try current()
+        if !["hold", "unchanged"].contains(decision.action) {
+            let fresh = try await transport.manifest().filter { $0.itemId == id }
+            try current()
+            guard fresh.count == 1, let before = remote, fresh[0].relativePath == before.relativePath,
+                  fresh[0].revision == before.revision, fresh[0].lifecycle == before.lifecycle, fresh[0].isDeleted == before.isDeleted else { throw LocalVaultSyncFailure.changed }
+            let freshPermitted = await transport.canOrganize(); try current()
+            guard freshPermitted == permitted else { throw LocalVaultSyncFailure.changed }
+        }
+        return decision
+    }
     private func followedSharedPath(itemId: String) throws -> (path: String, hash: String)? {
         let live = sharedSessions[itemId]
         if live?.retired == true { return nil }
@@ -1577,9 +1617,10 @@ public actor LocalVaultSync {
             var activePath = localByID[id]?.first ?? remoteByID[id]?.relativePath ?? state.baselines[id]?.path ?? id
             do {
                 if try sharedProtection(itemId: id) {
+                    let pathDecision = try await protectedPathDecision(itemId: id, localPaths: localByID[id] ?? [], remote: remoteByID[id])
                     // Content protection must not pin an identity to an obsolete
                     // path. Rebase only a unique, unchanged shared projection.
-                    if let remote = remoteByID[id], !remote.isDeleted,
+                    if pathDecision.action == "follow-remote", let remote = remoteByID[id], !remote.isDeleted,
                        state.outbox[id] == nil, state.conflicts[id] == nil,
                        (localByID[id]?.count ?? 0) == 1,
                        let saved = try readSharedCheckpoint(itemId: id), saved.retiredReason == nil,
@@ -1597,7 +1638,7 @@ public actor LocalVaultSync {
                         }
                         activePath = moved.path
                         try persist(); report.downloaded += 1
-                    } else if let remote = remoteByID[id], !remote.isDeleted,
+                    } else if pathDecision.action == "announce-local", let remote = remoteByID[id], !remote.isDeleted,
                               state.outbox[id] == nil, state.conflicts[id] == nil,
                               let baseline = state.baselines[id], remote.relativePath == baseline.path,
                               let followed = try followedSharedPath(itemId: id),
@@ -1609,8 +1650,7 @@ public actor LocalVaultSync {
                         // copy, since content belongs to the collaboration session.
                         // The server's current revision is the base; a stale one
                         // simply retries next cycle.
-                        guard (try? store.readMetadata(path: followed.path))?.hash == followed.hash,
-                              await transport.canOrganize() else { continue }
+                        guard (try? store.readMetadata(path: followed.path))?.hash == followed.hash else { continue }
                         try assertReplacementReadable(itemId: id)
                         let saved = followed
                         activePath = saved.path
@@ -1627,6 +1667,13 @@ public actor LocalVaultSync {
                         } catch LocalVaultSyncFailure.conflict {
                             report.hasMore = true
                         }
+                    }
+                    if pathDecision.action == "adopt-path", let remote = remoteByID[id], var baseline = state.baselines[id],
+                       let followed = try followedSharedPath(itemId: id), followed.path == remote.relativePath {
+                        // Path/remote acknowledgement only. The current shared
+                        // checkpoint owns content and its latest local hash.
+                        baseline.path = followed.path; baseline.revision = remote.revision
+                        state.baselines[id] = baseline; try persist()
                     }
                     var uploadedBinary = false
                     if let remote = remoteByID[id],
