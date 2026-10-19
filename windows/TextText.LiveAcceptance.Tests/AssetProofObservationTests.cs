@@ -5,6 +5,15 @@ using TextText.Core;
 
 internal static class AssetProofObservationTests
 {
+    // Match the existing portable Core fixtures: /var is a macOS alias, not
+    // an allowed linked ancestor for a real TextPackStore root.
+    static string TemporaryBase()
+    {
+        var path = Path.GetTempPath();
+        return OperatingSystem.IsMacOS() && path.StartsWith("/var/", StringComparison.Ordinal)
+            ? "/private" + path : path;
+    }
+
     internal static async Task Run(Action<bool,string> check)
     {
         void Refuse(Action action, string label) { try { action(); } catch { check(true,label); return; } throw new Exception("Expected refusal: " + label); }
@@ -45,7 +54,7 @@ internal static class AssetProofObservationTests
         Refuse(()=>AssetProofObservation.Unchanged(capture,capture with{Path="Other.textpack"}),"actual session path change refused");
         // Genuine Core session, not a fake sessions dictionary. Setup writes are
         // confined to this disposable fixture; capture itself must create nothing.
-        var root=Path.Combine(Path.GetTempPath(),"texttext-asset-session-"+Guid.NewGuid().ToString("N"));
+        var root=Path.Combine(TemporaryBase(),"texttext-asset-session-"+Guid.NewGuid().ToString("N"));
         var store=new TextPackStore(Path.Combine(root,"vault"),Path.Combine(root,"state"));
         var origin=new Uri("https://texttext.app");const string account="fixture-account", workspace="fixture-workspace";
         AccountRootOwnership.Open(store,origin,workspace,account);
@@ -97,7 +106,12 @@ internal static class AssetProofObservationTests
         bool stagedRefused=false;try{await AssetProofObservation.CaptureSession(bridge,id,account,workspace,origin,store.Root,default);}catch{stagedRefused=true;}
         check(stagedRefused&&!File.Exists(migrationLease)&&JsonSerializer.Serialize(Inventory().OrderBy(e=>e.Key))==stagedInventory,"genuine pending profile refuses without repair or lease creation");
         editing.Close(reopened.SessionToken);
-        var historyRoot=Path.Combine(Path.GetTempPath(),"texttext-asset-history-"+Guid.NewGuid().ToString("N"));
+        check(AssetProofObservation.CanonicalScript("\";throw Error('content')//").Contains("JSON.parse(raw)"),"canonical input stays data argument");
+        if (!OperatingSystem.IsWindows()) {
+            Console.WriteLine("SKIP Windows retained replacement/folder history fixtures require actual PC.");
+            return;
+        }
+        var historyRoot=Path.Combine(TemporaryBase(),"texttext-asset-history-"+Guid.NewGuid().ToString("N"));
         var historyStore=new TextPackStore(Path.Combine(historyRoot,"vault"),Path.Combine(historyRoot,"state"));
         AccountRootOwnership.Open(historyStore,origin,workspace,account);
         var historyFile=historyStore.Write("Owned.textpack",bytes);
@@ -144,7 +158,7 @@ internal static class AssetProofObservationTests
         try{await AssetProofObservation.CaptureSession(new ActualBridge(historyEditing),id,account,workspace,origin,historyStore.Root,default);}catch{mutatedRefused=true;}
         check(mutatedRefused&&HistoryInventory()==mutatedBefore,"changed retained fingerprint refuses without classification or mutation");
         historyEditing.Close(historySession.SessionToken);
-        var folderRoot=Path.Combine(Path.GetTempPath(),"texttext-asset-folder-history-"+Guid.NewGuid().ToString("N"));
+        var folderRoot=Path.Combine(TemporaryBase(),"texttext-asset-folder-history-"+Guid.NewGuid().ToString("N"));
         var folderStore=new TextPackStore(Path.Combine(folderRoot,"vault"),Path.Combine(folderRoot,"state"));
         AccountRootOwnership.Open(folderStore,origin,workspace,account);
         var folderFile=folderStore.Write("Owned.textpack",bytes);
@@ -170,7 +184,6 @@ internal static class AssetProofObservationTests
         try{await AssetProofObservation.CaptureSession(new ActualBridge(folderEditing),id,account,workspace,origin,folderStore.Root,default);}catch{pendingFolderRefused=true;}
         check(pendingFolderRefused&&FolderInventory()==pendingFolderBefore&&!File.Exists(folderLease)&&!File.Exists(folderProfileLease),"pending folder history refuses without classification repair or lease creation");
         folderEditing.Close(folderSession.SessionToken);
-        check(AssetProofObservation.CanonicalScript("\";throw Error('content')//").Contains("JSON.parse(raw)"),"canonical input stays data argument");
     }
     sealed class ActualBridge(SharedEditingStore value) { readonly SharedEditingStore editing=value; }
     sealed class ObservationTransport : ISyncTransport {
