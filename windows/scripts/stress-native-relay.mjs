@@ -7,7 +7,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { isAbsolute, join, basename, extname, resolve } from 'node:path';
+import { isAbsolute, join, basename, extname, resolve, dirname } from 'node:path';
+import { measurementLaunchOptions, prepareLaunchMeasurement } from './measurement-launch-owner.mjs';
 
 const [assembly, configPath, session] = process.argv.slice(2);
 const script = new URL('./stress-native-task.ps1', import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:\/)/, '');
@@ -98,6 +99,16 @@ async function main() {
   const title = config.Title ?? config.title;
   const file = config.File ?? config.file;
   if (!title?.startsWith('Six-client acceptance ') || basename(file ?? '', extname(file ?? '')) !== title) throw new Error('Not a dedicated acceptance file.');
+  const measureOptions = measurementLaunchOptions(process.argv.slice(5));
+  const measure = measureOptions.enabled ? prepareLaunchMeasurement(measureOptions, {
+    role: 'pc-app', sessionRoot: session, maxMs: null, features: null,
+    sealPath: config.IdentityReceipt ?? config.identityReceipt, relayPath: fileURLToPath(import.meta.url),
+    files: { module: assembly, config: configPath, task: script,
+      helper: join(dirname(script), 'resource-ownership-task.ps1'),
+      powershell: join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+      executable: join(process.env.LOCALAPPDATA, 'TextTextBuild/dotnet/dotnet.exe') }
+  }) : null;
+  measure?.beforeStart();
   mkdirSync(session);
   actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
   mkdirSync(actorSession);
@@ -122,17 +133,22 @@ async function main() {
           actorSession = join(session, `generation-${String(generation).padStart(3, '0')}`);
           mkdirSync(actorSession);
           actorSeq = 0;
+          measure?.beforeStart();
           task();
           const next = await request(++actorSeq, helloLine, 'hello');
           if (next?.type !== 'attest' || next.generation !== generation || typeof next.sessionId !== 'string' || !next.sessionId)
             throw new Error('Restarted native actor did not attest.');
+          if (measure) await measure.publish({generation, sessionPath: actorSession, taskName: taskName()});
           normalClosed = false;
           answer = { ...(message.graceful === true ? {lifecycle:'normal-close-reopen'} : {}), type: 'restart', round: message.round ?? 0, generation, beforeSessionId: attestation.sessionId, afterSessionId: next.sessionId, attestation: next };
           attestation = next;
         } else {
           answer = await request(++actorSeq, line, message.type);
           if (message.type === 'close-probe') normalClosed = answer?.type === 'close-probe' && answer.closed === true && answer.keepEditingDialog === false && answer.flushed === true;
-          if (message.type === 'hello') { helloLine = line; attestation = answer; }
+          if (message.type === 'hello') {
+            if (measure && answer?.type === 'attest') await measure.publish({generation, sessionPath: actorSession, taskName: taskName()});
+            helloLine = line; attestation = answer;
+          }
         }
       }
       catch (error) {

@@ -26,7 +26,7 @@ export function fixedDriverFiles(role) {
   if (role.endsWith('-cli')) { files.leafMoveOS=join(here,'leaf-move-os.py'); files.leafMoveWindows=join(here,'leaf-move-os.ps1'); files.fileWrites = join(here, 'file-write-sequence.mjs'); files.malformedRepair = join(here, 'malformed-repair.mjs'); files.fieldPack = join(here, 'multi-field-pack.mjs'); }
   else Object.assign(files, { browserLaunch: join(here,'browser-launch.mjs'), playwrightBundle: join(dirname(fileURLToPath(import.meta.resolve('playwright-core/package.json'))), 'lib/coreBundle.js'), lostAck: join(here,'lost-ack.mjs'), lifecycle: join(here, 'browser-lifecycle.mjs'), fieldPage: join(here, 'multi-field-page.mjs'), session: join(here, 'browser-session.mjs'), input: join(here, 'input-sequence.mjs'), history: join(here, 'undo-redo.mjs'),
     readiness: resolve(here, '../../windows/scripts/live-browser-ready.mjs') });
-  if(role==='pc-web') Object.assign(files,{browserRelay:resolve(here,'../../windows/scripts','stress-browser-relay.mjs'),browserTask:resolve(here,'../../windows/scripts','stress-browser-task.ps1'),browserChild:resolve(here,'../../windows/scripts','stress-browser-child.mjs')});
+  if(role==='pc-web') Object.assign(files,{browserRelay:resolve(here,'../../windows/scripts','stress-browser-relay.mjs'),browserTask:resolve(here,'../../windows/scripts','stress-browser-task.ps1'),browserChild:resolve(here,'../../windows/scripts','stress-browser-child.mjs'), measurementLaunch:resolve(here,'../../windows/scripts','measurement-launch-owner.mjs'), measurementHost:join(here,'measurement-host-pc.mjs'), resourceOwnership:join(here,'resource-ownership.mjs')});
   return files;
 }
 export function observeSealedSource(path, role, files) {

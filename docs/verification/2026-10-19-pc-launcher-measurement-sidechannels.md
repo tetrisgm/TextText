@@ -1,0 +1,19 @@
+# Default-off PC launcher measurement sidechannels
+
+Additive follow-up to [PC inspection](2026-10-19-measurement-browser-host-adapter.md). Both genuine relays now integrate caller-owned launch records before forwarding initial/restarted attestation. This is controlled source verification, **not a genuine launcher rehearsal, sampler activation or T24 acceptance**.
+
+## Authority and bounds
+
+With no trailing measurement options, no intent/config/seal inspection or extra OS command occurs. Opt-in accepts only an absolute intent path and its independently caller-pinned SHA256. Before task start, the relay compares its actual task/config/module/runtime/helper paths and bytes with the strict intent and verifies the actual sealed product/driver source. Launch source and product source remain separately qualified; no old seal is relabeled. New pc-web transitive imports enter both artifact inventories.
+
+Generation comes from native relay state or forwarded browser caller restart requests, never actor-reported identity. Before forwarding attestation, existing task/OS inspection verifies the actual root tuple/hash, task/action and configuration. Its OS-only envelope remains `scopeClaimsVerified:false`; the launcher combines it with its separately pinned scope. Source/seal/request bytes are rechecked and final freshness is measured after postflight reads. A create-only record and manifest are published inside the actual protected task session. Same-generation reinspection must reproduce the exact record; drift refuses readiness. Inspection failures retain bounded evidence and publish no successful authority.
+
+Existing task launch, mitigations, feature flags, protocol and actor configuration remain unchanged. Inspection uses existing process-local PowerShell policy arguments, a10s callback deadline and64KiB output bound. Only the newly spawned readonly collector handle may receive cleanup requests. Timeout-path child exit is not proved; bounded callback completion is not a finite actor/task lifetime guarantee. Actual task runtime verification, independent Mac/file launch authorities, supervisor/sampler wiring and complete-series coverage remain pending.
+
+## Executed verification
+
+- Mac final relevant Node gate:159 passed,2 explicit Windows-only skips,0 failures; exit0. Includes42 new controlled launcher tests, host/ownership/identity/artifact/native/browser relay regressions. All six executable hashes match before/after. Log `/private/tmp/texttext-launch-owner-final-20261019.log`; guards `texttext-launch-owner-final-{before,after}-20261019.json`.
+- Actual PC controlled gate:42 passed,0 skips/failures, exit0; exact copied input inventory unchanged. Uses mocked collector/file/seal dependencies and real production imports, with pinned existing local fflate/playwright-core packages only for module resolution. No task, actor or browser launches. Evidence `/private/tmp/texttext-launch-owner-pc-controlled-v3-20261019/{result.json,manifest.json,gate.stdout.log,gate.stderr.log}`.
+- Preserved preparation failures: first Mac case fixture changed intent without repinning (fixed fixture only); first two PC copies omitted package resolution inputs (`fflate`, then `playwright-core`). Both PC failures and unchanged sources retained in earlier controlled directories; neither is represented as a successful gate or product failure.
+
+Controls cover strict keys/accessors/types, disabled zero access, input/seal drift, stale/postflight proof, wrong OS identity/scope, create-only collisions, same-generation drift, contiguous/caller-correlated restarts and existing adapter roundtrip. Source checks verify actual relay publication ordering; genuine runtime launch/OS authority still requires a freshly sealed qualified rehearsal. Registration changes are parent-owned and excluded from this seven-path manifest. No user state, credentials, normal app, persistent policy or account/profile was changed.

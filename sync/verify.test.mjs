@@ -107,6 +107,7 @@ test('normal Windows and manual native gates require private actor proofs withou
   assert.ok(build.includes(`& $dotnet run --project ${project} --configuration Release\n  if ($LASTEXITCODE -ne 0)`));
   assert.ok(manual.includes(`dotnet run --project ${project}`));
   assert.ok(manual.includes('Required private Windows actor read-proof checks did not execute.'));
+  assert.match(manual, /^node --test .*windows\/scripts\/measurement-launch-owner\.test\.mjs/m);
   assert.ok(build.includes('& powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/smoke.ps1'));
   assert.ok(!build.includes('run --project windows/TextText.LiveAcceptance/TextText.LiveAcceptance.csproj'));
   assert.ok(!manual.includes('run --project windows/TextText.LiveAcceptance/TextText.LiveAcceptance.csproj'));

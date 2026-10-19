@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, linkSync, unlinkSync, existsSync, lstatSyn
 import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { measurementLaunchOptions, prepareLaunchMeasurement, browserMeasurementOwner } from './measurement-launch-owner.mjs';
 import { browserLaunchArguments } from '../../sync/stress/browser-launch.mjs';
 import { validateConfig } from '../../sync/stress/browser-adapter.mjs';
 import { boundedFile, fixedDriverFiles, observeSealedSource } from '../../sync/stress/identity-observation.mjs';
@@ -86,12 +87,12 @@ catch (e) {
     return fail(e);
 } if (pending.length)
     fail(Error('Browser relay incomplete JSONL line')); }); }
-export async function relay({ session, input, output, start, finish, inspect = async () => { }, now = Date.now, maxMs = LIMITS.defaultMs }) {
+export async function relay({ session, input, output, start, finish, inspect = async () => { }, onRequest = () => {}, now = Date.now, maxMs = LIMITS.defaultMs }) {
     let request = 0, response = 0, failed = false, shutdown = false, eof = false, errorSeen = false;
     const begin = now(), bound = runtimeBound(maxMs);
     const send = line => { const value = lineValue(line); if (errorSeen && value.type !== 'shutdown')
         throw Error('Browser error stops further requests'); if (shutdown)
-        throw Error('Request after shutdown refused'); writeMailbox(session, 'req', ++request, line); if (value.type === 'shutdown')
+        throw Error('Request after shutdown refused'); onRequest(value.type); writeMailbox(session, 'req', ++request, line); if (value.type === 'shutdown')
         shutdown = true; };
     await start();
     lines(input, line => { try {
@@ -166,10 +167,20 @@ async function main() {
         if (r.status !== 0)
             throw Error('Owned interactive browser task ' + mode + ' refused');
     };
+    const measureOptions = measurementLaunchOptions(process.argv.slice(6));
+    const channel = measureOptions.enabled ? prepareLaunchMeasurement(measureOptions, {
+        role: 'pc-web', sessionRoot: plan.session, maxMs, features: expected,
+        sealPath: JSON.parse(boundedFile(plan.configPath, LIMITS.configBytes)).identityReceipt, relayPath: fileURLToPath(import.meta.url),
+        files: { module: plan.driver, config: plan.configPath, task: script,
+            helper: join(dirname(script), 'resource-ownership-task.ps1'), child: join(dirname(script), 'stress-browser-child.mjs'),
+            launcherExecutable: process.execPath, powershell: join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe') }
+    }) : null;
+    const measure = browserMeasurementOwner(channel, plan.session, task);
     const code = await relay({
         session: plan.session, input: process.stdin, output: process.stdout, maxMs,
-        start: async () => taskCall('start'),
-        inspect: async () => taskCall('inspect'),
+        start: async () => { channel?.beforeStart(); taskCall('start'); },
+        onRequest: type => measure.request(type),
+        inspect: async value => { taskCall('inspect'); if (channel) await measure.attest(value.type); },
         finish: async (result) => {
             if (result.code !== 0 || result.retained)
                 throw Error('Failed browser remains preserved');
