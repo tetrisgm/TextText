@@ -127,6 +127,17 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
 }
 public struct LocalVaultMirrorSharedPathDecision: Codable, Equatable, Sendable { public let action: String }
 
+public struct LocalVaultMirrorFolderObservation: Codable, Equatable, Sendable {
+    public let phase: String
+    public let capabilityAvailable, topologyMatches, changesContained: Bool
+    public let barriers: [String]
+    public init(phase: String, capabilityAvailable: Bool, topologyMatches: Bool, changesContained: Bool, barriers: [String]) {
+        self.phase = phase; self.capabilityAvailable = capabilityAvailable
+        self.topologyMatches = topologyMatches; self.changesContained = changesContained; self.barriers = barriers
+    }
+}
+public struct LocalVaultMirrorFolderDecision: Codable, Equatable, Sendable { public let action: String }
+
 public struct LocalVaultMirrorQueuedUploadPathObservation: Codable, Equatable, Sendable {
     public let pendingKind: String
     public let pendingConflicted: Bool
@@ -411,6 +422,10 @@ public actor LocalVaultMirrorPolicy {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision
     }
+    private struct FolderReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorFolderObservation, decision: LocalVaultMirrorFolderDecision
+    }
     private struct QueuedUploadPathReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorQueuedUploadPathObservation, decision: LocalVaultMirrorQueuedUploadPathDecision
@@ -463,6 +478,14 @@ public actor LocalVaultMirrorPolicy {
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
                   Set(observation.keys) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
+                  let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
+        }
+        if method == "folder" {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
+                  let observation = object["observed"] as? [String: Any],
+                  Set(observation.keys) == Set(["phase", "capabilityAvailable", "topologyMatches", "changesContained", "barriers"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }
@@ -568,6 +591,20 @@ public actor LocalVaultMirrorPolicy {
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
               ["hold", "unchanged", "follow-remote", "announce-local", "adopt-path"].contains(reply.decision.action) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
+    }
+
+    public func folder(_ observed: LocalVaultMirrorFolderObservation) async throws -> LocalVaultMirrorFolderDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("folder", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: FolderReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              ["none", "hold", "stage-new", "replay-existing"].contains(reply.decision.action) else { throw Failure.stale }
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.decision

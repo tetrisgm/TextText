@@ -50,5 +50,28 @@ static class FolderCasePropagationTests
             if(mode=="future-command"){var statePath=Path.Combine(store.StateDirectory,"sync.json");var json=JsonNode.Parse(File.ReadAllText(statePath))!;json["FolderCommand"]!["FutureUnsupported"]=true;var exact=json.ToJsonString();TextPackStore.AtomicWrite(statePath,System.Text.Encoding.UTF8.GetBytes(exact));var rejected=false;try{await Test.NewSync(store,remote).SyncAsync();}catch(JsonException){rejected=true;}check(rejected&&calls==1&&File.ReadAllText(statePath)==exact,"future folder command fields refuse without replay or state rewrite");}
             if(mode=="conflict"){var exact=JsonSerializer.Serialize(State(store).FolderCommand);try{await Test.NewSync(store,remote).SyncAsync();}catch(IOException){}check(calls==2&&JsonSerializer.Serialize(State(store).FolderCommand)==exact,"HTTP409 retains immutable command and permits exact receipt replay");}
         }
+        {
+            var store=new TextPackStore(Path.Combine(temp,"policy-durable-race"),Path.Combine(temp,"policy-durable-race-state"));
+            AccountRootOwnership.Open(store,new Uri("https://texttext.test"),"folder-workspace","folder-account");
+            store.EnsureFolders(["Notes/Empty child"]);
+            var remote=new Test.Fake{SupportsFolderCaseMoves=true,ManifestRevision=new string('a',64),Folders=["Notes","Notes/Empty child"],AuthoritativeFolders=["Notes","Notes/Empty child"]};
+            await Test.NewSync(store,remote).SyncAsync();
+            if(!MoveFileW(store.Resolve("Notes"),store.Resolve("notes")))throw new IOException("Fixture rename failed.");
+            var calls=0;remote.FolderMove=_=>{calls++;throw new IOException("Must not dispatch");};
+            byte[]? changed=null;
+            var policy=NativePolicyTestHost.Create(beforeRequest:script=>{
+                if(changed is null&&script.Contains(".folder(")) {
+                    var value=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllBytes(Path.Combine(store.StateDirectory,"sync.json")))!;
+                    value["policyRaceMarker"]="retained-external-state";
+                    changed=System.Text.Encoding.UTF8.GetBytes(value.ToJsonString());
+                    TextPackStore.AtomicWrite(Path.Combine(store.StateDirectory,"sync.json"),changed);
+                }
+                return Task.CompletedTask;
+            });
+            var refused=false;try{await new SyncEngine(store,remote,mirrorPolicy:policy).SyncAsync();}catch(IOException){refused=true;}
+            check(refused&&changed is not null&&calls==0&&File.ReadAllBytes(Path.Combine(store.StateDirectory,"sync.json")).SequenceEqual(changed),"folder policy await refuses changed durable state without tail overwrite or dispatch");
+            check(Directory.Exists(store.Resolve("notes/Empty child"))&&!Directory.EnumerateDirectories(store.Root).Select(Path.GetFileName).Contains("Notes",StringComparer.Ordinal),"folder policy refusal preserves exact moved empty tree");
+        }
+
     }
 }

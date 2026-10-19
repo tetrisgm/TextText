@@ -1,0 +1,434 @@
+[
+  {
+    "name": "idle-000",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-001",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-010",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-011",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-100",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-101",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-110",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "idle-111",
+    "observed": {
+      "phase": "idle",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "none"
+    }
+  },
+  {
+    "name": "candidate-000",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-001",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-010",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-011",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-100",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-101",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-110",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-111",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "stage-new"
+    }
+  },
+  {
+    "name": "pending-000",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-001",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": false,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-010",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-011",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": false,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-100",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "replay-existing"
+    }
+  },
+  {
+    "name": "pending-101",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": false,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "replay-existing"
+    }
+  },
+  {
+    "name": "pending-110",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": false,
+      "barriers": []
+    },
+    "decision": {
+      "action": "replay-existing"
+    }
+  },
+  {
+    "name": "pending-111",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": []
+    },
+    "decision": {
+      "action": "replay-existing"
+    }
+  },
+  {
+    "name": "candidate-barrier-document",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "document"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-barrier-binary",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "binary"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-barrier-savedRename",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "savedRename"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "candidate-barrier-pull",
+    "observed": {
+      "phase": "candidate",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "pull"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-barrier-document",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "document"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-barrier-binary",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "binary"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-barrier-savedRename",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "savedRename"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending-barrier-pull",
+    "observed": {
+      "phase": "pending",
+      "capabilityAvailable": true,
+      "topologyMatches": true,
+      "changesContained": true,
+      "barriers": [
+        "pull"
+      ]
+    },
+    "decision": {
+      "action": "hold"
+    }
+  }
+]

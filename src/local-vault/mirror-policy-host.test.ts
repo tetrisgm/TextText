@@ -1,3 +1,4 @@
+import folderVectors from "../../sync/fixtures/mirror-folder.json";
 import queuedUploadPathVectors from "../../sync/fixtures/mirror-queued-upload-path.json";
 import savedRenameVectors from "../../sync/fixtures/mirror-saved-rename.json";
 import tombstoneVectors from "../../sync/fixtures/mirror-tombstone.json";
@@ -16,6 +17,17 @@ const scope = { accountId: "account-a", workspaceId: "workspace", lifecycle: "co
 const observed = { localHash: "a".repeat(64), baselineHash: "a".repeat(64), remoteRevision: "remote-a", baselineRevision: "remote-a", refresh: false };
 const request = { version: 1, digest, pageId, generation: 1, scope, requestId: "request-a", observed };
 describe("portable mirror policy host", () => {
+  it("fences folder decisions and rejects unknown fields", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of folderVectors) {
+      const input = {...request, observed: vector.observed};
+      expect(host.folder(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.folder({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.folder({...input, scope: {...scope, accountId: "foreign"}})).toThrow("Stale");
+      expect(() => host.folder({...input, observed: {...vector.observed, payload: "forbidden"}})).toThrow();
+    }
+    host.retire(); expect(() => host.folder({...request, observed: folderVectors[0].observed})).toThrow("Stale");
+  });
   it("fences protected-path decisions with exact scope, observation and request echo", () => {
     const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
     for (const vector of sharedPathVectors) {

@@ -203,3 +203,15 @@ test('official core gate registers the custom gallery title fixture and fingerpr
   assert.ok(shell.includes('exec node sync/verify.mjs "$@"'), 'normal test-sync invocation delegates to the registered core gate');
   assert.ok(verifier.includes("['--import', 'tsx', 'src/local-vault/__tests__/verify-custom-gallery-title.mts']"));
 });
+
+
+test('folder policy source, fixtures and native suites participate in official gates', async () => {
+  const build = await fs.readFile(new URL('../scripts/build-local-vault.mjs', import.meta.url), 'utf8');
+  const client = await fs.readFile(new URL('./vitest.client.config.mts', import.meta.url), 'utf8');
+  const native = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
+  assert.ok(inputs.includes('src') && inputs.includes('sync') && inputs.includes('mac/Tests'));
+  assert.ok(build.includes('src/sync/engine/mirror-folder.ts'));
+  assert.ok(client.includes('src/sync/engine/mirror-folder.test.ts'));
+  assert.ok(native.includes('FolderPolicyTests|'));
+  assert.match(native, /for suite in [^;]*\bFolderPolicy\b/);
+});

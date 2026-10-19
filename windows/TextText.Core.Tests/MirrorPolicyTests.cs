@@ -25,6 +25,10 @@ static class MirrorPolicyTests
             refused=false;try{await policy.DecideAsync(observation);}catch(IOException){refused=true;}
             check(refused,"retired policy cannot resume: "+altered);
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-folder.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            check(await policy.FolderAsync(vector.GetProperty("observed").Deserialize<MirrorFolderObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorFolderDecision>(json),"source folder vector: "+vector.GetProperty("name"));
+        }
         foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-schedule.json"))).RootElement.EnumerateArray()) {
             var policy=NativePolicyTestHost.Create();
             var scheduleObservation=vector.GetProperty("observed").Deserialize<MirrorScheduleObservation>(json)!;

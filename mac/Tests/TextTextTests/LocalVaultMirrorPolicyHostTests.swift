@@ -22,6 +22,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
     private struct LifecycleVector: Decodable { let name: String, observed: LocalVaultMirrorLifecycleObservation, decision: LocalVaultMirrorLifecycleDecision }
     private struct TombstoneVector: Decodable { let name: String, observed: LocalVaultMirrorTombstoneObservation, decision: LocalVaultMirrorTombstoneDecision }
     private struct QueuedUploadPathVector: Decodable { let name: String, observed: LocalVaultMirrorQueuedUploadPathObservation, decision: LocalVaultMirrorQueuedUploadPathDecision }
+    private struct FolderVector: Decodable { let name: String, observed: LocalVaultMirrorFolderObservation, decision: LocalVaultMirrorFolderDecision }
     private struct SavedRenameVector: Decodable { let name: String, observed: LocalVaultMirrorSavedRenameObservation, decision: LocalVaultMirrorSavedRenameDecision }
     private struct SharedPathVector: Decodable { let name: String, observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision }
     private struct QueueVector: Decodable { let name: String, observed: LocalVaultMirrorQueueObservation, decision: LocalVaultMirrorQueueDecision }
@@ -50,6 +51,7 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         let schedules = try JSONDecoder().decode([ScheduleVector].self, from: Data(contentsOf: base.appendingPathComponent("schedule-vectors.json")))
         let paths = try JSONDecoder().decode([SharedPathVector].self, from: Data(contentsOf: base.appendingPathComponent("shared-path-vectors.json")))
         let tombstones = try JSONDecoder().decode([TombstoneVector].self, from: Data(contentsOf: base.appendingPathComponent("tombstone-vectors.json")))
+        let folders = try JSONDecoder().decode([FolderVector].self, from: Data(contentsOf: base.appendingPathComponent("folder-vectors.json")))
         let savedRenames = try JSONDecoder().decode([SavedRenameVector].self, from: Data(contentsOf: base.appendingPathComponent("saved-rename-vectors.json")))
         let queuedUploadPaths = try JSONDecoder().decode([QueuedUploadPathVector].self, from: Data(contentsOf: base.appendingPathComponent("queued-upload-path-vectors.json")))
         let queues = try JSONDecoder().decode([QueueVector].self, from: Data(contentsOf: base.appendingPathComponent("queue-vectors.json")))
@@ -104,6 +106,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
             let result = try await policy.tombstone(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
         }
+        for vector in folders {
+            let result = try await policy.folder(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
+        }
         for vector in savedRenames {
             let result = try await policy.savedRename(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
@@ -137,6 +143,10 @@ final class LocalVaultMirrorPolicyHostTests: XCTestCase {
         }
         for vector in tombstones {
             let result = try await policy.tombstone(vector.observed)
+            XCTAssertEqual(result, vector.decision, vector.name)
+        }
+        for vector in folders {
+            let result = try await policy.folder(vector.observed)
             XCTAssertEqual(result, vector.decision, vector.name)
         }
         for vector in savedRenames {

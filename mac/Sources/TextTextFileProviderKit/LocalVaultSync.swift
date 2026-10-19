@@ -1885,6 +1885,22 @@ public actor LocalVaultSync {
         try LocalVaultFolderCaseSync.validate(root: root, accountId: accountId, baseline: state.folderCaseBaseline, command: nil)
         try persist(restoring: previous)
     }
+    private func folderDecision(_ observed: LocalVaultMirrorFolderObservation, context: LocalVaultFolderCaseContext?) async throws -> LocalVaultMirrorFolderDecision {
+        guard let mirrorPolicy else { throw LocalVaultSyncFailure.changed }
+        try verifyFolderCaseOwner()
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let memory = try encoder.encode(state)
+        let stateURL = directory.appendingPathComponent("state.json")
+        let durable = try StableFileSnapshot.read(stateURL, maximumBytes: 90 * 1024 * 1024)
+        let decision = try await mirrorPolicy.folder(observed)
+        let currentContext = await transport.folderCaseContext()
+        try Task.checkCancellation(); try verifyFolderCaseOwner()
+        guard try encoder.encode(state) == memory,
+              try StableFileSnapshot.read(stateURL, maximumBytes: 90 * 1024 * 1024) == durable,
+              currentContext?.manifestRevision == context?.manifestRevision,
+              currentContext?.folders.sorted() == context?.folders.sorted() else { throw LocalVaultSyncFailure.changed }
+        return decision
+    }
     private func reconcileFolderCase(_ manifest: [LocalVaultRemoteItem]) async throws -> [LocalVaultRemoteItem] {
         let context = await transport.folderCaseContext()
         if state.folderCaseBaseline != nil || state.folderCaseCommand != nil { try verifyFolderCaseOwner() }
@@ -1902,8 +1918,19 @@ public actor LocalVaultSync {
                 guard let context, let accountId else { throw LocalVaultSyncFailure.changed }
                 try verifyFolderCaseOwner()
                 let current = manifest.filter { !$0.isDeleted }.map { LocalVaultFolderCaseItem(itemId: $0.itemId, relativePath: $0.relativePath, revision: $0.revision) }.sorted { $0.itemId < $1.itemId }
-                guard baseline.folders.sorted() == context.folders.sorted(), baseline.items.map({ $0.itemId + ":" + $0.relativePath }) == current.map({ $0.itemId + ":" + $0.relativePath }),
-                      changes.allSatisfy({ LocalVaultFolderCaseSync.within($0.0.path, first.0.path) }) else { throw LocalVaultSyncFailure.changed }
+                let topologyMatches = baseline.folders.sorted() == context.folders.sorted() && baseline.items.map({ $0.itemId + ":" + $0.relativePath }) == current.map({ $0.itemId + ":" + $0.relativePath })
+                let contained = changes.allSatisfy({ LocalVaultFolderCaseSync.within($0.0.path, first.0.path) })
+                let affectedIds = Set(current.filter { LocalVaultFolderCaseSync.within($0.relativePath, first.0.path) }.map(\.itemId))
+                var barriers: [String] = []
+                if state.outbox.values.contains(where: { affectedIds.contains($0.itemId) }) { barriers.append("document") }
+                if state.binaryOutbox?.values.contains(where: { affectedIds.contains($0.itemId) }) == true { barriers.append("binary") }
+                if state.sharedRenames?.keys.contains(where: { affectedIds.contains($0) }) == true { barriers.append("savedRename") }
+                let decision = try await folderDecision(.init(phase: "candidate", capabilityAvailable: true, topologyMatches: topologyMatches, changesContained: contained, barriers: barriers), context: context)
+                var freshChanges: [(LocalVaultFolderCaseSync.Identity, String)] = []
+                for identity in baseline.identities { if let destination = try LocalVaultFolderCaseSync.changed(root: root, identity: identity) { freshChanges.append((identity, destination)) } }
+                freshChanges.sort { $0.0.path.count < $1.0.path.count }
+                guard changes.count == freshChanges.count, zip(changes, freshChanges).allSatisfy({ $0.0.0 == $0.1.0 && $0.0.1 == $0.1.1 }),
+                      decision.action == "stage-new", topologyMatches, contained else { throw LocalVaultSyncFailure.changed }
                 let request = LocalVaultFolderCaseRequest(operationId: UUID().uuidString.lowercased(), source: first.0.path, destination: first.1, baseManifestRevision: context.manifestRevision,
                     folders: baseline.folders.filter { LocalVaultFolderCaseSync.within($0, first.0.path) }, items: current.filter { LocalVaultFolderCaseSync.within($0.relativePath, first.0.path) })
                 try LocalVaultFolderCaseSync.validateWire(request)
@@ -1921,6 +1948,10 @@ public actor LocalVaultSync {
         try LocalVaultFolderCaseSync.validateWire(command.request)
         guard context != nil else { throw LocalVaultSyncFailure.changed }
         try verifyFolderCaseOwner(); try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
+        let replay = try await folderDecision(.init(phase: "pending", capabilityAvailable: true, topologyMatches: false, changesContained: false, barriers: []), context: context)
+        try requireFolderCaseCommand(command)
+        try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
+        guard replay.action == "replay-existing" else { throw LocalVaultSyncFailure.changed }
         let receipt: LocalVaultFolderCaseReceipt
         do { receipt = try await transport.moveFolderCase(command.request) }
         catch LocalVaultSyncFailure.conflict {

@@ -23,6 +23,20 @@ final class LocalVaultFolderCaseSyncTests: XCTestCase {
     }
     private func engine(_ f: Fixture) throws -> LocalVaultSync { try makeTestSync(root: f.root, binding: f.binding, transport: f.remote, accountId: "account-a") }
     private func externalMove(_ root: URL) throws { guard rename(root.appendingPathComponent("Case").path, root.appendingPathComponent("CASE").path) == 0 else { throw POSIXError(.init(rawValue: errno)!) } }
+    func testFolderPolicyAwaitRetainsChangedDurableStateWithoutDispatch() async throws {
+        let f = try await fixture(empty: true); defer { try? FileManager.default.removeItem(at: f.root) }
+        _ = try await engine(f).sync(); try externalMove(f.root)
+        let mutation = FolderPolicyStateMutation(root: f.root)
+        let sync = try LocalVaultSync(root: f.root, binding: f.binding, transport: f.remote, accountId: "account-a",
+            mirrorPolicy: makeTestMirrorPolicy(workspaceId: f.binding.workspaceId, accountId: "account-a", beforeRequest: { try await mutation.apply($0) }))
+        do { _ = try await sync.sync(); XCTFail("Changed durable state must refuse") } catch LocalVaultSyncFailure.changed { }
+        let captured = await mutation.bytes()
+        let changed = try XCTUnwrap(captured)
+        let url = LocalVaultDeviceState.directory(root: f.root).appendingPathComponent("sync/state.json")
+        XCTAssertEqual(try Data(contentsOf: url), changed)
+        let commands = await f.remote.commands(); XCTAssertTrue(commands.isEmpty)
+        XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: f.root, path: "CASE/Empty"))
+    }
     func testRecoveryOfflineThenExplicitCancellationRetainsFilesAndReceipt() async throws {
         let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
         let sync = try engine(f); _ = try await sync.sync(); try externalMove(f.root)
@@ -213,4 +227,20 @@ private actor FolderCaseTransport: LocalVaultSyncTransport {
 private actor RecoveryCallbackCounter {
     private var calls = 0
     func check() throws { calls += 1; if calls == 3 { throw CancellationError() } }
+}
+
+private actor FolderPolicyStateMutation {
+    let root: URL
+    private var changed: Data?
+    init(root: URL) { self.root = root }
+    func bytes() -> Data? { changed }
+    func apply(_ script: String) throws {
+        guard changed == nil, script.contains(".folder(") else { return }
+        let url = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        // An actual concurrent valid state change, not an expected editor snapshot.
+        object["cursor"] = 17
+        let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try bytes.write(to: url, options: [.atomic]); changed = bytes
+    }
 }
