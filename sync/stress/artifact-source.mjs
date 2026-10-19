@@ -144,6 +144,7 @@ export function fixedArtifactPaths(role, sourceRoot) {
     fields: join(base, 'multi-field.mjs'), fieldInput: join(base, 'multi-field-input.mjs'), history: join(base, 'undo-redo.mjs'), identity: join(base, 'identity.mjs'), observation: join(base, 'identity-observation.mjs'), fflate:join(root,'node_modules/fflate/esm/index.mjs'), node: realpathSync(process.execPath) };
   if (role.endsWith('-cli')) { files.leafMoveOS=join(base,'leaf-move-os.py'); files.leafMoveWindows=join(base,'leaf-move-os.ps1'); files.fileWrites = join(base, 'file-write-sequence.mjs'); files.malformedRepair = join(base, 'malformed-repair.mjs'); files.fieldPack = join(base, 'multi-field-pack.mjs'); }
   else Object.assign(files, { browserLaunch: join(base,'browser-launch.mjs'), playwrightBundle: join(root,'node_modules/playwright-core/lib/coreBundle.js'), lostAck: join(base,'lost-ack.mjs'), lifecycle: join(base, 'browser-lifecycle.mjs'), fieldPage: join(base, 'multi-field-page.mjs'), session: join(base, 'browser-session.mjs'), input: join(base, 'input-sequence.mjs'), history: join(base, 'undo-redo.mjs'), readiness: join(root, 'windows/scripts/live-browser-ready.mjs') });
+  if(role==='pc-web') Object.assign(files,{browserRelay:join(root,'windows/scripts','stress-browser-relay.mjs'),browserTask:join(root,'windows/scripts','stress-browser-task.ps1'),browserChild:join(root,'windows/scripts','stress-browser-child.mjs')});
   return files;
 }
 export function artifactHashes(role, sourceRoot) {

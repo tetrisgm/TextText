@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-builtin-presets.ts', 'scripts/builtin-preset-assets.ts', 'scripts/fixtures', 'scripts/vault-http-test-server.ts', 'mac/Sources', 'mac/Tests',
   'scripts/build-local-vault.mjs', 'scripts/verify-production-shutdown.mjs', 'windows/scripts/build-ui.mjs',
   'windows/scripts/stress-native-task.ps1', 'windows/scripts/stress-native-relay.mjs',
+  'windows/scripts/stress-browser-relay.mjs', 'windows/scripts/stress-browser-child.mjs', 'windows/scripts/stress-browser-task.ps1', 'windows/scripts/stress-browser-relay.test.mjs',
   'windows/TextText.Windows', 'windows/TextText.Windows.Tests', 'windows/TextText.Smoke', 'windows/TextText.LiveAcceptance', 'windows/TextText.LiveAcceptance.Tests', 'windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/scripts/build.ps1', 'windows/scripts/handoff-publication-proof.test.mjs',
   'mac/scripts/stress-native.py',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',

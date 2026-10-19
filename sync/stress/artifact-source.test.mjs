@@ -19,6 +19,7 @@ test('sealed browser artifact maps match actual observer inputs including launch
   const root = fileURLToPath(new URL('../../', import.meta.url));
   for (const role of ['mac-web', 'pc-web']) assert.deepEqual(fixedArtifactPaths(role, root), fixedDriverFiles(role));
 });
+test('PC browser seals all interactive transport helpers without changing Mac inputs',()=>{const root=fileURLToPath(new URL('../../',import.meta.url));const pc=fixedArtifactPaths('pc-web',root),mac=fixedArtifactPaths('mac-web',root);for(const key of ['browserRelay','browserTask','browserChild']){assert.ok(pc[key]);assert.equal(mac[key],undefined);assert.ok(readFileSync(pc[key]).length>0);}});
 test('pristine archive ignores dirty working checkout and verifies exact source bytes and executable mode',()=>{
   const {dir,repo}=sourceFixture();
   writeFileSync(join(repo,'source.mjs'),'unrelated dirty working tree');
