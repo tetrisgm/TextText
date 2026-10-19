@@ -161,3 +161,27 @@ test('browser readonly observation correlates current sample after read without 
     throw Error('reader must not execute');
   }), /soak sample/i);
 });
+
+
+test('document opener supports only the actual card/story entry controls', async () => {
+  const { openBrowserDocumentEditor } = await import('./browser-adapter.mjs');
+  for (const label of ['Edit card', 'Edit story']) {
+    const calls = []; const body = { isVisible: async () => false, waitFor: async options => calls.push(['wait', options]) };
+    const page = { getByRole(role, options) {
+      if (role === 'textbox') { assert.deepEqual(options, { name: 'Document body', exact: true }); return body; }
+      assert.equal(role, 'button'); assert.equal(options.name.test(label), true);
+      for (const other of ['Edit', 'Edit item', 'Edit story settings', 'Other Edit card']) assert.equal(options.name.test(other), false);
+      return { click: async () => calls.push(['click', label]) };
+    } };
+    assert.equal(await openBrowserDocumentEditor(page), body);
+    assert.deepEqual(calls, [['click', label], ['wait', { state: 'visible', timeout: 30_000 }]]);
+  }
+});
+
+test('document opener preserves an already visible editor and refuses ambiguous controls', async () => {
+  const { openBrowserDocumentEditor } = await import('./browser-adapter.mjs');
+  const body = { isVisible: async () => true, waitFor: async () => {} };
+  await openBrowserDocumentEditor({ getByRole(role) { assert.equal(role, 'textbox'); return body; } });
+  body.isVisible = async () => false;
+  await assert.rejects(openBrowserDocumentEditor({ getByRole(role) { return role === 'textbox' ? body : { click: async () => { throw new Error('strict mode: ambiguous entry controls'); } }; } }), /ambiguous/);
+});

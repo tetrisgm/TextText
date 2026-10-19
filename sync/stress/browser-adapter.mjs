@@ -80,6 +80,15 @@ export function validateHello(message, config, platform) {
   return { ok: true, role: expected.role };
 }
 
+// The selected fixture heading is verified before this opens its production editor.
+// Playwright strict matching rejects ambiguous controls rather than choosing one.
+export async function openBrowserDocumentEditor(page) {
+  const body = page.getByRole('textbox', { name: 'Document body', exact: true });
+  if (!await body.isVisible()) await page.getByRole('button', { name: /^Edit (?:card|story)$/ }).click();
+  await body.waitFor({ state: 'visible', timeout: 30_000 });
+  return body;
+}
+
 export function validateRound(round) {
   return Number.isInteger(round) && round >= 0 && round <= MAX_ROUND;
 }
@@ -256,9 +265,7 @@ async function main() {
           await page.waitForTimeout(SAMPLE_MS);
         }
         stage = 'open-editor';
-        body = page.getByRole('textbox', { name: 'Document body', exact: true });
-        if (!await body.isVisible()) await page.getByRole('button', { name: 'Edit card', exact: true }).click();
-        await body.waitFor({ state: 'visible', timeout: 30_000 });
+        body = await openBrowserDocumentEditor(page);
         stage = 'shared-ready';
         await page.waitForFunction(sharedEditorReady, config.itemId, { timeout: 45_000 })
           .catch(() => { throw new Error('editor did not join the shared document'); });
