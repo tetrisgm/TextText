@@ -3,7 +3,7 @@
 // this complete raw observation to an actual product-validated live snapshot before
 // accepting proof or treating a projection mismatch as a pending/lag condition.
 // Callers retain authenticated/stable-read authority; no adapter is activated here.
-import { readPack, validateIdentity, LIMITS } from './file-adapter.mjs';
+import { readPack, validateIdentity, LIMITS } from './pack-reader.mjs';
 import { validateAssetProof } from './asset-proof.mjs';
 import { documentObservation } from './multi-field.mjs';
 import { sha256 } from './identity-observation.mjs';

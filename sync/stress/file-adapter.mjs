@@ -1,3 +1,6 @@
+import {observeFileAssetProof,assertAssetProofObserveOnly} from './asset-proof-observation.mjs';
+import {ActorError,LIMITS,safePath,readPack,canonicalRoot,entryOf,markdownOf,bodyOf,validateIdentity} from './pack-reader.mjs';
+export {ActorError,LIMITS,readPack,canonicalRoot,markdownOf,bodyOf,validateIdentity} from './pack-reader.mjs';
 import {readSoakObservation,assertSoakObserveOnly} from './soak-correlation.mjs';
 import {validateLeafMove,leafRequest,qualifyLeafConfig,inspectOwnedLeaf,observeOwnedLeaf,moveOwnedLeaf,compareLeafProof} from './leaf-move.mjs';
 import {folderRequest,inspectOwnedFolder,observeOwnedFolder,moveOwnedFolder,compareFolderProof} from './folder-case.mjs';
@@ -19,14 +22,13 @@ import { observeSealedSource, fixedDriverFiles, ownerBindingScope, captureOwnerB
 import { createInterface } from 'node:readline';
 import { createHash } from 'node:crypto';
 import { hostname, homedir } from 'node:os';
-import { readFileSync, writeFileSync, mkdirSync, appendFileSync, lstatSync, renameSync, existsSync, unlinkSync } from 'node:fs';
-import { basename, extname, isAbsolute, join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, lstatSync, realpathSync, renameSync, existsSync, unlinkSync } from 'node:fs';
+import { basename, extname, isAbsolute, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 
 export const ROLE_PLATFORM = { 'mac-cli': 'darwin', 'pc-cli': 'win32' };
 export const TITLE_PREFIX = 'Six-client acceptance ';
-export const LIMITS = { fileBytes: 64 * 1024 * 1024, entries: 10000, expandedBytes: 64 * 1024 * 1024, markdownBytes: 1024 * 1024 };
 export const OBSERVE = { pollMs: 200, stableSamples: 3, maxMs: 30000 };
 const WRITE_RETRIES = 5;
 const RUN_ID = /^[A-Za-z0-9_-]{1,80}$/;
@@ -36,14 +38,10 @@ const MARKER = /\[(mac|pc)-(app|web|cli) r(\d+) [a-z]+\d+\]/g;
 const EPOCH = new Date(1980, 0, 1);
 const SECRET = /\b(token|secret|password|passwd|cookie|authorization|api[_-]?key|bearer)\b(\s*[:=]\s*|\s+)(bearer\s+)?[^\s"']+/gi;
 
-export class ActorError extends Error {
-  constructor(code, message) { super(message ?? code); this.code = code; }
-}
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const safePath = (path) => !!path && !path.includes('\\') && !Array.from(path).some((c) => c.charCodeAt(0) < 32)
-  && !path.split('/').some((part) => !part || part === '.' || part === '..') && !/^[A-Za-z]:/.test(path);
+
 
 // ---- configuration ----------------------------------------------------------------------------
 
@@ -73,61 +71,6 @@ export function loadActorConfig(path) {
 
 // ---- pack reading -----------------------------------------------------------------------------
 
-// Decompress every entry with bounds; keep order and directory markers. Nothing is interpreted yet.
-export function readPack(bytes) {
-  if (bytes.byteLength > LIMITS.fileBytes) throw new ActorError('pack-too-large', 'TextPack exceeds the file size limit');
-  let expanded = 0; const seen = new Set(); const order = [];
-  let files;
-  try {
-    files = unzipSync(bytes, { filter(entry) {
-      const path = entry.name.endsWith('/') ? entry.name.slice(0, -1) : entry.name;
-      if (!safePath(path) || seen.has(entry.name)) throw new ActorError('pack-invalid', 'invalid or duplicate ZIP entry');
-      seen.add(entry.name); order.push(entry.name);
-      if (seen.size > LIMITS.entries || (expanded += entry.originalSize) > LIMITS.expandedBytes) throw new ActorError('pack-too-large', 'expanded TextPack exceeds limits');
-      return true;
-    } });
-  } catch (e) { throw e instanceof ActorError ? e : new ActorError('pack-invalid', 'not a readable ZIP'); }
-  const entries = order.map((name) => ({ name, data: files[name] ?? new Uint8Array(0) }));
-  return { entries, root: canonicalRoot(entries) };
-}
-
-// The canonical document root is the one place where text.md and document.json sit together at the
-// archive root or inside exactly one top-level folder. A deeper text.md (for example assets/text.md
-// or <bundle>/assets/text.md) is an attachment, never the document.
-export function canonicalRoot(entries) {
-  const names = new Set(entries.map((e) => e.name));
-  const roots = [...names].filter((n) => n === 'text.md' || /^[^/]+\/text\.md$/.test(n)).map((n) => n.slice(0, -'text.md'.length))
-    .filter((root) => names.has(`${root}document.json`));
-  if (roots.length !== 1) throw new ActorError('pack-root', 'TextPack must contain exactly one canonical text.md and document.json pair');
-  return roots[0];
-}
-
-const entryOf = (pack, leaf) => pack.entries.find((e) => e.name === pack.root + leaf);
-
-export function markdownOf(pack) {
-  const entry = entryOf(pack, 'text.md');
-  if (!entry || entry.data.byteLength > LIMITS.markdownBytes) throw new ActorError('pack-invalid', 'text.md missing or too large');
-  return strFromU8(entry.data);
-}
-
-// Frontmatter scalar as the projection parser reads it: single line `key: value`, JSON string or bare.
-function frontmatterValue(markdown, key) {
-  const header = markdown.replace(/^﻿/, '').match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/)?.[1] ?? '';
-  const values = [...header.matchAll(new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'gm'))];
-  if (values.length === 0) return undefined;
-  if (values.length !== 1) return null;
-  let value = values[0][1];
-  if (value.startsWith('"')) { try { value = JSON.parse(value); } catch { return null; } }
-  return typeof value === 'string' ? value : null;
-}
-
-// The body exactly as the editor holds it: everything after the closing delimiter and one optional
-// blank separator line, matching parseProjectionMarkdown. Without frontmatter the whole file is body.
-export function bodyOf(markdown) {
-  const text = markdown.replace(/^﻿/, '');
-  return text.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n(?:\r?\n)?([\s\S]*)$/)?.[1] ?? text;
-}
-
 export function editIdsOf(body) {
   const ids = new Set();
   for (const m of body.matchAll(MARKER)) ids.add(`r${m[3]}-${m[1]}-${m[2]}`);
@@ -142,28 +85,6 @@ export function assetHashesOf(pack, paths) {
     const entry = pack.entries.find(e => e.name === `${pack.root}${path}`);
     return [path, entry ? sha256(entry.data) : null];
   }));
-}
-
-// Identity lives in text.md (textTextId) and document.json (schema-v1 title).
-// CLI-created packs may omit the optional Markdown title; an explicit title must still agree.
-// The pack does not record its workspace; that comes from
-// the actor config and must equal the coordinator's fixture before anything is written.
-export function validateIdentity(pack, config) {
-  const markdown = markdownOf(pack);
-  const docEntry = entryOf(pack, 'document.json');
-  let document;
-  try { document = JSON.parse(strFromU8(docEntry.data)); } catch { throw new ActorError('identity', 'document.json is not JSON'); }
-  if (!document || document.schemaVersion !== 1 || typeof document.content?.body !== 'string' || typeof document.content?.title !== 'string') {
-    throw new ActorError('identity', 'document.json is not a schema-v1 document');
-  }
-  const id = frontmatterValue(markdown, 'textTextId');
-  if (id !== config.itemId) throw new ActorError('identity', 'text.md textTextId does not match the configured item');
-  const title = frontmatterValue(markdown, 'title');
-  if (title !== undefined) {
-    if (title !== config.title) throw new ActorError('identity', 'text.md title does not match the configured acceptance title');
-  }
-  if (document.content.title !== config.title) throw new ActorError('identity', 'document.json title does not match the configured acceptance title');
-  return { markdown, body: bodyOf(markdown) };
 }
 
 // Append `text` to text.md and re-pack: same entry order, every other entry's decompressed bytes
@@ -312,10 +233,26 @@ export function sanitizeError(error, config) {
   return message.replace(SECRET, (_, k) => `${k}=[redacted]`).slice(0, 500);
 }
 
+// A readonly source binding for the opt-in raw asset observation only.
+export function captureFileAssetBinding(config) {
+  if (!config.workspaceRoot) throw new ActorError('identity','Explicit owned root required');
+  const root=resolve(config.workspaceRoot), file=resolve(config.file), child=relative(root,file);
+  if (!child || child.startsWith('..') || isAbsolute(child)) throw new ActorError('identity','Fixture is outside owned root');
+  const parts=child.split(sep), identities=[];
+  let current=root;
+  for (let index=0;index<=parts.length;index++) {
+    const stat=lstatSync(current,{bigint:true}), final=index===parts.length;
+    if (stat.isSymbolicLink() || (final ? !stat.isFile() || stat.nlink!==1n || stat.size>BigInt(LIMITS.fileBytes) : !stat.isDirectory())) throw new ActorError('identity','Unsafe owned fixture binding');
+    identities.push([String(stat.dev),String(stat.ino),String(stat.mode),String(stat.size),String(stat.mtimeNs),String(stat.ctimeNs)]);
+    if (!final) current=join(current,parts[index]);
+  }
+  return {relativePath:parts.join('/'),bindingHash:sha256(canonicalJSON({root:realpathSync(root),file:realpathSync(file),identities}))};
+}
+
 // One actor instance: `handle(message)` returns the reply (or null). Commands are serialized by the
 // caller (stdin pipe) or by the test. `platform` is injectable only so tests can prove the refusal path.
 export function createActor(config, { platform = process.platform, machineId = hostname(), now = () => new Date().toISOString() } = {}) {
-  const state = { malformed: null, writeProgress: null, ownerScope: null, ownerGuard: null, folderBaseline:null, runId: null, runDir: null, role: config.role };
+  const state = { malformed: null, writeProgress: null, ownerScope: null, ownerGuard: null, source: null, folderBaseline:null, runId: null, runDir: null, role: config.role };
   const journal = (entry) => { if (state.runDir) appendFileSync(join(state.runDir, 'journal.jsonl'), `${JSON.stringify({ at: now(), ...entry })}\n`); };
   const handlers = {
     async hello(m) {
@@ -342,6 +279,7 @@ export function createActor(config, { platform = process.platform, machineId = h
         identity = { schemaVersion: 1, role: config.role, platform, artifactKind: 'direct-file-driver',
           principalKind: 'workspace-owner-binding', principalScopeHash: ownerBindingScope(config),
           runtimeName: 'Node.js', runtimeVersion: process.versions.node, ...source };
+        state.source = source;
         state.ownerScope = identity.principalScopeHash;
         state.ownerGuard = captureOwnerBindingGuard(config);
         if (state.ownerGuard() !== state.ownerScope) throw new ActorError('identity', 'workspace owner binding changed during hello');
@@ -417,6 +355,7 @@ export function createActor(config, { platform = process.platform, machineId = h
       const receipt=moveOwnedLeaf(config,request,{guard:requireRun,runDir:state.runDir});config.file=resolve(config.workspaceRoot,receipt.after.relativePath);requireRun();journal({event:'leaf-moved',round:m.round,...receipt});return{type:'leaf-moved',round:m.round,...receipt};
     },
     async observe(m) {
+      assertAssetProofObserveOnly(m);
       return readSoakObservation(m.soakSample, state.runId, async () => {
         let leafMoveProof,leafMovePending=false;
         if(m.leafMove){
@@ -441,8 +380,25 @@ export function createActor(config, { platform = process.platform, machineId = h
         const o = await observeBody({ file: config.file, config, expectedEditIds: Array.isArray(m.expectedEditIds) ? m.expectedEditIds : [], expectedAssetPaths: m.expectedAssetPaths ?? [], includeDocument: m.documentSnapshot === true });
         requireRun();
         journal({ event: 'observed', round: m.round, sha256: o.sha256, bodySha256: sha256(strToU8(o.body)), editIds: o.editIds, assetHashes: o.assetHashes, stable: o.stable, timedOut: o.timedOut });
-        const documentSnapshot = o.documentSnapshot;
-        return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), text: o.body, editIds: o.editIds, assetHashes: o.assetHashes };
+        let assetObservation;
+        if (Object.hasOwn(m,'assetProof')) {
+          assetObservation=await observeFileAssetProof(m.assetProof,{
+            capture:async()=>{
+              requireRun();
+              if (!state.ownerGuard || !state.source || !state.ownerScope) throw new ActorError('identity','Verified owned source required for asset proof');
+              const scope=state.ownerGuard(),source=observeSealedSource(config.identityReceipt,config.role,fixedDriverFiles(config.role));
+              if (scope!==state.ownerScope || canonicalJSON(source)!==canonicalJSON(state.source)) throw new ActorError('identity','Owned source changed');
+              const binding=captureFileAssetBinding(config);requireRun();
+              return {context:{role:config.role,scopeHash:scope,workspaceId:config.workspaceId,itemId:config.itemId,
+                relativePath:binding.relativePath,selectedItemId:null,selectedPath:null},
+                authorityHash:sha256(canonicalJSON({source,binding,scope,runId:state.runId,role:state.role}))};
+            },
+            readPack:()=>stableRead(config.file)
+          });
+        }
+        const documentSnapshot = assetObservation?.documentSnapshot ?? o.documentSnapshot;
+
+        return { type: 'state', round: m.round, ...(folderCaseProof ? {folderCaseProof,folderCasePending}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending}:{}), ...(documentSnapshot ? { documentSnapshot } : {}), ...(assetObservation ?? {}), text: assetObservation?.documentSnapshot.content.body ?? o.body, editIds: assetObservation ? editIdsOf(assetObservation.documentSnapshot.content.body) : o.editIds, assetHashes: o.assetHashes };
       });
     },
     async shutdown() { journal({ event: 'shutdown' }); return null; },
@@ -455,6 +411,7 @@ export function createActor(config, { platform = process.platform, machineId = h
       try {
         if (!m || typeof m.type !== 'string' || !handlers[m.type]) throw new ActorError('protocol', `unknown message type`);
         assertSoakObserveOnly(m);
+        assertAssetProofObserveOnly(m);
         return await handlers[m.type](m);
       } catch (error) {
         const message = `${error?.code ?? 'error'}: ${sanitizeError(error, config)}`;

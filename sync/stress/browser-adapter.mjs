@@ -1,3 +1,4 @@
+import {observeBrowserAssetProof,assertAssetProofObserveOnly} from './asset-proof-observation.mjs';
 import {readSoakObservation,assertSoakObserveOnly} from './soak-correlation.mjs';
 import {createLostAckFault,validateLostAckScenario,readLostAckJournal} from './lost-ack.mjs';
 import {inspectLeafPack} from './leaf-move.mjs';
@@ -113,6 +114,7 @@ export function validateExpectedIds(ids) {
 
 // The same readonly boundary is exercised by unit tests without launching a browser.
 export async function observeBrowserState(message, runId, read) {
+  assertAssetProofObserveOnly(message);
   if (!validateExpectedIds(message.expectedEditIds)) throw new StageError('observe', 'expectedEditIds invalid');
   return readSoakObservation(message.soakSample, runId, read);
 }
@@ -211,7 +213,7 @@ async function main() {
   const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
   let sessionId = randomUUID(), generation = 1, helloRequest, restarting = false, online = true;
   let context = null, page = null, body = null, heading = null;
-  let boundAccountId, lostAckFault;
+  let boundAccountId, boundSource, lostAckFault;
   let reloads = 0, started = false, stopping = false;
   let inputProgress, historyProgress, fieldProgress, observeAssets, retainedFailure, retentionAnnounced = false;
 
@@ -239,6 +241,30 @@ async function main() {
     const snapshot = await page.evaluate(readLiveFieldDocument, { itemId: config.itemId, workspaceId: config.workspaceId, title: config.title });
     if (!snapshot || snapshot.content?.title !== config.title || snapshot.presentation?.template?.id !== 'texttext.article') throw new StageError('observe', 'live article snapshot or existing subtitle unavailable');
     return snapshot;
+  }
+  async function captureAssetAuthority() {
+    if (helloRequest?.identitySchema!==1 || !boundAccountId || !boundSource || !page || !context) throw new StageError('asset-proof','Verified source required');
+    const ownedPage=page,ownedContext=context,pin={sessionId,generation,reloads};
+    if (new URL(page.url()).origin!==ORIGIN) throw new StageError('asset-proof','Page origin changed');
+    await inspectDocument();
+    const response=await context.request.get(`${ORIGIN}/api/auth/session`,{headers:{'Cache-Control':'no-cache',Pragma:'no-cache'},timeout:10000,maxRedirects:0});
+    if (response.status()!==200 || response.url()!==`${ORIGIN}/api/auth/session`) throw new StageError('asset-proof','Authenticated scope unavailable');
+    const accountId=(await response.json())?.user?.userId;
+    await inspectDocument();
+    const source=observeSealedSource(config.identityReceipt,platform.role,fixedDriverFiles(platform.role));
+    if (accountId!==boundAccountId || canonicalJSON(source)!==canonicalJSON(boundSource) ||
+        page!==ownedPage || context!==ownedContext || sessionId!==pin.sessionId || generation!==pin.generation || reloads!==pin.reloads ||
+        new URL(page.url()).origin!==ORIGIN) throw new StageError('asset-proof','Readonly source scope or editor changed');
+    return {context:{role:platform.role,scopeHash:accountScopeHash(ORIGIN,accountId),workspaceId:config.workspaceId,itemId:config.itemId,
+      relativePath:null,selectedItemId:config.itemId,selectedPath:null},
+      authorityHash:sha256(canonicalJSON({source,runId:helloRequest.runId,origin:ORIGIN,accountScope:accountScopeHash(ORIGIN,accountId),...pin}))};
+  }
+  async function readAssetPack() {
+    const url=`${ORIGIN}/api/vault/${encodeURIComponent(config.workspaceId)}/items/${encodeURIComponent(config.itemId)}`;
+    const response=await context.request.get(url,{headers:{'Cache-Control':'no-cache',Pragma:'no-cache'},timeout:10000,maxRedirects:0});
+    if (response.url()!==url || response.status()!==200 || Number(response.headers()['content-length']??0)>64*1024*1024) throw new StageError('asset-proof','Readonly pack unavailable');
+    const bytes=await response.body();
+    return {bytes,envelope:{status:response.status(),etag:response.headers().etag,encodedPath:response.headers()['x-texttext-path']}};
   }
   async function openBrowser(m, isRestart) {
       let stage = 'launch';
@@ -281,6 +307,7 @@ async function main() {
       let identity;
       if (m.identitySchema === 1) {
         const source = observeSealedSource(config.identityReceipt, platform.role, fixedDriverFiles(platform.role));
+        boundSource=source;
         const headers = { 'Cache-Control': 'no-cache', Pragma: 'no-cache' };
         const buildResponse = await context.request.get(`${ORIGIN}/api/app/build?identity=${encodeURIComponent(m.runId)}`, { headers, timeout: 10000 });
         if (!buildResponse.ok() || !/no-store/i.test(buildResponse.headers()['cache-control'] ?? '')) throw new StageError('identity', 'uncached deployment identity unavailable');
@@ -488,7 +515,11 @@ async function main() {
           const observed=observeManifestFolder(config,request,await response.json());folderCaseProof=observed.proof;folderCasePending=observed.pending;
           await assertOnItem();folderCaseReviewVisible=await page.evaluate(()=>!!document.querySelector('dialog[open]'));
         }
-        return { type: 'state' , round: m.round, text, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending,leafMoveReviewVisible}:{}), editIds: markerEditIds(text), ...(m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {}), editor: { sessionId, reloads }, settled: isSettled(samples, m.expectedEditIds), samples: samples.length };
+        const assetObservation=Object.hasOwn(m,'assetProof') ? await observeBrowserAssetProof(m.assetProof,{
+          capture:captureAssetAuthority,readPack:readAssetPack,readValidatedLiveSnapshot:inspectDocument
+        }) : undefined;
+        const observedText=assetObservation?.documentSnapshot.content.body ?? text;
+        return { type: 'state' , round: m.round, text:observedText, ...(folderCaseProof?{folderCaseProof,folderCasePending,folderCaseReviewVisible}:{}), ...(leafMoveProof?{leafMoveProof,leafMovePending,leafMoveReviewVisible}:{}), editIds: markerEditIds(observedText), ...(assetObservation ?? (m.documentSnapshot ? { documentSnapshot: await inspectDocument() } : {})), editor: { sessionId, reloads }, settled: observedText===text && isSettled(samples, m.expectedEditIds), samples: samples.length };
       });
       out(observed);
     },
@@ -507,7 +538,7 @@ async function main() {
     let m;
     try { m = JSON.parse(line); } catch { return fail(0, 'input', 'request is not JSON'); }
     if (!m || typeof m.type !== 'string' || !(m.type in handlers)) return fail(0, 'input', 'unknown request type');
-    try { assertSoakObserveOnly(m); } catch { return fail(0,'input','soakSample is valid only on observe'); }
+    try { assertSoakObserveOnly(m); assertAssetProofObserveOnly(m); } catch { return fail(0,'input','soakSample is valid only on observe'); }
     const round = m.type === 'hello' || m.type === 'shutdown' ? 0 : m.round;
     if (!validateRound(round)) return fail(0, 'input', 'round invalid');
     if (m.type !== 'hello' && m.type !== 'shutdown' && !started) return fail(round, m.type, 'hello required first');

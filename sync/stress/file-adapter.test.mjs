@@ -451,3 +451,27 @@ test('correlation field on write/prepare/hello refuses before command and preser
     assert.ok(readFileSync(file).equals(bytes));
   }
 });
+
+test('readonly asset binding pins actual owned file and refuses linked or outside paths', async()=>{
+  const {captureFileAssetBinding}=await import('./file-adapter.mjs');
+  const f=fixture(),config={...f.config,workspaceRoot:f.dir};
+  const first=captureFileAssetBinding(config);
+  assert.equal(first.relativePath,config.file.slice(f.dir.length+1));
+  const repeated=captureFileAssetBinding(config);assert.deepEqual(repeated,first);
+  const original=readFileSync(config.file);writeFileSync(config.file,Buffer.concat([original,Buffer.from([0])]));
+  assert.notEqual(captureFileAssetBinding(config).bindingHash,first.bindingHash);
+  assert.throws(()=>captureFileAssetBinding({...config,workspaceRoot:join(f.dir,'absent')}));
+  const linked=join(f.dir,'linked.textpack');symlinkSync(config.file,linked);
+  assert.throws(()=>captureFileAssetBinding({...config,file:linked}));
+});
+
+test('asset requests never grant renderer authority or advertise unsupported capability',async()=>{
+  const f=fixture();
+  const role=process.platform==='win32'?'pc-cli':'mac-cli';
+  const configured=createActor({...f.config,role},{platform:process.platform==='win32'?'win32':'darwin'});
+  const hello=await configured.handle({type:'hello',role,mode:'real',runId:'asset-negative',fixture:{workspaceId:WS,itemId:ITEM}});
+  assert.equal(hello.type,'attest');assert.equal(Object.hasOwn(hello,'binaryAssetObservation'),false);
+  const before=readFileSync(f.file);
+  const refused=await configured.handle({type:'prepare',round:1,assetProof:{version:1,sampleId:'12345678-1234-1234-1234-123456789abc'},edit:{id:'r1-'+role,op:'append',text:'never'}});
+  assert.equal(refused.type,'error');assert.deepEqual(readFileSync(f.file),before);
+});

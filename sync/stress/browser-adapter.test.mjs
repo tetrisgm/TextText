@@ -185,3 +185,14 @@ test('document opener preserves an already visible editor and refuses ambiguous 
   body.isVisible = async () => false;
   await assert.rejects(openBrowserDocumentEditor({ getByRole(role) { return role === 'textbox' ? body : { click: async () => { throw new Error('strict mode: ambiguous entry controls'); } }; } }), /ambiguous/);
 });
+
+test('browser asset descriptor refuses before any readonly sample and default observation adds no proof',async()=>{
+  let reads=0;
+  await assert.rejects(()=>observeBrowserState({type:'observe',expectedEditIds:[],assetProof:{version:1,sampleId:'bad'}},'owned',async()=>{reads++;return{type:'state'};}));
+  assert.equal(reads,0);
+  await assert.rejects(()=>observeBrowserState({type:'edit',expectedEditIds:[],assetProof:{version:1,sampleId:'12345678-1234-1234-1234-123456789abc'}},'owned',async()=>{reads++;return{type:'state'};}));
+  assert.equal(reads,0);
+  const state=await observeBrowserState({expectedEditIds:[]},'owned',async()=>({type:'state',documentSnapshot:{actual:'unchanged'}}));
+  assert.equal(Object.hasOwn(state,'assetProof'),false);
+  assert.equal(Object.hasOwn(state,'assetProofRequiresValidatedLiveSnapshot'),false);
+});
