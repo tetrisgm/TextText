@@ -54,7 +54,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(temp,Assert);
  await MirrorLifecycleTests.Run(temp,Assert);await MirrorTombstoneIntegrationTests.Run(temp,Assert);await ProtectedRenameTransportTests.Run(Assert);SharedRenameProfileTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- ProtectedSavedRenameTests.Run(Assert);await ProtectedSavedRenameIntegrationTests.Run(temp,Assert);await MissingManifestVisibilityTests.Run(temp,Assert);LocalHandoffProfileTests.Run(temp,Assert);await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
+ ProtectedSavedRenameTests.Run(Assert);await ProtectedSavedRenameIntegrationTests.Run(temp,Assert);await QueuedUploadPathAdoptionTests.Run(temp,Assert);await MissingManifestVisibilityTests.Run(temp,Assert);LocalHandoffProfileTests.Run(temp,Assert);await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);
@@ -510,27 +510,34 @@ static class Test
  await movedEngine.SyncAsync();
  Assert(movedEngine.Status.Error==null&&movedRemote.Item!.RelativePath==movedPath&&TextPackStore.Markdown(movedRemote.Data).Contains("Offline agent edit")&&!File.Exists(movedStore.Resolve(movedFile.Path))&&TextPackStore.Markdown(movedStore.Read(movedPath)).Contains("Offline agent edit"),"remote folder move carries concurrent local edits without reverting paths");
  var movedUploads=movedRemote.UploadCount;await Test.NewSync(movedStore,movedRemote).SyncAsync();Assert(movedRemote.UploadCount==movedUploads,"remote folder move remains converged after engine restart");
- var queuedStore=new TextPackStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake{Folders=["Before","Before/Empty"],AuthoritativeFolders=["Before","Before/Empty"]};await Test.NewSync(queuedStore,queuedRemote).SyncAsync();
+ var queuedStore=Test.OwnedPathStore(Path.Combine(temp,"queued-remote-move"),Path.Combine(temp,"queued-remote-move-state"));var queuedFile=queuedStore.Write("Before/Queued.textpack",Pack("baseline","queued-move"));var queuedRemote=new Fake{Folders=["Before","Before/Empty"],AuthoritativeFolders=["Before","Before/Empty"]};var queuedInitialEngine=Test.NewOwnedPathSync(queuedStore,queuedRemote);await queuedInitialEngine.SyncAsync();await Test.AttestPathGeneration(queuedInitialEngine,queuedRemote);
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+"\nQueued offline edit",queuedStore.Describe(queuedFile.Path).Hash);queuedRemote.FailBeforeCommit=true;
- try{await Test.NewSync(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
+ try{await Test.NewOwnedPathSync(queuedStore,queuedRemote).SyncAsync();throw new Exception("expected offline upload");}catch(HttpRequestException){}
  var queuedOperation=queuedRemote.Operations.Last();queuedRemote.Item=queuedRemote.Item! with{RelativePath="After/Queued.textpack"};queuedRemote.Folders=["After","After/Empty"];queuedRemote.AuthoritativeFolders=queuedRemote.Folders;
  queuedStore.UpdateMarkdown(queuedFile.Path,TextPackStore.Markdown(queuedStore.Read(queuedFile.Path))+" plus later edit",queuedStore.Describe(queuedFile.Path).Hash);
- var queuedEngine=Test.NewSync(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
+ var queuedEngine=Test.NewOwnedPathSync(queuedStore,queuedRemote);await queuedEngine.SyncAsync();
  Assert(queuedEngine.Status.Error==null&&queuedEngine.Status.Pending==0&&queuedRemote.Item!.RelativePath=="After/Queued.textpack"&&TextPackStore.Markdown(queuedRemote.Data).Contains("Queued offline edit plus later edit")&&!File.Exists(queuedStore.Resolve(queuedFile.Path)),"persisted upload follows remote folder move and preserves later local edits");
  Assert(!Directory.Exists(Path.Combine(queuedStore.Root,"Before"))&&Directory.Exists(Path.Combine(queuedStore.Root,"After","Empty")),"queued upload folder move prunes old tree only after preserving and uploading edits");
  Assert(queuedRemote.Operations.Last()!=queuedOperation,"retargeted upload uses a new payload-bound operation identity");
- var queuedUploads=queuedRemote.UploadCount;await Test.NewSync(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
+ var queuedUploads=queuedRemote.UploadCount;await Test.NewOwnedPathSync(queuedStore,queuedRemote).SyncAsync();Assert(queuedRemote.UploadCount==queuedUploads,"retargeted queued upload remains converged after restart");
  foreach(var ordering in new[]{"adoption-interrupted","remote-content-changed","permission-revoked","lost-ack"}) {
-  var qStore=new TextPackStore(Path.Combine(temp,"queued-"+ordering),Path.Combine(temp,"queued-state-"+ordering));var qFile=qStore.Write("Before/Note.textpack",Pack("baseline","q-"+ordering));var qRemote=new Fake();await Test.NewSync(qStore,qRemote).SyncAsync();
+  var qStore=Test.OwnedPathStore(Path.Combine(temp,"queued-"+ordering),Path.Combine(temp,"queued-state-"+ordering));var qFile=qStore.Write("Before/Note.textpack",Pack("baseline","q-"+ordering));var qRemote=new Fake();var qInitialEngine=Test.NewOwnedPathSync(qStore,qRemote);await qInitialEngine.SyncAsync();await Test.AttestPathGeneration(qInitialEngine,qRemote);
   qStore.UpdateMarkdown(qFile.Path,TextPackStore.Markdown(qStore.Read(qFile.Path))+"\nQueued edit",qStore.Describe(qFile.Path).Hash);
   if(ordering=="lost-ack")qRemote.FailAfterCommit=true;else qRemote.FailBeforeCommit=true;
-  try{await Test.NewSync(qStore,qRemote).SyncAsync();throw new Exception("expected interrupted upload");}catch(HttpRequestException){}
-  qRemote.Item=qRemote.Item! with{RelativePath="After/Note.textpack"};
+  try{await Test.NewOwnedPathSync(qStore,qRemote).SyncAsync();throw new Exception("expected interrupted upload");}catch(HttpRequestException){}
+  qRemote.Item=qRemote.Item! with{RelativePath="After/Note.textpack",Lifecycle="path-fixture-generation"};
   if(ordering=="adoption-interrupted")qStore.Rename(qFile.Path,"After/Note.textpack",qStore.Describe(qFile.Path).Hash);
   if(ordering=="remote-content-changed"){qRemote.Data=Pack("different remote content","q-"+ordering);qRemote.Item=qRemote.Item with{Revision=TextPackStore.Hash(qRemote.Data)};}
   if(ordering=="permission-revoked")qRemote.Capabilities=new(false,false,[],new(){[qFile.ItemId]=false});
-  var qEngine=Test.NewSync(qStore,qRemote);await qEngine.SyncAsync();
-  if(ordering=="remote-content-changed")Assert(qEngine.Status.Pending==1&&qEngine.Status.Error!=null&&File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("different remote content"),"queued move never rebases over changed remote content");
+  var qStatePath=Path.Combine(qStore.StateDirectory,"sync.json");var qBefore=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(qStatePath))!;
+  var qPendingBefore=qBefore.Outbox.Single();var qBaselineBefore=qBefore.Items[qFile.ItemId];var qIntentBefore=qStore.Intent(qFile.ItemId);var qProofPath=qStore.Scan().Single(file=>file.ItemId==qFile.ItemId).Path;var qBytesBefore=qStore.Read(qProofPath);var qAttemptsBefore=qRemote.Operations.Count;
+  bool QueuedRetained(){var current=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(qStatePath))!;return current.Outbox.Single()==qPendingBefore&&current.Items[qFile.ItemId]==qBaselineBefore&&qStore.Intent(qFile.ItemId)==qIntentBefore&&qStore.Read(qProofPath).SequenceEqual(qBytesBefore)&&qRemote.Operations.Count==qAttemptsBefore;}
+  var qEngine=Test.NewOwnedPathSync(qStore,qRemote);await qEngine.SyncAsync();
+  if(ordering=="remote-content-changed")Assert(qEngine.Status.Pending==1&&qEngine.Status.Error!=null&&!qEngine.HasEligiblePending&&QueuedRetained()&&TextPackStore.Markdown(qRemote.Data).Contains("different remote content"),"queued move retains exact work for review instead of rebasing or dispatching over changed remote content");
+  else if(ordering=="lost-ack"){
+   Assert(qEngine.Status.Pending==1&&qEngine.Status.Error=="A queued file update needs review before its path can change. Your file is kept on this device."&&!qEngine.HasEligiblePending&&QueuedRetained(),"lost ACK plus peer path move retains immutable uncertain receipt for review without reissue or extra RPC");
+   var restartedQueued=Test.NewOwnedPathSync(qStore,qRemote);await restartedQueued.SyncAsync();Assert(!restartedQueued.HasEligiblePending&&restartedQueued.Status.Error!=null&&QueuedRetained(),"ambiguous changed-path upload remains exact retained review after restart");
+  }
   else if(ordering=="permission-revoked")Assert(qEngine.Status.Pending==1&&File.Exists(qStore.Resolve(qFile.Path))&&qRemote.UploadCount==1,"queued move waits when fresh permissions deny the upload");
   else Assert(qEngine.Status.Pending==0&&qEngine.Status.Error==null&&File.Exists(qStore.Resolve("After/Note.textpack"))&&!File.Exists(qStore.Resolve(qFile.Path))&&TextPackStore.Markdown(qRemote.Data).Contains("Queued edit"),"queued move converges after "+ordering);
  }
