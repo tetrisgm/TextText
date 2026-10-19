@@ -1,6 +1,6 @@
 # Mac1273 candidate from4fdddd4a
 
-**Candidate passed; not installed. Full backup refused before destination creation.**
+**Candidate and full stopped backup passed; not installed by this work.**
 
 Frozen source `4fdddd4ad9d854f1523c16ca1836e92d17e3b501`, version0.204/build1273. The reviewed human-invoked recipe ran through guarded localhost database configuration into a fresh pristine archive. No previous release receipt, failed archive or cached Xcode metadata was reused.
 
@@ -25,8 +25,16 @@ Private candidate directory: `/private/tmp/texttext-final-local-store-1273-4fddd
 
 Root authorized a full stopped backup after candidate pass. Process checks found no canonical/numbered installer app, privateactor or candidate process. The exact four source scopes matched the prior1272 manifest: app, vault, entire group TextText directory, and opaque standalone credential mirror. The reviewed v2 helper SHA256 was `39258b8857f4ec9f7071e205cd0fcc5fa6f04b9c53f95a267a08061d4393a0e2`.
 
-The initial source snapshot refused **Source changed during read**, before creating `~/Library/Application Support/TextText/PreinstallBackups/20261019-before-1273-4fdddd4a`. No backup manifest exists; the generic diagnostic does not identify the changing root/file. Session47511 exited1. No retry, signal, deletion, source change or installation followed. Log: `/private/tmp/texttext-full-stopped-backup-1273-4fdddd4a-20261019.log`, SHA256 `4eecb426c448d9efb7d9dbca2b26f56db4da66fa053e815fd9fb2a5b7a382999`. A complete stable backup and root install GO remain required.
+The initial source snapshot refused **Source changed during read**, before creating `~/Library/Application Support/TextText/PreinstallBackups/20261019-before-1273-4fdddd4a`. No backup manifest exists; the generic diagnostic does not identify the changing root/file. Session47511 exited1. No retry, signal, deletion, source change or installation followed. Log: `/private/tmp/texttext-full-stopped-backup-1273-4fdddd4a-20261019.log`, SHA256 `4eecb426c448d9efb7d9dbca2b26f56db4da66fa053e815fd9fb2a5b7a382999`. At that point a complete stable backup and root install GO remained required; the later successful backup is recorded below.
 
 Earlier failed1273 archives remain separate:75f5b4cb failed the portable helper fixture (linked Mac temp alias; [test-only correction](2026-10-19-native-asset-fixture-portability.md));515ba5ad failed required docs.no_rot52refusals. Their original logs and failure receipts remain preserved. Neither is relabeled as a candidate pass.
 
 This receipt does not claim installed acceptance, native runtime asset capabilities, six-role asset convergence, soak, performance or production deployment.
+
+## Settled materialization and complete stopped backup
+
+The first refusal remains valid history. Read-only diagnostics observed retained vault files transition from `SF_DATALESS` to materialized with ctime changes; this explains observed later read races, without identifying the exact file behind the generic first refusal. One supported directory request and then one reviewed, metadata-pinned per-file batch queued1,598 existing Workspace files (20,458,639bytes), with zero refusals or identity changes. Request acceptance was not treated as completion. No eviction, restart, exclusion, remote-byte substitution or source overwrite was used.
+
+After metadata showed zero dataless files and all browser/auth activity ended, the original reader naturally finished. Its changing first pass correctly remained unstable evidence. The unchanged reviewed v2 backup helper then performed fresh complete before/second/after-source/copied byte-hash and mode inventories and passed. COW probes and prepared v3 were not used to certify this backup.
+
+Backup manifest: `~/Library/Application Support/TextText/PreinstallBackups/20261019-before-1273-4fdddd4a/manifest.json`, SHA256 `d755f7558c1816a31e80f391b208834dd6eccc477035769a39ccf21134267761`. It binds candidate receipt `8f4f6931248a98d78d7d93cc1aa04d1effa53871e914a66981539dcb2ed7c4f7`, confirms stopped app and exact source/copy inventories, and preserves284,404,062bytes: app46files, vault2,778, entire group TextText state1,043, and one opaque credential file. No credential contents were logged. Session41714 exited0; no installation followed. Root review and explicit install GO remain required.
