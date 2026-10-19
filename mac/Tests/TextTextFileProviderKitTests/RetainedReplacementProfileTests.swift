@@ -54,7 +54,8 @@ final class RetainedReplacementProfileTests: XCTestCase {
         XCTAssertNoThrow(try RetainedReplacementProfile.verify(root: root, owner: owner) {
             nested = true
             XCTAssertNoThrow(try RetainedReplacementProfile.verify(root: self.root, owner: owner), "Stable readers must not reject another reader.")
-            XCTAssertThrowsError(try RetainedReplacementProfile.prepare(root: self.root), "A reader still excludes account migration.")
+            XCTAssertNoThrow(try RetainedReplacementProfile.prepare(root: self.root), "Verified no-op preparation is another stable reader.")
+            XCTAssertThrowsError(try RetainedReplacementProfile.prepareFolderCase(root: self.root), "A reader still excludes an actual floor1 to floor2 migration.")
         })
         XCTAssertTrue(nested)
     }

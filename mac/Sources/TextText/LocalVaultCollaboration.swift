@@ -530,8 +530,17 @@ final class LocalVaultCollaboration {
             if handoff {
                 guard let accountId = owner?.accountId, let binding = try LocalVaultSync.binding(root: root) else { throw LocalVaultCollaborationError(code: "account_changed", message: "Verify this account before transferring its draft.") }
                 guard try Self.integer(params["localHandoffVersion"], minimum: 1, maximum: 1) == 1 else { throw LocalVaultCollaborationError(code: "400", message: "Update TextText before transferring this draft.") }
-                try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: accountId)
-                try LocalVaultDeviceState.prepareLocalHandoff(root: root)
+                // This catch ends before beginSharedEditing: this attempt has
+                // not asked the engine to publish or acquire an editing session.
+                do {
+                    try LocalVaultAccountRootOwnership.open(root: root, binding: binding, accountId: accountId)
+                    try LocalVaultDeviceState.prepareLocalHandoff(root: root)
+                } catch {
+                    guard LocalVaultDeviceState.isLocalHandoffPreparationBusy(error),
+                          owns(owner, current: credentials()), !Task.isCancelled,
+                          !localSessions.values.contains(where: { $0.itemId == itemId }) else { throw error }
+                    throw LocalVaultCollaborationError(code: "handoff_not_open", message: "Shared editing has not opened. Try connecting again.")
+                }
             }
             let opened: LocalVaultSharedSession
             do { opened = try await engine.beginSharedEditing(itemId: itemId, path: path, expectedHash: hash) }

@@ -59,6 +59,13 @@ public enum LocalVaultDeviceState {
         try LocalVaultAccountRootOwnership.open(root: canonical, binding: owner.binding, accountId: owner.accountId)
         return true
     }
+    /// Only the typed migration-lease refusal, never a generic filesystem error.
+    public static func isLocalHandoffPreparationBusy(_ error: Error) -> Bool {
+        guard let failure = error as? RetainedReplacementProfile.Failure else { return false }
+        if case .busy = failure { return true }
+        return false
+    }
+
     public static func prepareLocalHandoff(root: URL) throws {
         guard try supportsLocalHandoff(root: root) else { throw LocalVaultAccountRootOwnership.Failure.future }
         try RetainedReplacementProfile.prepareLocalHandoff(root: root)

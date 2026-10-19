@@ -215,6 +215,14 @@ enum RetainedReplacementProfile {
     /// startup verification share one device-private root lease.
     static func prepare(root: URL, observe: ((String) throws -> Void)? = nil) throws {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()
+        try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
+        let ownerURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self,
+            from: StableFileSnapshot.read(ownerURL, maximumBytes: 4096))
+        if owner.version == 2 {
+            try verify(root: root, owner: owner)
+            return
+        }
         try withMigrationLease(stateDirectory: LocalVaultDeviceState.directory(root: root)) {
             try prepareUnlocked(root: root, observe: observe)
         }

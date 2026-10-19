@@ -45,6 +45,22 @@ final class LocalHandoffBridgeTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: profile), prior)
         }
         do { _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "unknown": 1], root); XCTFail("Accepted unknown open field") } catch { }
+        XCTAssertFalse(LocalVaultDeviceState.isLocalHandoffPreparationBusy(NSError(domain: "fixture", code: 1)))
+        XCTAssertFalse(LocalVaultDeviceState.isLocalHandoffPreparationBusy(RetainedReplacementProfile.Failure.invalidProfile))
+        // Migration really needs EX: a stable reader blocks floor3 -> floor4.
+        // Only this pre-engine typed refusal proves no session was opened.
+        let migrationLease = LocalVaultDeviceState.directory(root: root).appendingPathComponent("retained-replacement-profile.lock")
+        let migrationFD = Darwin.open(migrationLease.path, O_RDWR | O_NOFOLLOW)
+        XCTAssertGreaterThanOrEqual(migrationFD, 0)
+        guard migrationFD >= 0 else { return }
+        defer { _ = Darwin.close(migrationFD) }
+        XCTAssertEqual(flock(migrationFD, LOCK_SH | LOCK_NB), 0)
+        do {
+            _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": file.hash, "localHandoffVersion": 1], root)
+            XCTFail("Migration unexpectedly acquired an exclusive lease")
+        } catch let error as LocalVaultCollaborationError { XCTAssertEqual(error.code, "handoff_not_open") }
+        XCTAssertEqual(try Data(contentsOf: profile), prior)
+        XCTAssertEqual(flock(migrationFD, LOCK_UN), 0)
         // A failed native open still proves publication precedes lease acquisition.
         do { _ = try await request(relay, "collaborationOpen", ["itemId": item, "path": path, "hash": String(repeating: "0", count: 64), "localHandoffVersion": 1], root); XCTFail("Accepted stale projection") } catch { }
         XCTAssertEqual((try JSONSerialization.jsonObject(with: Data(contentsOf: profile)) as? [String: Any])?["version"] as? Int, 4)

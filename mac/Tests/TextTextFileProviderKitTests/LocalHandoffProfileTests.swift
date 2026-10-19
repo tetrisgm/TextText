@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import XCTest
 import TextTextWorkspaceCore
 import TextTextSyncTestSupport
@@ -41,6 +42,35 @@ final class LocalHandoffProfileTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: other), otherBytes)
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".texttext/retained-replacement-profile").path))
         }
+    }
+    func testStableFloorStoreWriteSharesVerificationLease() throws {
+        try fixture { root, a, _ in try LocalVaultDeviceState.withConfiguredBase(a) {
+            try own(root)
+            let original = try BuiltinTextPackDocument.create(title: "Note", body: "Original")
+            let package = try TextTextTextBundlePackage.materialize(canonicalMarkdown: "---\ntextTextId: \"stable-write\"\n---\nOriginal", documentJSON: original.documentJSON, templateJSON: original.templateJSON, assets: [], sourceURL: nil, in: root)
+            let pack = try TextTextTextBundlePackage.zipToTextPack(packageURL: package.url, in: root)
+            try FileManager.default.moveItem(at: pack, to: root.appendingPathComponent("Note.textpack"))
+            try LocalVaultDeviceState.prepareLocalHandoff(root: root)
+            let bytes = try Data(contentsOf: profile(root))
+            let store = LocalVaultDocumentStore(root: root), before = try store.read(path: "Note.textpack")
+            let next = try BuiltinTextPackDocument.create(title: "Note", body: "Saved under shared lease")
+            let lease = LocalVaultDeviceState.directory(root: root).appendingPathComponent("retained-replacement-profile.lock")
+            let fd = Darwin.open(lease.path, O_RDWR | O_NOFOLLOW)
+            guard fd >= 0 else { return XCTFail("Missing fixture lease") }
+            defer { _ = flock(fd, LOCK_UN); _ = Darwin.close(fd) }
+            XCTAssertEqual(flock(fd, LOCK_SH | LOCK_NB), 0)
+            let saved = try store.write(path: "Note.textpack", expectedHash: before.hash,
+                markdown: "---\ntextTextId: \"stable-write\"\n---\nSaved under shared lease", documentJSON: next.documentJSON,
+                templateJSON: next.templateJSON, templateAuthoringSourceJSON: nil)
+            XCTAssertNotEqual(saved.hash, before.hash)
+            let reopened = try store.read(path: "Note.textpack")
+            XCTAssertEqual(reopened.hash, saved.hash)
+            let documentJSON = try XCTUnwrap(reopened.contents.documentJSON)
+            let snapshot = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(documentJSON.utf8)) as? [String: Any])
+            let content = try XCTUnwrap(snapshot["content"] as? [String: Any])
+            XCTAssertEqual(content["body"] as? String, "Saved under shared lease")
+            XCTAssertEqual(try Data(contentsOf: profile(root)), bytes)
+        } }
     }
     func testCommittedNativePendingCheckpointSurvivesFloorAndFreshStore() throws {
         try fixture { root, a, _ in try LocalVaultDeviceState.withConfiguredBase(a) {
