@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, readFileSync, copyFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { fixedDriverFiles } from './identity-observation.mjs';
 import { command, preparePristineSource, verifySourceTree, fixedArtifactPaths, createOnlyJSON, verifyBuildSteps, requiredBuildSteps, wrapperHashes, artifactHashes, sealArtifacts } from './artifact-source.mjs';
 function sourceFixture() {
   const dir=mkdtempSync(join(tmpdir(),'texttext-source-proof-')),repo=join(dir,'repository');mkdirSync(repo);
@@ -13,6 +15,10 @@ function sourceFixture() {
   command('git',['-c','user.name=Source proof fixture','-c','user.email=source-proof@example.invalid','commit','--quiet','-m','source fixture'],repo,{capture:true});
   return {dir,repo};
 }
+test('sealed browser artifact maps match actual observer inputs including launch defaults', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  for (const role of ['mac-web', 'pc-web']) assert.deepEqual(fixedArtifactPaths(role, root), fixedDriverFiles(role));
+});
 test('pristine archive ignores dirty working checkout and verifies exact source bytes and executable mode',()=>{
   const {dir,repo}=sourceFixture();
   writeFileSync(join(repo,'source.mjs'),'unrelated dirty working tree');

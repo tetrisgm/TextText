@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chromium } from 'playwright';
 import { sharedEditorReady } from './live-browser-ready.mjs';
+import { browserLaunchArguments } from '../../sync/stress/browser-launch.mjs';
 
 const [planFile, receipts] = process.argv.slice(2);
 if (process.platform !== 'win32' || !planFile || !receipts) throw Error('Run on the physical PC with a plan and new receipt directory.');
@@ -30,7 +31,7 @@ try {
   const account = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 }));
   if (account.WorkspaceId !== plan.WorkspaceId || typeof account.Token !== 'string') throw Error('Saved account does not match the test workspace.');
   stage = 'launch';
-  context = await chromium.launchPersistentContext(profile, { channel: 'msedge', headless: false, viewport: { width: 1280, height: 900 } });
+  context = await chromium.launchPersistentContext(profile, { channel: 'msedge', args: browserLaunchArguments(process.platform), headless: false, viewport: { width: 1280, height: 900 } });
   const origin = 'https://texttext.app';
   const destination = `/vault/${plan.WorkspaceId}?item=${plan.ItemId}`;
   stage = 'sign-in';

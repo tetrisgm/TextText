@@ -6,6 +6,7 @@ import {validateLeafMove,leafRequest,observeManifestLeaf} from './leaf-move.mjs'
 import {folderRequest,observeManifestFolder} from './folder-case.mjs';
 import { crashOwnedBrowser, closeOwnedBrowser, retainGuardedBrowser, observeOwnedBrowser } from './browser-lifecycle.mjs';
 import { readLiveFieldDocument } from './multi-field-page.mjs';
+import { browserLaunchArguments } from './browser-launch.mjs';
 import { validateFieldSequence, typeFieldSequence } from './multi-field-input.mjs';
 import { validateUndoRedo, exerciseUndoRedo } from './undo-redo.mjs';
 import { observeSealedSource, fixedDriverFiles, accountScopeHash, createWebAssetObserver, sha256, canonicalJSON } from './identity-observation.mjs';
@@ -242,7 +243,7 @@ async function main() {
   async function openBrowser(m, isRestart) {
       let stage = 'launch';
       try {
-        context = await chromium.launchPersistentContext(ownedProfile, { channel: platform.channel, args: ['--enable-automation'], headless: false, viewport: { width: 1280, height: 900 } });
+        context = await chromium.launchPersistentContext(ownedProfile, { channel: platform.channel, args: browserLaunchArguments(process.platform), headless: false, viewport: { width: 1280, height: 900 } });
         page = context.pages()[0] ?? await context.newPage();
         if (m.identitySchema === 1) observeAssets = createWebAssetObserver(page, ORIGIN);
         if (config.auth === 'saved-app' && !isRestart) {
