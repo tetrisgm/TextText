@@ -87,8 +87,6 @@ export async function inspectPcOwnership(config, dependencies = runtime) {
   d.create(join(config.evidenceDirectory, `collector-${id}.json`), Buffer.from(JSON.stringify({ version: 1, code: result.code, signal: result.signal, pid: result.pid, reason: result.reason, terminationRequested: result.terminationRequested ?? false, closeObserved: result.closeObserved ?? false,
     output: result.parts.map(p => ({ stream: p.stream, base64: Buffer.from(p.bytes).toString('base64') })) })));
   if (result.reason || result.code !== 0 || result.signal !== null) throw Error('Readonly collector failed; evidence retained');
-  const now = d.now(), elapsed = d.monotonic() - mono;
-  if (elapsed < 0 || elapsed > 5000 || Math.abs(now - wall - elapsed) > 1000) throw Error('Host inspection clock/latency refused');
   if (!Buffer.from(d.read(config.launcherPath, 65536)).equals(raw) || !Buffer.from(d.read(requestPath, 8192)).equals(request)) throw Error('Launch/request changed during inspection');
   for (const [name, f] of Object.entries(files)) if (!Buffer.from(d.read(f.path, name === 'config' ? 16384 : 268435456)).equals(captured.get(name))) throw Error('Host input changed during inspection');
   const receiptBytes = new Uint8Array(d.read(join(s.sessionPath, outputName), 65536));
@@ -97,6 +95,10 @@ export async function inspectPcOwnership(config, dependencies = runtime) {
   d.create(join(config.evidenceDirectory, `collector-receipt-${id}.json`), receiptBytes);
   const envelope = json(envelopeBytes);
   exact(envelope, ['version', 'scopeClaimsVerified', 'authority', 'collectorPlatform', 'collectorNowMs', 'monotonicStart', 'monotonicEnd', 'monotonicFrequency', 'scope', 'rendererCoverage', 'receiptSha256', 'os']);
+  // Postflight hashing and evidence reads consume freshness too. Never return
+  // the command-completion clock as if it were the final inspection time.
+  const now = d.now(), elapsed = d.monotonic() - mono;
+  if (elapsed < 0 || elapsed > 5000 || Math.abs(now - wall - elapsed) > 1000) throw Error('Host inspection clock/latency refused');
   const e = envelope;
   if (e.version !== 1 || e.scopeClaimsVerified !== false || e.authority !== 'os-process-identity-only' || e.collectorPlatform !== 'win32' || e.scope !== 'bound-process-tree' || e.rendererCoverage !== 'unavailable' || e.receiptSha256 !== sha(receiptBytes) || !Number.isSafeInteger(e.collectorNowMs) || now - e.collectorNowMs < 0 || now - e.collectorNowMs > 5000 || e.collectorNowMs < wall || ![e.monotonicStart, e.monotonicEnd, e.monotonicFrequency].every(Number.isSafeInteger) || e.monotonicFrequency <= 0 || e.monotonicEnd < e.monotonicStart || (e.monotonicEnd - e.monotonicStart) * 1000 / e.monotonicFrequency > elapsed + 1000) throw Error('Fresh same-host collector proof refused');
   const expected = { ...s, receiptSha256: sha(receiptBytes), rootExecutableSha256: files.executable.sha256 };

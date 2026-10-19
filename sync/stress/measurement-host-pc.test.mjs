@@ -77,3 +77,11 @@ test('actual Windows collector executes only disposable pinned script with relay
  const root=mkdtempSync(join(tmpdir(),'measurement-inert-')),path=join(root,'inert.ps1'),bytes=Buffer.from("$ErrorActionPreference='Stop';Write-Output 'inert-collector-only'\n");
  try{writeFileSync(path,bytes,{flag:'wx'});const before=hash(readFileSync(path));const r=await runReadonlyCollector('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path],{deadlineMs:5000,maxBytes:1024});assert.equal(r.code,0);assert.equal(r.reason,null);assert.equal(r.closeObserved,true);assert.equal(r.terminationRequested,false);assert.match(r.parts.map(p=>p.bytes.toString()).join(''),/inert-collector-only/);assert.equal(hash(readFileSync(path)),before);}finally{rmSync(root,{recursive:true});}
 });
+
+for (const role of ['pc-app', 'pc-web']) test(role+' rejects proof aged by postflight reads', async()=>{
+ const f=fixture(role),read=f.d.read,now=f.d.now,mono=f.d.monotonic;let aged=false;
+ f.d.read=(p,max)=>{const bytes=read(p,max);if(p.endsWith('.collector.json'))aged=true;return bytes;};
+ f.d.now=()=>now()+(aged?6000:0);f.d.monotonic=()=>mono()+(aged?6000:0);
+ await assert.rejects(inspectPcOwnership(f.config,f.d),/clock\/latency/);
+ assert.ok(f.created.some(p=>p.includes('collector-receipt-')),'captured evidence survives stale refusal');
+});

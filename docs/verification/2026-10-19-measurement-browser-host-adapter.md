@@ -19,3 +19,9 @@ Existing collector command deadline/output bounds remain. Deadline callback comp
 - A standalone metadata hash-reader `.ps1` invocation without the relay's process-local policy flag was refused by existing execution policy. No policy was changed; Node performed that metadata read, and the adapter now uses the reviewed existing relay invocation. Initial proof files and controlled directories are retained.
 
 Final evidence: `/private/tmp/texttext-browser-host-review-20261019/` (`test-final.log`, `pc-test-final.log`, source guards and PC bytehash guards). Earlier native-only tests remain separate evidence. New lifetime test registration is parent-owned in scripts/test-sync.sh; that script and sync/verify.test.mjs also contain unrelated pending lifecycle registrations and are not included in this six-path source manifest. No normal app, user fixture, account/profile or browser was touched.
+
+## Postflight freshness correction
+
+A later review found that command-completion time was captured before postflight file hashing and receipt reads. The adapter now takes its final same-host wall/monotonic readings after those reads; slow postflight work cannot return an aged proof. Exact committed prior-source RED fails both new stale-read rejection cases (`Missing expected rejection`), retained at `/private/tmp/texttext-host-freshness-red-20261019/test.log`.
+
+Corrected adapter/supervisor/ownership gate: Mac89 passed/one explicit Windows-only inert-script skip; actual PC90 passed/zero skips, exit0 and source hashes unchanged. Evidence: `/private/tmp/texttext-host-postflight-freshness-20261019.log` and `/private/tmp/texttext-measurement-current-pc-review-20261019/{result.json,manifest.json,gate.stdout.log,gate.stderr.log}`. No genuine actor/task inspection or sampler activation is claimed.
