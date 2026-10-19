@@ -93,6 +93,7 @@ public struct LocalVaultFolderCaseContext: Sendable {
 }
 
 public protocol LocalVaultSyncTransport: Sendable {
+    var protectedRenameBinding: LocalVaultProtectedRenameScope? { get }
     func folderCaseContext() async -> LocalVaultFolderCaseContext?
     func moveFolderCase(_ request: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseReceipt
     func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery
@@ -123,6 +124,7 @@ public struct LocalVaultBinaryManifest: Codable, Sendable {
 }
 
 public extension LocalVaultSyncTransport {
+    var protectedRenameBinding: LocalVaultProtectedRenameScope? { nil }
     func protectedRename(_ request: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt { throw LocalVaultSyncFailure.invalidResponse }
     func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
     func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
@@ -141,6 +143,7 @@ public extension LocalVaultSyncTransport {
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private let endpoint: URL
     private let protectedRenameScope: LocalVaultProtectedRenameScope
+    public nonisolated var protectedRenameBinding: LocalVaultProtectedRenameScope? { protectedRenameScope }
     private let accountId: String?
     private var token: String
     private let session: URLSession

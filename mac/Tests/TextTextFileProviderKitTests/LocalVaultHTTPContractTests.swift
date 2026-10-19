@@ -1,5 +1,6 @@
 import Darwin
 import TextTextSyncTestSupport
+import TextTextWorkspaceCore
 import XCTest
 @testable import TextTextFileProviderKit
 
@@ -37,7 +38,9 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         return try JSONDecoder().decode([String: Int].self, from: bytes)
     }
 
-    func testTwoNativeVaultsAgainstRealDirectoryServer() async throws {
+    func testTwoNativeVaultsAgainstRealDirectoryServer() async throws { try await twoNativeVaults(knownLifecycle: false) }
+    func testKnownLifecycleDeleteAcrossTwoNativeHTTPClients() async throws { try await twoNativeVaults(knownLifecycle: true) }
+    private func twoNativeVaults(knownLifecycle: Bool) async throws {
         guard ProcessInfo.processInfo.environment["TEXTTEXT_VAULT_HTTP_TEST"] == "1" else {
             throw XCTSkip("Set TEXTTEXT_VAULT_HTTP_TEST=1 to run the temporary local HTTP contract fixture")
         }
@@ -135,9 +138,22 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         // A separate clean item proves path and tombstone interoperability.
         let movedId = "22222222-2222-4222-8222-222222222222"
         let oldPath = "Notes/Move.textpack", newPath = "Archive/Renamed.textpack"
-        let moveBytes = try pack(in: temporary, itemId: movedId, body: "Keep my exact bytes")
+        var moveBytes = try pack(in: temporary, itemId: movedId, body: "Keep my exact bytes")
         try write(moveBytes, to: firstRoot, path: oldPath)
         _ = try await first.sync()
+        if knownLifecycle {
+            let revision = TextTextStableDigest.sha256Hex(moveBytes)
+            try await firstTransport.delete(itemId: movedId, path: oldPath, baseRevision: revision, operationId: UUID().uuidString.lowercased())
+            var request = URLRequest(url: origin.appendingPathComponent("__test/restore")); request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["itemId": movedId, "basePath": oldPath, "relativePath": oldPath, "baseRevision": revision, "operationId": UUID().uuidString.lowercased()])
+            let (_, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            _ = try await first.sync()
+            moveBytes = try Data(contentsOf: firstRoot.appendingPathComponent(oldPath))
+            let restored = try await firstTransport.manifest().first { $0.itemId == movedId }
+            XCTAssertNotNil(restored?.lifecycle)
+        }
         _ = try await second.sync()
         try FileManager.default.createDirectory(at: firstRoot.appendingPathComponent("Archive"), withIntermediateDirectories: true)
         try FileManager.default.moveItem(at: firstRoot.appendingPathComponent(oldPath), to: firstRoot.appendingPathComponent(newPath))
@@ -150,8 +166,35 @@ final class LocalVaultHTTPContractTests: XCTestCase {
         try FileManager.default.removeItem(at: firstRoot.appendingPathComponent(newPath))
         let deleted = try await first.sync()
         XCTAssertTrue(deleted.errors.isEmpty, deleted.errors.joined(separator: ", "))
-        _ = try await second.sync()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: secondRoot.appendingPathComponent(newPath).path))
+        let deletionReceived = try await second.sync()
+        if !knownLifecycle, let evidencePath = ProcessInfo.processInfo.environment["TEXTTEXT_TOMBSTONE_DIAGNOSTIC"] {
+            let stateURL = LocalVaultDeviceState.directory(root: secondRoot).appendingPathComponent("sync/state.json")
+            let state = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+            let baseline = (state["baselines"] as? [String: [String: Any]])?[movedId]
+            let observedManifest = try await secondTransport.manifest()
+            let remote = try XCTUnwrap(observedManifest.first { $0.itemId == movedId })
+            let local = try? LocalVaultDocumentStore(root: secondRoot).readMetadata(path: newPath)
+            let protection = try LocalVaultSharedEditingStore(root: secondRoot).protectionSnapshot(itemId: movedId)
+            let intent = try LocalVaultDeviceState.deletionSnapshot(root: secondRoot, itemId: movedId)
+            let observed = LocalVaultMirrorTombstoneObservation(remotePresent: true, remoteDeleted: remote.isDeleted, remoteAuthoritative: true,
+                editorOwned: protection.protected, recoveryBlocked: (state["outbox"] as? [String: Any])?[movedId] != nil || (state["conflicts"] as? [String: Any])?[movedId] != nil || intent != nil,
+                localPresent: local != nil, localUnique: local != nil, localIdentityVerified: local.flatMap { MarkdownIdentityCodec.extract(from: $0.contents.markdown)?.itemId } == movedId,
+                localHash: local?.hash, baselineHash: baseline?["localHash"] as? String, localPath: local == nil ? nil : newPath,
+                baselinePath: baseline?["path"] as? String, remotePath: remote.relativePath, baselineRevision: baseline?["revision"] as? String,
+                remoteRevision: remote.revision, localLifecycle: (state["lifecycles"] as? [String: String])?[movedId], remoteLifecycle: remote.lifecycle)
+            let decision = try await makeTestMirrorPolicy(workspaceId: workspaceId).tombstone(observed)
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            var evidence: [String: Any] = ["observed": try JSONSerialization.jsonObject(with: encoder.encode(observed)), "decision": try JSONSerialization.jsonObject(with: encoder.encode(decision)),
+                "protection": protection.fingerprints, "errors": deletionReceived.errors,
+                "pendingUpload": (state["outbox"] as? [String: Any])?[movedId] ?? NSNull(),
+                "retainedConflict": (state["conflicts"] as? [String: Any])?[movedId] ?? NSNull(),
+                "deletionIntentPresent": intent != nil,
+                "savedMovePresent": (state["sharedRenames"] as? [String: Any])?[movedId] != nil]
+            evidence["baseline"] = baseline ?? [:]
+            try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys, .prettyPrinted]).write(to: URL(fileURLWithPath: evidencePath), options: .withoutOverwriting)
+        }
+        if knownLifecycle { XCTAssertFalse(FileManager.default.fileExists(atPath: secondRoot.appendingPathComponent(newPath).path)) }
+        else { XCTAssertEqual(try Data(contentsOf: secondRoot.appendingPathComponent(newPath)), moveBytes) }
         let manifest = try await secondTransport.manifest()
         XCTAssertTrue(manifest.contains { $0.itemId == movedId && $0.isDeleted })
         XCTAssertEqual(try Data(contentsOf: secondRoot.appendingPathComponent(".texttext/history/\(TextTextStableDigest.sha256Hex(moveBytes)).textpack")), moveBytes)

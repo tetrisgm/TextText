@@ -9,7 +9,7 @@ import { networkInterfaces } from "node:os";
 import { isIP } from "node:net";
 import {
   listVaultTextpacks, readVaultTextpack, writeVaultTextpack,
-  moveVaultTextpack, deleteVaultTextpack, waitVaultTextpacks, moveVaultFolderCase, recoverVaultFolderCase,
+  moveVaultTextpack, deleteVaultTextpack, restoreVaultTextpack, waitVaultTextpacks, moveVaultFolderCase, recoverVaultFolderCase,
 } from "../src/lib/vault/server-store";
 
 import { planFolderMove } from "../src/sync/engine/folder-move-plan";
@@ -57,6 +57,18 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/__test/reply-loss") { loseReplies = url.searchParams.get("enabled") === "1" ? -1 : 0; send(200, {}); return; }
   if (url.pathname === "/__test/folder-case-race") { raceFolderCase = true; send(200, {}); return; }
   if (url.pathname === "/__test/folder-case") { folderCaseEnabled = url.searchParams.get("enabled") === "1"; send(200, {}); return; }
+  if (url.pathname === "/__test/restore") {
+    if (request.method !== "POST") { send(405, {}); return; }
+    try {
+      const chunks: Buffer[] = []; let size = 0;
+      for await (const chunk of request) { const bytes = Buffer.from(chunk); if ((size += bytes.length) > 8192) { send(413, {}); return; } chunks.push(bytes); }
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (!body || Object.keys(body).sort().join(",") !== "basePath,baseRevision,itemId,operationId,relativePath" || Object.values(body).some(value => typeof value !== "string")) { send(400, {}); return; }
+      const result = await restoreVaultTextpack({root, workspaceId, ...body});
+      send(result.status === "conflict" ? 409 : 200, result);
+    } catch { send(500, {error: "Fixture restore failed"}); }
+    return;
+  }
   if (url.pathname === "/__test/stats") { send(200, counts); return; }
   if (url.pathname === "/api/vault") { send(200, { workspaceId, name: "Contract fixture" }); return; }
   // Opt-in real engine/HTTP fixture. Metadata coordination here is an isolated

@@ -737,7 +737,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             if method == "list", openError == nil { reply(id, result: .success(["root": "", "items": []])); return }
             reply(id, result: .failure(VaultBridgeError(openError ?? "Open a workspace folder first."))); return
         }
-        if method == "folderSyncMoveRead" || method == "resolveFolderSyncMove" || (method == "recoveryList" && connection?.collaborationEngine != nil) {
+        if method == "folderSyncMoveRead" || method == "resolveFolderSyncMove" || method == "savedFileMoveRead" || method == "retrySavedFileMove" || method == "keepSavedFileMoveNames" || (method == "recoveryList" && connection?.collaborationEngine != nil) {
             handleFolderSyncRecovery(id: id, method: method, params: params, root: root)
             return
         }
@@ -1087,6 +1087,19 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                 try check(); guard let engine else { throw VaultBridgeError("The workspace connection is unavailable. Reconnect and inspect again.") }
                 let result: [String: Any]
                 switch method {
+                case "savedFileMoveRead":
+                    let row = try await engine.savedFileMoveRead(id: Self.string(params, "id"))
+                    guard let payload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(row)) as? [String: Any] else { throw CancellationError() }
+                    result = payload
+                case "retrySavedFileMove", "keepSavedFileMoveNames":
+                    guard params["consent"] as? Bool == true else { throw VaultBridgeError("Inspect the saved move and confirm this action before continuing.") }
+                    let operationId = try Self.string(params, "id"), requestHash = try Self.string(params, "requestHash"), inspection = try Self.string(params, "inspection")
+                    if method == "retrySavedFileMove" {
+                        try await engine.retrySavedFileMove(id: operationId, requestHash: requestHash, inspection: inspection, consent: true, beforeAcknowledge: { try await check() })
+                    } else {
+                        try await engine.keepSavedFileMoveNames(id: operationId, requestHash: requestHash, inspection: inspection, consent: true, beforeAcknowledge: { try await check() })
+                    }
+                    result = ["resolved": true]
                 case "folderSyncMoveRead": result = try Self.folderSyncPayload(await engine.folderSyncMoveRead(id: Self.string(params, "id")))
                 case "resolveFolderSyncMove":
                     guard params["consent"] as? Bool == true else { throw VaultBridgeError("Explicit folder recovery consent is required.") }
@@ -1097,6 +1110,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let rows = try await engine.folderSyncMoveList().map { try Self.folderSyncPayload($0) }
                     let rowBytes = try JSONSerialization.data(withJSONObject: rows)
                     let path = params["path"] as? String
+                    let savedMoves = try await engine.savedFileMoveList(path: path)
+                    let savedMoveBytes = try JSONEncoder().encode(savedMoves.entries)
                     guard let self else { throw CancellationError() }
                     let bytes: Data = try await withCheckedThrowingContinuation { continuation in
                         self.io.async {
@@ -1107,11 +1122,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                             } catch { continuation.resume(throwing: error) }
                         }
                     }
-                    guard let payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw CancellationError() }
+                    guard var payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                          let savedRows = try JSONSerialization.jsonObject(with: savedMoveBytes) as? [[String: Any]] else { throw CancellationError() }
+                    payload["savedFileMoves"] = savedRows
+                    payload["savedFileMovesTruncated"] = savedMoves.truncated
                     result = payload
                 }
                 try check()
-                if method == "resolveFolderSyncMove" { self?.connection?.schedule() }
+                if method == "resolveFolderSyncMove" || method == "retrySavedFileMove" || method == "keepSavedFileMoveNames" { self?.connection?.schedule() }
                 self?.reply(id, result: .success(result))
             } catch { self?.reply(id, result: .failure(error)) }
         }
