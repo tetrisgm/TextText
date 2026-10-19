@@ -1029,10 +1029,11 @@ for (const fault of [null,'missing-id','old-id','duplicate','content','session',
   else{assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.soakEvidence.samples,121);assert.equal(result.soakEvidence.acceptance,'partial-not-full-T24');assert.equal(result.soakEvidence.nativeIdleMutations,null);assert.equal(soakRequests,726);}
 });
 
-test('staged asset proof refuses before mutation even with claimed capabilities', async () => {
+test('asset proof refuses unpinned simulated producers before mutation', async () => {
   for (const claimed of [false, true]) {
     const config = makeConfig({rounds:1});
     config.assetProof = {version:1};
+    config.expectedIdentities=makeConfig({mode:'real'}).expectedIdentities;
     config.expectedAssetHashes = {'assets/photo.jpg':'a'.repeat(64)};
     let mutations=0;
     const {ProcessAdapter} = await import('./adapter.mjs');
@@ -1047,7 +1048,7 @@ test('staged asset proof refuses before mutation even with claimed capabilities'
     }});
     const result=await coordinator.run();
     assert.equal(result.status,'failed');
-    assert.match(JSON.stringify(result.failure), new RegExp(claimed ? 'asset-proof-adapters-unavailable' : 'asset-proof-capability-missing'));
+    assert.match(JSON.stringify(result.failure), /identity-mismatch/);
     assert.equal(mutations,0);
   }
 });

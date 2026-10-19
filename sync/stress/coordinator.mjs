@@ -1,3 +1,4 @@
+import {createAssetProofOracle,MAX_ASSET_WAVES} from './asset-proof-wave.mjs';
 import {validateAssetProofConfig} from './asset-proof.mjs';
 import {setTimeout as finiteDelay} from 'node:timers/promises';
 import {FiniteSoak, validateSoak, SOAK_LIMITS} from './finite-soak.mjs';
@@ -15,7 +16,7 @@ import { boundedFile, canonicalJSON, sha256 } from './identity-observation.mjs';
 import { normalizeIdentity, checkIdentity, checkRetainedWindowAttestation, checkMacWindowCloseProof, normalizeInitialPack, verifyReopenIdentity, checkRestartAttestation } from './identity.mjs';
 // Bounded six-client stress coordinator. Finite seeded rounds, all-ready barrier, concurrent dispatch,
 // exact convergence, first-failure stop with preserved evidence. No background service.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkInputProgress } from './input-sequence.mjs';
@@ -218,6 +219,14 @@ export function validateConfig(config) {
     || config.rounds < 1 || config.restart?.role === 'pc-app')) {
     fail('closeProbe requires a real run with at least one round and no pc-app restart');
   }
+  if (config.assetProof) {
+    if ((config.pattern ?? 'append') !== 'append' || config.rounds > 100 ||
+        ['assetReplacement','assetReplacements','diagnosticSameEntryRace','leafMove','folderCaseMove','restart','offline','transientInvalid','malformedRepair','closeProbe','browserClose','closeDuringTraffic','soak','multiField','fileWrites','sustainedTyping','undoRedo','lostAck'].some(key=>config[key] !== undefined))
+      fail('assetProof supports only unchanged-path/assets plain append or compatible mixedSchedule, at most100rounds');
+    if (!config.expectedIdentities || ROLES.some(role=>!config.expectedIdentities[role])) fail('assetProof requires all six identity pins');
+    for(const role of ROLES) try { normalizeIdentity(config.expectedIdentities[role],role,{expected:true}); } catch { fail('assetProof identity pin invalid'); }
+    if (config.rounds === 0 && !/^[a-f0-9]{64}$/.test(config.expectedDocumentHash ?? '')) fail('assetProof reopen requires expectedDocumentHash');
+  }
   if (config.mode === 'real') {
     if (!config.expectedIdentities || typeof config.expectedIdentities !== 'object'
       || Object.keys(config.expectedIdentities).length !== ROLES.length) fail('real runs require all six expectedIdentities pins');
@@ -312,6 +321,37 @@ export class Coordinator {
         this.leafOperationId=prior.leafMoveEvidence.operationId;this.leafMoveEvidence=prior.leafMoveEvidence;
       }
     }
+    if(this.config.assetProof && this.config.mode==='real' && this.config.rounds===0) {
+      const prior=JSON.parse(boundedFile(this.config.reopenReceipt,1024*1024));
+      if(prior.scenario?.assetProof?.version!==1 || prior.finalDocumentHash!==this.config.expectedDocumentHash ||
+         !Array.isArray(prior.assetProofEvidence) || prior.assetProofEvidence.length!==prior.roundsCompleted+1)
+        throw Error('Asset-proof reopen requires complete prior mutation wave evidence');
+      const ids=new Set();
+      for(const [index,phase] of prior.assetProofEvidence.entries()) {
+        if(phase.version!==1 || phase.phase!==(index===0?'baseline':'postround') || phase.round!==index ||
+           canonicalJSON(phase.fixture)!==canonicalJSON(this.config.fixture) ||
+           canonicalJSON(phase.assetHashes)!==canonicalJSON(this.config.expectedAssetHashes) ||
+           !Number.isInteger(phase.stableWaves) || phase.stableWaves<3 || !/^[a-f0-9]{64}$/.test(phase.documentSha256??'') || !Array.isArray(phase.waves) || phase.waves.length<3 || phase.waves.length>MAX_ASSET_WAVES)
+          throw Error('Asset-proof reopen prior phase invalid');
+        for(const wave of phase.waves) {
+          if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(wave.sampleId??'') || ids.has(wave.sampleId) ||
+             !/^[a-f0-9]{64}$/.test(wave.documentSha256??'') || !wave.archives ||
+             Object.keys(wave.archives).length!==6 || ROLES.some(role=>!/^[a-f0-9]{64}$/.test(wave.archives[role]??'')))
+            throw Error('Asset-proof reopen prior wave invalid');
+          ids.add(wave.sampleId);
+        }
+        // This checks internal receipt consistency, not cryptographic receipt
+        // authentication. Match the oracle's trailing stability, excluding UUID.
+        const last=phase.waves.at(-1);
+        if(last.documentSha256!==phase.documentSha256)throw Error('Asset-proof reopen phase snapshot differs');
+        const digest=wave=>canonicalJSON({documentSha256:wave.documentSha256,archives:wave.archives});
+        const finalDigest=digest(last);let stable=0;
+        for(let i=phase.waves.length-1;i>=0 && digest(phase.waves[i])===finalDigest;i--)stable++;
+        if(stable<3 || stable!==phase.stableWaves)throw Error('Asset-proof reopen stable waves inconsistent');
+      }
+      if(prior.assetProofEvidence.at(-1).documentSha256!==this.config.expectedDocumentHash)
+        throw Error('Asset-proof reopen final snapshot differs');
+    }
     if(this.config.folderCaseMove){
       this.folderOperationId='fc-'+sha256(this.runId+'\0'+canonicalJSON(this.config.folderCaseMove)).slice(0,32);
       if(this.config.mode==='real'&&this.config.rounds===0){
@@ -352,7 +392,7 @@ export class Coordinator {
     this.dir = dir;
     this.resultsPath = join(dir, 'results.jsonl');
     writeFileSync(this.resultsPath, '');
-    const scenario = { ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+    const scenario = { ...(this.config.assetProof?{assetProof:this.config.assetProof}:{}), ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
       restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
       ...(this.config.closeProbe ? { closeProbe: true } : {}) };
     if (assetReplacementsOf(this.config).length) scenario.assetReplacements = assetReplacementsOf(this.config).map(a => ({
@@ -393,7 +433,7 @@ export class Coordinator {
     try {
       await this.startAdapters();
       const initial = this.collect(0, 'state');
-      this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? { documentSnapshot: true } : {}) });
       const baseline = await initial;
       const texts = ROLES.map(role => baseline.get(role).text);
       const evidence = {};
@@ -412,7 +452,7 @@ export class Coordinator {
           this.config.folderCaseMove ||
           this.config.leafMove ||
           this.config.lostAck ||
-          this.config.mixedSchedule) {
+          this.config.mixedSchedule || this.config.assetProof) {
         const documents = this.documentStates(baseline);
         this.documentBaseline = documentObservation(documents.get('mac-app')).snapshot;
         this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, [], this.accountingOptions());
@@ -433,7 +473,7 @@ export class Coordinator {
             this.config.folderCaseMove ||
             this.config.leafMove ||
             this.config.lostAck ||
-            this.config.mixedSchedule) &&
+            this.config.mixedSchedule || this.config.assetProof) &&
             canonicalJSON(this.config.expectedAssetHashes ?? {}) !== canonicalJSON(this.attestations['mac-cli'].initialPack.assetHashes)) throw new StressFailure('scenario-all-assets-required', {});
         const files = ['mac-cli', 'pc-cli'].map(role => ({ role, ...this.attestations[role].initialPack }));
         if (files.some(file => file.bodySha256 !== hashText(this.baseline)) || files[0].documentSha256 !== files[1].documentSha256
@@ -453,7 +493,7 @@ export class Coordinator {
         for (let sample = 2; sample <= REQUIRED_CONVERGENCE_SAMPLES; sample++) {
           await new Promise(resolve => setTimeout(resolve, 500));
           const pending = this.collect(0, 'state');
-          this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? { documentSnapshot: true } : {}) });
+          this.broadcast({ type: 'observe', round: 0, ...(this.config.folderCaseMove&&this.config.rounds===0?{folderCase:this.folderRequest('after')}:{}), ...(this.config.leafMove&&this.config.rounds===0?{leafMove:this.leafRequest('after')}:{}), expectedEditIds: [], expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? { documentSnapshot: true } : {}) });
           const states = await pending;
           for (const role of ROLES) {
             const state = states.get(role);
@@ -468,13 +508,15 @@ export class Coordinator {
               this.config.folderCaseMove ||
               this.config.leafMove ||
               this.config.lostAck ||
-              this.config.mixedSchedule) &&
+              this.config.mixedSchedule || this.config.assetProof) &&
               checkMultiFieldAccounting(this.documentBaseline, this.documentStates(states), [], this.accountingOptions()) !== this.config.expectedDocumentHash) throw new StressFailure('reopen-document-mismatch', { sample });
           this.checkAssets(states, 0);if(this.config.folderCaseMove)this.checkFolderReopen(states);if(this.config.leafMove)this.checkLeafReopen(states);
           for (const role of EDITOR_ROLES) this.checkEditor(0, role, states.get(role).editor);
           this.record('reopen-sample', { sample, hash: this.config.expectedBaselineHash, roles: ROLES });
         }
       }
+      if(this.config.assetProof) this.checkAssetOutputBudget();
+      if(this.config.assetProof) await this.observeAssetWaves(0,[],this.config.rounds===0?'reopen':'baseline');
       for (const plan of this.plannedRounds()) await this.runRound(plan);
       if (this.config.soak && this.config.rounds > 0) await this.runSoak();
       if (this.config.closeProbe) await this.closeProbe();
@@ -494,19 +536,19 @@ export class Coordinator {
     const summary = {
       runId: this.runId, status, failure, mode: this.config.mode, fixture: { workspaceId: this.config.fixture.workspaceId, itemId: this.config.fixture.itemId },
       finalHash: this.roundResults.at(-1)?.hash ?? (status === 'passed' ? this.config.expectedBaselineHash ?? (this.baseline ? hashText(this.baseline) : null) : null),
-      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
+      ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? { finalDocumentHash: this.finalDocumentHash ?? null } : {}),
       expectedAssetHashes: this.config.expectedAssetHashes ?? {},
       // Simulated runs never count as real acceptance, whatever their status.
       acceptance: status === 'passed' && this.config.mode === 'real' && !this.config.diagnosticSameEntryRace
         ? (this.config.soak ? 'six-client-finite-dwell-partial-not-full-T24' : this.config.closeProbe ? 'six-client-windows-close-probe' : this.config.rounds === 0 ? 'six-client-reopen' : this.config.mixedSchedule ? 'six-client-compatible-mixed-schedule' : this.config.lostAck ? 'six-client-browser-lost-ack' : this.config.leafMove ? 'six-client-external-leaf-move' : this.config.folderCaseMove ? 'six-client-folder-case-move' : this.config.browserClose ? 'six-client-browser-normal-close' : this.config.closeDuringTraffic ? 'six-client-close-during-traffic' : this.config.malformedRepair ? 'six-client-malformed-repair' : this.config.fileWrites ? 'six-client-file-writes' : this.config.multiField ? 'six-client-multi-field' : this.config.undoRedo ? 'six-client-undo-redo' : this.config.sustainedTyping ? 'six-client-sustained-typing' : this.config.pattern === 'same-position' ? 'six-client-same-position' : this.config.pattern === 'unicode' ? 'six-client-unicode' : this.config.pattern === 'overlap-replace' ? 'six-client-overlap-replace' : this.config.pattern === 'file-overlap' ? 'six-client-file-overlap' : this.config.pattern === 'partial-overlap' ? 'six-client-partial-overlap' : 'six-client-append-only') : 'none',
-      scenario: { ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
+      scenario: { ...(this.config.assetProof?{assetProof:this.config.assetProof}:{}), ...(this.config.soak?{soak:this.config.soak}:{}), ...(this.config.mixedSchedule?{mixedSchedule:this.config.mixedSchedule}:{}), ...(this.config.lostAck?{lostAck:this.config.lostAck}:{}), ...(this.config.leafMove?{leafMove:this.config.leafMove}:{}), ...(this.config.folderCaseMove?{folderCaseMove:this.config.folderCaseMove}:{}), ...(this.config.browserClose ? { browserClose: this.config.browserClose } : {}), ...(this.config.closeDuringTraffic ? { closeDuringTraffic: this.config.closeDuringTraffic } : {}), ...(this.config.malformedRepair ? { malformedRepair: this.config.malformedRepair } : {}), ...(this.config.fileWrites ? { fileWrites: this.config.fileWrites } : {}), ...(this.config.multiField ? { multiField: true } : {}), ...(this.config.undoRedo ? { undoRedo: true } : {}), ...(this.config.sustainedTyping ? { sustainedTyping: this.config.sustainedTyping } : {}), requiredConvergenceSamples: REQUIRED_CONVERGENCE_SAMPLES, pattern: this.config.pattern ?? 'append', offline: this.config.offline ?? null,
         restart: this.config.restart ?? null, transientInvalid: this.config.transientInvalid ?? null,
         ...(this.config.closeProbe ? { closeProbe: true } : {}),
         ...(assetReplacementsOf(this.config).length ? { assetReplacements: assetReplacementsOf(this.config).map(a => ({
           role: a.role, round: a.round, path: a.path, sha256: replacementDigest(a) })) } : {}),
         ...(this.config.diagnosticSameEntryRace ? { diagnosticSameEntryRace: true } : {}) },
       roundsCompleted: this.roundResults.length, roundsPlanned: this.config.rounds, rejected: this.rejected.length,
-      ...(this.soakEvidence?{soakEvidence:this.soakEvidence,...(this.soakReopenOf?{soakReopenOf:this.soakReopenOf}:{})}:{}), ...(this.mixedPlan?{mixedScheduleEvidence:this.scheduleEvidence(),mixedPreflight:this.mixedPreflight??null}:{}), ...(this.lostAckEvidence?{lostAckEvidence:this.lostAckEvidence}:{}), ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
+      ...(this.assetProofEvidence?{assetProofEvidence:this.assetProofEvidence}:{}), ...(this.soakEvidence?{soakEvidence:this.soakEvidence,...(this.soakReopenOf?{soakReopenOf:this.soakReopenOf}:{})}:{}), ...(this.mixedPlan?{mixedScheduleEvidence:this.scheduleEvidence(),mixedPreflight:this.mixedPreflight??null}:{}), ...(this.lostAckEvidence?{lostAckEvidence:this.lostAckEvidence}:{}), ...(this.leafMoveEvidence?{leafMoveEvidence:this.leafMoveEvidence}:{}), ...(this.folderCaseEvidence?{folderCaseEvidence:this.folderCaseEvidence}:{}), attestations: this.attestations, retainedActors:this.retainedActors, outputDir: this.dir,
     };
     writeFileSync(join(this.dir, 'summary.json'), JSON.stringify(summary, null, 2));
     this.record('run-end', summary);
@@ -580,10 +622,72 @@ export class Coordinator {
     this.checkAttestations(attest);
     if (this.config.assetProof) {
       if (ROLES.some(role => attest.get(role)?.binaryAssetObservation !== 1)) throw new StressFailure('asset-proof-capability-missing', {});
-      // Staged protocol only: no adapter is yet authorized to supply this proof.
-      throw new StressFailure('asset-proof-adapters-unavailable', {});
+      this.assetProofPins=Object.fromEntries(ROLES.map(role=>{
+        const a=attest.get(role);
+        checkIdentity(a.identity,this.config.expectedIdentities[role],role);
+        return [role,{identity:this.config.expectedIdentities[role],session:role.endsWith('-cli')?null:{id:a.sessionId,generation:a.generation}}];
+      }));
+      // Validate all fixed role/session/fixture pins before any prepare or edit.
+      this.makeAssetOracle();
     }
     if (this.config.soak && ROLES.some(role => attest.get(role)?.finiteSoakCorrelation !== 1)) throw new StressFailure('soak-correlation-capability-missing', {});
+  }
+
+  checkAssetOutputBudget() {
+    // Conservative minimum successful-run budget, including the ordinary three
+    // convergence replies as well as the new three proof replies per phase.
+    // Extra retries remain bounded by the existing per-role 64MiB live limit.
+    const final=structuredClone(this.documentBaseline),plans=this.plannedRounds();
+    for(const edit of fieldOperations(plans))final.content[edit.field]=(final.content[edit.field]??'')+edit.text;
+    const bytes=Buffer.byteLength(JSON.stringify(final));
+    const ids=plans.flatMap(plan=>plan.edits.map(edit=>edit.id));
+    const phases=this.config.rounds===0?1:this.config.rounds+1;
+    const replies=this.config.rounds===0?6:1+3*this.config.rounds+3*phases;
+    const largestPin=Math.max(...ROLES.map(role=>Buffer.byteLength(JSON.stringify(this.assetProofPins[role]))));
+    const replyBound=bytes+Buffer.byteLength(JSON.stringify(final.content.body))+Buffer.byteLength(JSON.stringify(ids))+
+      largestPin+2*Buffer.byteLength(JSON.stringify(this.config.expectedAssetHashes))+8192;
+    if(replyBound>256*1024 || replies*replyBound>64*1024*1024)
+      throw new StressFailure('asset-proof-output-budget',{});
+  }
+
+  makeAssetOracle() {
+    return createAssetProofOracle({fixture:this.config.fixture,pins:this.assetProofPins,
+      timeoutMs:Math.min(this.config.timeoutMs,120000),expectedAssetHashes:this.config.expectedAssetHashes});
+  }
+
+  async observeAssetWaves(round,expectedEditIds,phase) {
+    const oracle=this.makeAssetOracle(), deadline=performance.now()+this.config.timeoutMs;
+    const waves=[]; let result;
+    this.assetWaveActive=true;
+    try {
+      for(let attempt=0;attempt<MAX_ASSET_WAVES && performance.now()<deadline;attempt++) {
+        const request=oracle.begin(randomUUID(),performance.now());
+        const pending=this.collect(round,'state');
+        this.broadcast({type:'observe',round,expectedEditIds,expectedAssetPaths:assetPathsOf(this.config),documentSnapshot:true,assetProof:request});
+        const states=await pending;
+        this.checkRoundContent(states,round,expectedEditIds);
+        for(const role of EDITOR_ROLES)this.checkEditor(round,role,states.get(role).editor);
+        const documents=this.documentStates(states);
+        const expectedHash=checkMultiFieldAccounting(this.documentBaseline,documents,fieldOperations(this.plannedRounds(round)),this.accountingOptions());
+        if(expectedHash!==this.finalDocumentHash)throw Error('Asset-wave full document changed outside accepted operations');
+        for(const role of ROLES) {
+          const state=states.get(role);
+          if(!role.endsWith('-cli') && state.editor?.sessionId!==state.session?.id)throw Error('Proof is not bound to observed editor');
+          oracle.add(role,{assetProof:state.assetProof,documentSnapshot:state.documentSnapshot,
+            assetProofRequiresValidatedLiveSnapshot:state.assetProofRequiresValidatedLiveSnapshot,
+            identity:state.identity,session:state.session},performance.now());
+        }
+        result=oracle.finish(performance.now());
+        waves.push({sampleId:result.sampleId,documentSha256:result.documentSha256,
+          archives:Object.fromEntries(ROLES.map(role=>[role,result.replies[role].proof.archiveSha256]))});
+        this.record('asset-proof-wave',{phase,round,...waves.at(-1),stableWaves:result.stableWaves});
+        if(result.stable)break;
+      }
+      if(!result?.stable)throw Error('Asset waves did not reach three complete stable samples');
+      (this.assetProofEvidence??=[]).push({version:1,phase,round,documentSha256:result.documentSha256,
+        fixture:this.config.fixture,assetHashes:result.assetHashes,waves,stableWaves:result.stableWaves});
+    } catch(error) { throw error instanceof StressFailure?error:new StressFailure('asset-proof-invalid',{phase,round,message:String(error.message).slice(0,240)}); }
+    finally { this.assetWaveActive=false; }
   }
 
   checkAttestations(attest) {
@@ -600,7 +704,7 @@ export class Coordinator {
       if (byMachine[m] && byMachine[m] !== a.machineId) throw new StressFailure('machine-mismatch', { machine: m, role, expected: byMachine[m], actual: a.machineId });
       byMachine[m] = a.machineId;
       let identity, initialPack;
-      if (this.config.mode === 'real') {
+      if (this.config.mode === 'real' || this.config.assetProof) {
         try {
           identity = checkIdentity(a.identity, this.config.expectedIdentities[role], role);
           if (role.endsWith('-cli')) initialPack = normalizeInitialPack(a.initialPack);
@@ -621,13 +725,20 @@ export class Coordinator {
     const ledger = new RoundLedger(round, type, roles);
     return new Promise((resolve, reject) => {
       const listeners = new Map();
-      const done = (fn) => { clearTimeout(timer); for (const [role, l] of listeners) { this.adapters.get(role).off('message', l.m); this.adapters.get(role).off('exit', l.e); this.adapters.get(role).off('error', l.err); } fn(); };
+      let settled=false;
+      const done = (fn) => { if(settled)return;settled=true;clearTimeout(timer); for (const [role, l] of listeners) { this.adapters.get(role).off('message', l.m); this.adapters.get(role).off('exit', l.e); this.adapters.get(role).off('error', l.err); } fn(); };
       const timer = setTimeout(() => done(() => reject(new StressFailure('timeout', { round, phase: type, missing: ledger.missing, timeoutMs: this.config.timeoutMs }))), this.config.timeoutMs);
       for (const role of roles) {
         const adapter = this.adapters.get(role);
         const l = {
           err: () => done(() => reject(new StressFailure('adapter-error', { round, role }))),
           m: (message) => {
+            if(this.config.assetProof) {
+              this.assetOutputBytes??={};
+              const bytes=(this.assetOutputBytes[role]??0)+Buffer.byteLength(JSON.stringify(message));
+              this.assetOutputBytes[role]=bytes;
+              if(bytes>64*1024*1024)return done(()=>reject(new StressFailure('asset-proof-output-budget',{role})));
+            }
             if (type === 'applied' && message.type === 'traffic-progress' && this.config.closeDuringTraffic?.trafficRole === role) return;
             if (message.type === 'error') {
               if (this.config.mode === 'real' && this.config.browserClose?.role === role && this.config.browserClose.round === round && message.round === round && type === 'restart' && message.retained) {
@@ -654,10 +765,10 @@ export class Coordinator {
               return done(() => reject(new StressFailure(!writesValid ? 'write-progress-invalid' : !fieldsValid ? 'field-progress-invalid' : !historyValid ? 'history-progress-invalid' : valid ? 'actor-failed' : 'input-progress-invalid', { round, role, ...(writes && writesValid ? { writeProgress: writes } : {}), ...(fields && fieldsValid ? { fieldProgress: fields } : {}), ...(history && historyValid ? { historyProgress: history } : {}), message: redact(String(message.message ?? '')).slice(0, 500), ...(progress ? { inputProgress: progress } : {}) })));
             }
             const r = ledger.accept(role, message);
-            if (!r.ok) return this.reject({ role, reason: r.reason, event: { round: message.round, type: message.type }, expected: { round, type } });
+            if (!r.ok) { if(this.assetWaveActive) return done(()=>reject(new StressFailure('asset-proof-event-invalid',{role,reason:r.reason}))); return this.reject({ role, reason: r.reason, event: { round: message.round, type: message.type }, expected: { round, type } }); }
             this.actorStatus[role] = `round ${round}: ${type}`;
             this.writeDashboard('running');
-            if (ledger.complete) done(() => resolve(ledger.got));
+            if (ledger.complete) { if(this.assetWaveActive)queueMicrotask(()=>done(()=>resolve(ledger.got)));else done(() => resolve(ledger.got)); }
           },
           e: (exit) => done(() => reject(new StressFailure('actor-exited', { round, role, ...exit, stderr: adapter.stderr.slice(-2000) }))),
         };
@@ -857,7 +968,7 @@ export class Coordinator {
     let samples = 0, stableSamples = 0, stableHash = null;
     do {
       const observing = this.collect(round, 'state');
-      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? { documentSnapshot: true } : {}) });
+      this.broadcast({ type: 'observe', round, expectedEditIds, expectedAssetPaths: assetPathsOf(this.config), ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? { documentSnapshot: true } : {}) });
       states = await observing;
       observed = {};
       for (const role of ROLES) {
@@ -871,7 +982,7 @@ export class Coordinator {
       // Adapter-local settling is insufficient: require three separate all-six
       // observations with the same semantic hash and complete operation evidence.
       for (const role of EDITOR_ROLES) this.checkEditor(round, role, observed[role].editor);
-      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? this.documentStates(states) : null;
+      const documents = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? this.documentStates(states) : null;
       const documentHashes = documents ? new Set([...documents.values()].map(snapshot => documentObservation(snapshot).hash)) : null;
       if (hashes.size === 1 && (!documentHashes || documentHashes.size === 1) && this.checkAssets(states, round)) {
         this.checkRoundContent(states, round, expectedEditIds);
@@ -879,7 +990,7 @@ export class Coordinator {
           const fieldEdits = fieldOperations(this.plannedRounds(round));
           this.finalDocumentHash = checkMultiFieldAccounting(this.documentBaseline, documents, fieldEdits, this.accountingOptions());
         }
-        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? this.finalDocumentHash : [...hashes][0];
+        const hash = (this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? this.finalDocumentHash : [...hashes][0];
         stableSamples = hash === stableHash ? stableSamples + 1 : 1;
         stableHash = hash;
         this.record('convergence-sample', { round, sample: samples, stableSamples, hash,
@@ -968,7 +1079,8 @@ export class Coordinator {
       this.record('lost-ack-complete', this.lostAckEvidence);
     }
     if(this.config.folderCaseMove)await this.moveFolderCase(round,expectedEditIds);
-    const result = { ...(this.config.lostAck?{lostAckCount:1}:{}), round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : this.config.malformedRepair ? { faultCount: round } : this.config.folderCaseMove ? {folderCaseMoves:1} : this.config.lostAck ? {lostAckCount:1} : this.config.mixedSchedule ? {} : { closeTrafficCount: 1 }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
+    if(this.config.assetProof) await this.observeAssetWaves(round,expectedEditIds,'postround');
+    const result = { ...(this.config.lostAck?{lostAckCount:1}:{}), round, hash: [...hashes][0], ...((this.config.multiField || this.config.fileWrites || this.config.malformedRepair || this.config.closeDuringTraffic || this.config.folderCaseMove || this.config.leafMove || this.config.lostAck || this.config.mixedSchedule || this.config.assetProof) ? { documentHash: this.finalDocumentHash, ...(this.config.multiField ? { fieldEditCount: expectedEditIds.length * 2 } : this.config.fileWrites ? { writeSuboperationCount: round * (5 + this.config.fileWrites.writes) } : this.config.malformedRepair ? { faultCount: round } : this.config.folderCaseMove ? {folderCaseMoves:1} : this.config.lostAck ? {lostAckCount:1} : (this.config.mixedSchedule || this.config.assetProof) ? {} : { closeTrafficCount: 1 }) } : {}), samples, stableSamples, editCount: expectedEditIds.length, durationMs: Date.now() - started,
       ...(this.config.diagnosticSameEntryRace ? { assetHashes: Object.fromEntries(['mac-cli', 'pc-cli'].map(role => [role, states.get(role)?.assetHashes])) } : {}) };
     if (this.mixedPlan) {
       const planned = this.mixedPlan.rounds[round - 1];
