@@ -23,6 +23,7 @@ it.each([false, true])("keeps bound local recovery available with hosted history
   vi.stubGlobal("window", new EventTarget());
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementList") { expect(params.workspaceRoot).toBe(status.root); return [replacement]; }
@@ -46,6 +47,7 @@ it("surfaces a corrupt native registry before requesting server recovery", async
   vi.stubGlobal("window", new EventTarget());
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementList") throw new Error("Recovery registry is corrupt");
@@ -63,6 +65,7 @@ it("returns opaque displaced bytes and binds explicit resolution and raw downloa
   const retained = { opaque: true, path: "Moved.textpack", hash: "c".repeat(64), data: btoa("not a ZIP"), parseError: "Retained file" };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     expect(params.workspaceRoot).toBe(status.root);
@@ -84,6 +87,7 @@ it("returns explicit removal absence without parsing a fabricated empty pack", a
   const absent = { absent: true, path: "Removed.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementRead") return absent;
@@ -103,6 +107,7 @@ it("binds four-version move consent to the original native root", async () => {
   const move = { ...replacement, kind: "move", sourcePath: "Original.textpack", sourcePresent: false, sourceHash: null, currentPresent: true, captured: true };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.resolveMove") {
@@ -123,6 +128,7 @@ it("preserves an absent original move path without fabricating a TextPack", asyn
   const absent = { absent: true, path: "Original.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
     if (method === "files.replacementRead") return absent;
@@ -138,6 +144,7 @@ it("lists global folder recovery before fenced file history and scopes inspectio
   const folder = { id: "folder-op", fromPath: "notes", toPath: "Notes", expectedIdentity: "1:2", from: { present: false, identity: null }, to: { present: true, identity: "1:3" }, inspection: "e".repeat(64), summary: "Retained folder details", resolutionBlocked: null, resolved: false };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     expect(params).toMatchObject({workspaceRoot: status.root, workspaceId: status.workspaceId, accountId: status.accountId});
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [folder];
@@ -150,7 +157,7 @@ it("lists global folder recovery before fenced file history and scopes inspectio
     expect(await transport.request("recoveryList", {path: "elsewhere.textpack"})).toMatchObject({folderRenames: [folder], entries: [], replacements: [], assets: []});
     expect(await transport.request("folderRenameRead", { id: folder.id, workspaceRoot: "untrusted", accountId: "other" })).toEqual(folder);
     expect(await transport.request("resolveFolderRename", { id: folder.id, fromPath: folder.fromPath, toPath: folder.toPath, inspection: folder.inspection, workspaceRoot: "untrusted" })).toEqual({resolved: true});
-    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.folderSyncMoveList", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
+    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.savedFileMoveList", "files.folderSyncMoveList", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
   } finally { transport.destroy(); }
 });
 
@@ -158,6 +165,7 @@ it("keeps saved folder commands visible before fenced metadata reads and binds f
  vi.stubGlobal("window",new EventTarget());const entry={id:"saved-folder",state:"unavailable"};
  const view=native((method,params)=>{
   if(method==="native.status")return status;
+  if(method==="files.savedFileMoveList")return {entries:[],truncated:false};
   expect(params.workspaceRoot).toBe(status.root);expect(params.workspaceId).toBe(status.workspaceId);expect(params.accountId).toBe(status.accountId);
   if(method==="files.folderSyncMoveList")return[entry];
   if(method==="files.folderSyncMoveRead")return entry;
@@ -168,6 +176,40 @@ it("keeps saved folder commands visible before fenced metadata reads and binds f
   expect(await transport.request("recoveryList",{})).toMatchObject({folderSyncMoves:[entry],entries:[],replacements:[],assets:[]});
   expect(await transport.request("folderSyncMoveRead",{id:entry.id,workspaceRoot:"foreign",accountId:"foreign"})).toEqual(entry);
   expect(await transport.request("resolveFolderSyncMove",{id:entry.id,inspection:"i",localInspection:"l",requestHash:"r",consent:true})).toEqual({resolved:true});
-  expect(view.messages.map(m=>m.method)).toEqual(["native.status","files.folderSyncMoveList","files.folderSyncMoveRead","files.resolveFolderSyncMove"]);
+  expect(view.messages.map(m=>m.method)).toEqual(["native.status","files.savedFileMoveList","files.folderSyncMoveList","files.folderSyncMoveRead","files.resolveFolderSyncMove"]);
  }finally{transport.destroy();}
+});
+
+it("binds saved file move reads and explicit consent to the selected native workspace", async () => {
+  vi.stubGlobal("window",new EventTarget());
+  const view=native((method,params)=>{
+    if(method==="native.status")return status;
+    if(["files.savedFileMoveRead","files.retrySavedFileMove","files.keepSavedFileMoveNames"].includes(method)){
+      expect(params).toMatchObject({workspaceRoot:status.root,workspaceId:status.workspaceId,accountId:status.accountId,id:"saved"});
+      return {resolved:true};
+    }
+    throw Error(method);
+  });
+  const transport=await createWindowsVaultTransport(view);
+  try {
+    for(const method of ["savedFileMoveRead","retrySavedFileMove","keepSavedFileMoveNames"]){
+      await transport.request(method,{workspaceRoot:"wrong",workspaceId:"wrong",accountId:"wrong",id:"saved",requestHash:"a".repeat(64),inspection:"b".repeat(64),consent:true});
+    }
+    expect(view.messages.slice(1).every(m=>m.params.consent===true&&m.params.inspection==="b".repeat(64))).toBe(true);
+  } finally {transport.destroy();}
+});
+
+it("keeps saved moves available offline and filters before the native bounded list", async () => {
+  vi.stubGlobal("window",new EventTarget());
+  const view=native((method,params)=>{
+    if(method==="native.status")return status;
+    if(method==="files.savedFileMoveList"){expect(params).toEqual({workspaceRoot:status.root,workspaceId:status.workspaceId,accountId:status.accountId,path:"Notes/one.textpack"});return {entries:[{id:"saved"}],truncated:true};}
+    if(["files.folderSyncMoveList","files.folderRenameList","files.replacementList"].includes(method))return [];
+    if(method==="files.recoveryAssets")return {assets:[],assetsTruncated:false};
+    if(method==="native.http")throw Error("Offline");
+    throw Error(method);
+  });
+  const transport=await createWindowsVaultTransport(view);
+  try {expect(await transport.request("recoveryList",{path:"Notes/one.textpack",workspaceRoot:"wrong"})).toMatchObject({savedFileMoves:[{id:"saved"}],savedFileMovesTruncated:true,warning:expect.any(String)});}
+  finally {transport.destroy();}
 });

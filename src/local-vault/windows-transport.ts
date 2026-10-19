@@ -162,20 +162,23 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
     if (method === "recoveryList") {
+      const saved = await rpc.request<{entries: unknown[]; truncated: boolean}>("files.savedFileMoveList", { ...(typeof params.path === "string" ? {path:params.path} : {}), ...recoveryScope }, signal);
+      if (!saved || !Array.isArray(saved.entries) || saved.entries.length > 100 || typeof saved.truncated !== "boolean") throw new Error("The saved file move list could not be verified. Reopen Recovery.");
+      const savedMoves = {savedFileMoves:saved.entries,savedFileMovesTruncated:saved.truncated};
       const folderSyncMoves = await rpc.request<unknown[]>("files.folderSyncMoveList", recoveryScope, signal);
-      if (folderSyncMoves.length) return {entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderSyncMoves,
+      if (folderSyncMoves.length) return {entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderSyncMoves, ...savedMoves,
         warning: "A saved folder change needs review. Inspect its local paths and server result before continuing."};
       const folderRenames = await rpc.request<{ resolved: boolean }[]>("files.folderRenameList", recoveryScope, signal);
-      if (folderRenames.some(entry => !entry.resolved)) return { entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderRenames,
+      if (folderRenames.some(entry => !entry.resolved)) return { entries: [], truncated: false, replacements: [], assets: [], assetsTruncated: false, folderRenames, ...savedMoves,
         warning: "A folder name change needs review. Inspect the current folder paths before continuing." };
       const replacements = await rpc.request<unknown[]>("files.replacementList", recoveryScope, signal);
       const assets = await rpc.request<{ assets: unknown[]; assetsTruncated: boolean }>("files.recoveryAssets", recoveryScope, signal);
       try {
         const page = await shared.request(method, params, signal) as Record<string, unknown>;
-        return { ...page, replacements, ...assets, folderRenames };
+        return { ...page, replacements, ...assets, folderRenames, ...savedMoves };
       } catch (error) {
-        if (signal?.aborted || (replacements.length === 0 && assets.assets.length === 0 && folderRenames.length === 0)) throw error;
-        return { entries: [], truncated: false, replacements, ...assets, folderRenames, warning: "Saved server versions are unavailable. Local recovery is still available." };
+        if (signal?.aborted || (replacements.length === 0 && assets.assets.length === 0 && folderRenames.length === 0 && saved.entries.length === 0 && !saved.truncated)) throw error;
+        return { entries: [], truncated: false, replacements, ...assets, folderRenames, ...savedMoves, warning: "Saved server versions are unavailable. Local recovery is still available." };
       }
     }
     if (method === "replacementRead") {
@@ -187,6 +190,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const pack = await openPack(bytes(result.data), result.path, result.hash, result.itemId);
       return { ...pack.file, data: result.data };
     }
+    if (["savedFileMoveRead", "retrySavedFileMove", "keepSavedFileMoveNames"].includes(method)) return rpc.request(`files.${method}`, { ...params, ...recoveryScope }, signal);
     if (method === "folderSyncMoveRead") return rpc.request("files.folderSyncMoveRead", { ...params, ...recoveryScope }, signal);
     if (method === "resolveFolderSyncMove") return rpc.request("files.resolveFolderSyncMove", { ...params, ...recoveryScope }, signal);
     if (method === "folderRenameRead") return rpc.request("files.folderRenameRead", { ...params, ...recoveryScope }, signal);
