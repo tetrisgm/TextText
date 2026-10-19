@@ -3,7 +3,7 @@
 // Node owns streaming stdin because PowerShell's SSH Console.In stalls after the
 // first line on this host. PowerShell is used only for one-shot task lifecycle.
 import { readFileSync, mkdirSync, existsSync, writeFileSync, renameSync, statSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -16,11 +16,33 @@ const fail = (message, round = 0) => process.stdout.write(JSON.stringify({ type:
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 let generation = 1;
 let actorSession;
+let lifetimePins;
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+export function nativeTaskLifetimePins(config, configBytes, moduleBytes) {
+  const durationKeys = Object.keys(config).filter(key => key.toLowerCase() === 'totalminutes');
+  if (durationKeys.length > 1) throw new Error('Ambiguous native actor duration.');
+  const actorMinutes = durationKeys.length ? config[durationKeys[0]] : 20;
+  if (!Number.isInteger(actorMinutes) || actorMinutes < 1 || actorMinutes > 120) throw new Error('Invalid native actor duration.');
+  return {actorMinutes, taskMinutes: Math.max(22, actorMinutes + 2),
+    configSha256: digest(configBytes), moduleSha256: digest(moduleBytes)};
+}
+export function validateNativeTaskLifetime(observed, expected) {
+  const limit = typeof observed.actualLimit === 'string' && /^PT(?:(\d{1,3})H)?(?:(\d{1,3})M)?$/.exec(observed.actualLimit);
+  const actualMinutes = limit ? Number(limit[1] ?? 0) * 60 + Number(limit[2] ?? 0) : null;
+  if (observed.version !== 1 || observed.taskName !== expected.taskName || observed.session !== expected.session ||
+      observed.actorMinutes !== expected.actorMinutes || observed.taskMinutes !== expected.taskMinutes ||
+      observed.configSha256 !== expected.configSha256 || observed.moduleSha256 !== expected.moduleSha256 ||
+      actualMinutes !== expected.taskMinutes)
+    throw new Error('Native task lifetime attestation differs from sealed inputs.');
+}
+
 const taskName = () => `${taskBase}-${String(generation).padStart(3, '0')}`;
 function task(mode = 'start') {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
-    '-Assembly', assembly, '-Config', configPath, '-Session', actorSession, '-TaskName', taskName()];
+    '-Assembly', assembly, '-Config', configPath, '-Session', actorSession, '-TaskName', taskName(),
+    '-ExpectedConfigSha256', lifetimePins.configSha256, '-ExpectedModuleSha256', lifetimePins.moduleSha256];
   if (mode === 'finish') args.push('-Finish');
+  if (mode === 'inspect') args.push('-InspectLifetime');
   if (mode === 'crash') args.push('-Crash');
   const result = spawnSync('powershell.exe', args, { encoding: 'utf8', timeout: 30000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.status !== 0) {
@@ -29,6 +51,11 @@ function task(mode = 'start') {
     writeFileSync(join(session, `task-error-${mode}.txt`), String(result.stderr || result.stdout || 'No task output.').slice(0, 4096));
     throw new Error(mode === 'start' ? 'Native actor could not start.' : mode === 'crash' ? 'Native actor could not be terminated.' : 'Native actor did not flush or exit cleanly.');
   }
+  if (mode === 'inspect') {
+    const observed = JSON.parse(result.stdout);
+    validateNativeTaskLifetime(observed, {...lifetimePins, taskName: taskName(), session: actorSession});
+  }
+  if (mode === 'start') task('inspect');
 }
 async function finishTask() {
   for (let i = 0; i < 300; i++) {
@@ -65,7 +92,9 @@ async function main() {
   if (![assembly, configPath, session].every(p => typeof p === 'string' && isAbsolute(p))) throw new Error('Absolute test paths are required.');
   if (!existsSync(assembly) || !existsSync(configPath) || existsSync(session)) throw new Error('Test input is missing or the session already exists.');
   if (statSync(configPath).size > 16384) throw new Error('Test config exceeds the bound.');
-  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const configBytes = readFileSync(configPath);
+  const config = JSON.parse(configBytes.toString('utf8'));
+  lifetimePins = nativeTaskLifetimePins(config, configBytes, readFileSync(assembly));
   const title = config.Title ?? config.title;
   const file = config.File ?? config.file;
   if (!title?.startsWith('Six-client acceptance ') || basename(file ?? '', extname(file ?? '')) !== title) throw new Error('Not a dedicated acceptance file.');
