@@ -1,6 +1,7 @@
 #if TEXTTEXT_STRESS_ACTOR
 import AppKit
 import CryptoKit
+import CoreFoundation
 import Darwin
 import Foundation
 import WebKit
@@ -67,6 +68,49 @@ enum NativeStressReaderAction {
     """#
     static let ready = action + "(false)"
     static let activate = action + "(true)"
+}
+
+enum NativeStressDocumentInspection {
+    static func script(itemId: String, workspaceId: String, title: String) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: ["itemId": itemId, "workspaceId": workspaceId, "title": title], options: [.sortedKeys])
+        let expected = String(decoding: data, as: UTF8.self)
+        return #"""
+        (() => {
+          const expected = \#(expected), editors = document.querySelectorAll('[aria-label="Edit item"][data-ai-item-id]');
+          if (editors.length !== 1) return null;
+          const editor = editors[0], key = editor.dataset.aiItemId;
+          if (key !== expected.itemId && !key?.endsWith(':' + expected.workspaceId + ':' + expected.itemId)) return null;
+          const api = window.texttextDocumentInspection, doc = api?.version === 1 ? api.read(key) : null;
+          const content = doc?.content, subtitle = editor.querySelector('textarea[aria-label="Subtitle"]'), body = editor.querySelector('[aria-label="Document body"]');
+          if (!doc || doc.schemaVersion !== 1 || !content || !subtitle || !body
+            || content.title !== expected.title || typeof content.body !== 'string' || content.body !== body.textContent
+            || (content.subtitle !== undefined && typeof content.subtitle !== 'string')
+            || (content.subtitle === undefined ? '' : content.subtitle) !== subtitle.value
+            || doc.presentation?.template?.id !== 'texttext.article') return null;
+          return doc;
+        })()
+        """#
+    }
+    static func validate(_ raw: String, title: String) throws -> [String: Any] {
+        guard raw.utf8.count <= 262144,
+              let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+              let version = value["schemaVersion"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1,
+              let content = value["content"] as? [String: Any], content["title"] as? String == title,
+              content["body"] is String, content["subtitle"] == nil || content["subtitle"] is String,
+              let presentation = value["presentation"] as? [String: Any], let template = presentation["template"] as? [String: Any],
+              template["id"] as? String == "texttext.article" else {
+            throw NativeStressActor.Failure("Actual live article snapshot or existing subtitle unavailable.")
+        }
+        return value
+    }
+    // Only an absent optional subtitle reads as empty. Do not alter the returned snapshot.
+    static func fieldValue(_ content: [String: Any], field: String) throws -> String {
+        if field == "subtitle", content[field] == nil { return "" }
+        guard ["body", "subtitle"].contains(field), let value = content[field] as? String else {
+            throw NativeStressActor.Failure("Actual field value is unavailable.")
+        }
+        return value
+    }
 }
 
 enum NativeStressActor {
@@ -777,12 +821,9 @@ final class NativeStressRunner {
 
     private func inspectDocument() async throws -> [String: Any] {
         try await requireSelected()
-        let script = "(()=>{const es=document.querySelectorAll('[aria-label=\"Edit item\"][data-ai-item-id]');if(es.length!==1)return null;const e=es[0],k=e.dataset.aiItemId;if(k!==\(expectedItem)&&!k?.endsWith(':'+\(Self.json(config.workspaceId))+':'+\(expectedItem)))return null;const api=window.texttextDocumentInspection;const d=api?.version===1?api.read(k):null;const s=e.querySelector('textarea[aria-label=\"Subtitle\"]'),b=e.querySelector('[aria-label=\"Document body\"]');return d&&s&&d.content.subtitle===s.value&&d.content.body===b?.textContent?d:null})()"
+        let script = try NativeStressDocumentInspection.script(itemId: config.itemId.lowercased(), workspaceId: config.workspaceId, title: config.title)
         let raw = try await evaluate(script)
-        guard raw.utf8.count <= 262144, let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any], let content = value["content"] as? [String: Any],
-              content["title"] as? String == config.title, content["body"] is String, content["subtitle"] is String,
-              let presentation = value["presentation"] as? [String: Any], let template = presentation["template"] as? [String: Any], template["id"] as? String == "texttext.article" else { throw NativeStressActor.Failure("Actual live article snapshot or existing subtitle unavailable.") }
-        return value
+        return try NativeStressDocumentInspection.validate(raw, title: config.title)
     }
 
     private func exerciseFields(id: String, text: String, value: Any) async throws -> [String: Any] {
@@ -798,7 +839,7 @@ final class NativeStressRunner {
         var progress: [[String: Any]] = []
         for (index, edit) in edits.enumerated() {
             let field = edit["field"] as! String, marker = edit["text"] as! String, editId = edit["id"] as! String
-            guard !(preserved[field] as! String).contains(marker) else { throw NativeStressActor.Failure("Field marker already present.") }
+            guard !(try NativeStressDocumentInspection.fieldValue(preserved, field: field)).contains(marker) else { throw NativeStressActor.Failure("Field marker already present.") }
             if index > 0 { try await Task.sleep(nanoseconds: 1_000_000) }
             fieldProgress = ["role": NativeStressActor.roleServed, "fields": progress, "attemptedField": editId]
             if field == "body" { try await insert(id: editId, text: marker, start: false, replacing: false, deadlineUptime: start + 15) }
@@ -811,11 +852,12 @@ final class NativeStressRunner {
                 let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1000
                 guard elapsed <= 15000 else { throw NativeStressActor.Failure("Field visibility or preservation deadline exceeded.") }
                 let current = (try await inspectDocument())["content"] as! [String: Any]
-                if Self.occurrences(of: marker, in: current[field] as! String) == 1 {
+                if Self.occurrences(of: marker, in: try NativeStressDocumentInspection.fieldValue(current, field: field)) == 1 {
                     var intact = true
                     for key in ["body", "subtitle"] {
-                        let observed = key == field ? (current[key] as! String).replacingOccurrences(of: marker, with: "") : current[key] as! String
-                        var remaining = Array((preserved[key] as! String).unicodeScalars)[...]
+                        let actual = try NativeStressDocumentInspection.fieldValue(current, field: key)
+                        let observed = key == field ? actual.replacingOccurrences(of: marker, with: "") : actual
+                        var remaining = Array((try NativeStressDocumentInspection.fieldValue(preserved, field: key)).unicodeScalars)[...]
                         for scalar in observed.unicodeScalars where remaining.first == scalar { remaining = remaining.dropFirst() }
                         if !remaining.isEmpty { intact = false }
                     }
