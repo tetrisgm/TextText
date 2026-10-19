@@ -127,6 +127,88 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
 }
 public struct LocalVaultMirrorSharedPathDecision: Codable, Equatable, Sendable { public let action: String }
 
+public struct LocalVaultMirrorQueuedUploadPathObservation: Codable, Equatable, Sendable {
+    public let pendingKind: String
+    public let pendingConflicted: Bool
+    public let pendingUnique: Bool
+    public let pendingPath: String
+    public let pendingBaseRevision: String?
+    public let pendingLifecycle: String?
+    public let baselinePath: String?
+    public let baselineRevision: String?
+    public let baselineLifecycle: String?
+    public let remotePath: String?
+    public let remoteRevision: String?
+    public let remoteLifecycle: String?
+    public let remoteDeleted: Bool
+    public let remoteAuthoritative: Bool
+    public let localPath: String?
+    public let localUnique: Bool
+    public let localIdentityVerified: Bool
+    public let stagedPayloadVerified: Bool
+    public let editorOwned: Bool
+    public let recoveryBlocked: Bool
+    public let permitted: Bool
+    public let intentKind: String
+    public let intentPath: String?
+    public let intentDestination: String?
+    public init(pendingKind: String, pendingConflicted: Bool, pendingUnique: Bool, pendingPath: String, pendingBaseRevision: String?, pendingLifecycle: String?, baselinePath: String?, baselineRevision: String?, baselineLifecycle: String?, remotePath: String?, remoteRevision: String?, remoteLifecycle: String?, remoteDeleted: Bool, remoteAuthoritative: Bool, localPath: String?, localUnique: Bool, localIdentityVerified: Bool, stagedPayloadVerified: Bool, editorOwned: Bool, recoveryBlocked: Bool, permitted: Bool, intentKind: String, intentPath: String?, intentDestination: String?) {
+        self.pendingKind = pendingKind
+        self.pendingConflicted = pendingConflicted
+        self.pendingUnique = pendingUnique
+        self.pendingPath = pendingPath
+        self.pendingBaseRevision = pendingBaseRevision
+        self.pendingLifecycle = pendingLifecycle
+        self.baselinePath = baselinePath
+        self.baselineRevision = baselineRevision
+        self.baselineLifecycle = baselineLifecycle
+        self.remotePath = remotePath
+        self.remoteRevision = remoteRevision
+        self.remoteLifecycle = remoteLifecycle
+        self.remoteDeleted = remoteDeleted
+        self.remoteAuthoritative = remoteAuthoritative
+        self.localPath = localPath
+        self.localUnique = localUnique
+        self.localIdentityVerified = localIdentityVerified
+        self.stagedPayloadVerified = stagedPayloadVerified
+        self.editorOwned = editorOwned
+        self.recoveryBlocked = recoveryBlocked
+        self.permitted = permitted
+        self.intentKind = intentKind
+        self.intentPath = intentPath
+        self.intentDestination = intentDestination
+    }
+    private enum CodingKeys: String, CodingKey { case pendingKind, pendingConflicted, pendingUnique, pendingPath, pendingBaseRevision, pendingLifecycle, baselinePath, baselineRevision, baselineLifecycle, remotePath, remoteRevision, remoteLifecycle, remoteDeleted, remoteAuthoritative, localPath, localUnique, localIdentityVerified, stagedPayloadVerified, editorOwned, recoveryBlocked, permitted, intentKind, intentPath, intentDestination }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(pendingKind, forKey: .pendingKind)
+        try c.encode(pendingConflicted, forKey: .pendingConflicted)
+        try c.encode(pendingUnique, forKey: .pendingUnique)
+        try c.encode(pendingPath, forKey: .pendingPath)
+        try c.encode(pendingBaseRevision, forKey: .pendingBaseRevision)
+        try c.encode(pendingLifecycle, forKey: .pendingLifecycle)
+        try c.encode(baselinePath, forKey: .baselinePath)
+        try c.encode(baselineRevision, forKey: .baselineRevision)
+        try c.encode(baselineLifecycle, forKey: .baselineLifecycle)
+        try c.encode(remotePath, forKey: .remotePath)
+        try c.encode(remoteRevision, forKey: .remoteRevision)
+        try c.encode(remoteLifecycle, forKey: .remoteLifecycle)
+        try c.encode(remoteDeleted, forKey: .remoteDeleted)
+        try c.encode(remoteAuthoritative, forKey: .remoteAuthoritative)
+        try c.encode(localPath, forKey: .localPath)
+        try c.encode(localUnique, forKey: .localUnique)
+        try c.encode(localIdentityVerified, forKey: .localIdentityVerified)
+        try c.encode(stagedPayloadVerified, forKey: .stagedPayloadVerified)
+        try c.encode(editorOwned, forKey: .editorOwned)
+        try c.encode(recoveryBlocked, forKey: .recoveryBlocked)
+        try c.encode(permitted, forKey: .permitted)
+        try c.encode(intentKind, forKey: .intentKind)
+        try c.encode(intentPath, forKey: .intentPath)
+        try c.encode(intentDestination, forKey: .intentDestination)
+    }
+}
+public struct LocalVaultMirrorQueuedUploadPathDecision: Codable, Equatable, Sendable { public let action: String }
+
 public struct LocalVaultMirrorSavedRenameObservation: Codable, Equatable, Sendable {
     public let phase: String
     public let savedSource: String?
@@ -329,6 +411,10 @@ public actor LocalVaultMirrorPolicy {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision
     }
+    private struct QueuedUploadPathReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorQueuedUploadPathObservation, decision: LocalVaultMirrorQueuedUploadPathDecision
+    }
     private struct SavedRenameReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorSavedRenameObservation, decision: LocalVaultMirrorSavedRenameDecision
@@ -377,6 +463,14 @@ public actor LocalVaultMirrorPolicy {
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
                   Set(observation.keys) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
+                  let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
+        }
+        if method == "queuedUploadPath" {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
+                  let observation = object["observed"] as? [String: Any],
+                  Set(observation.keys) == Set(["pendingKind", "pendingConflicted", "pendingUnique", "pendingPath", "pendingBaseRevision", "pendingLifecycle", "baselinePath", "baselineRevision", "baselineLifecycle", "remotePath", "remoteRevision", "remoteLifecycle", "remoteDeleted", "remoteAuthoritative", "localPath", "localUnique", "localIdentityVerified", "stagedPayloadVerified", "editorOwned", "recoveryBlocked", "permitted", "intentKind", "intentPath", "intentDestination"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }
@@ -474,6 +568,20 @@ public actor LocalVaultMirrorPolicy {
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
               ["hold", "unchanged", "follow-remote", "announce-local", "adopt-path"].contains(reply.decision.action) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
+    }
+
+    public func queuedUploadPath(_ observed: LocalVaultMirrorQueuedUploadPathObservation) async throws -> LocalVaultMirrorQueuedUploadPathDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("queuedUploadPath", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: QueuedUploadPathReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              ["defer", "keep", "reissue-at-remote-path"].contains(reply.decision.action) else { throw Failure.stale }
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.decision

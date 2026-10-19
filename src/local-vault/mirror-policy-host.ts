@@ -1,3 +1,4 @@
+import { mirrorQueuedUploadPath, validateMirrorQueuedUploadPathObservation } from "../sync/engine/mirror-queued-upload-path";
 import { mirrorSavedRename, validateMirrorSavedRenameObservation } from "../sync/engine/mirror-saved-rename";
 import { mirrorTombstone, validateMirrorTombstoneObservation } from "../sync/engine/mirror-tombstone";
 import { mirrorSharedPath, validateMirrorSharedPathObservation } from "../sync/engine/mirror-shared-path";
@@ -63,6 +64,11 @@ export function createMirrorPolicyHost(digest: string, pageId: string) {
       const {v, envelope} = validateRequest(value);
       const observed = validateMirrorLifecycleObservation(v.observed);
       return { ...envelope, observed, decision: mirrorLifecycle(observed) };
+    },
+    queuedUploadPath(value: unknown) {
+      const {v, envelope} = validateRequest(value);
+      const observed = validateMirrorQueuedUploadPathObservation(v.observed);
+      return { ...envelope, observed, decision: mirrorQueuedUploadPath(observed) };
     },
     savedRename(value: unknown) {
       const {v, envelope} = validateRequest(value);

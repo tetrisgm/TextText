@@ -19,7 +19,7 @@ static class NativePolicyTestHost
             var root=new DirectoryInfo(AppContext.BaseDirectory);
             while(root is not null&&!File.Exists(Path.Combine(root.FullName,"sync","native-policy-test-host.mjs")))root=root.Parent;
             if(root is null)throw new IOException("Run native policy tests from the source checkout.");
-            var start=new ProcessStartInfo("node"){WorkingDirectory=root.FullName,UseShellExecute=false,RedirectStandardInput=true,RedirectStandardOutput=true};
+            var start=new ProcessStartInfo("node"){WorkingDirectory=root.FullName,UseShellExecute=false,RedirectStandardInput=true,RedirectStandardOutput=true,StandardInputEncoding=new System.Text.UTF8Encoding(false,true),StandardOutputEncoding=new System.Text.UTF8Encoding(false,true)};
             start.ArgumentList.Add("--import");start.ArgumentList.Add("tsx");start.ArgumentList.Add("sync/native-policy-test-host.mjs");
             start.Environment.Clear();foreach(var key in new[]{"PATH","HOME","TMPDIR","TMP","TEMP","SystemRoot"})if(Environment.GetEnvironmentVariable(key) is {} value)start.Environment[key]=value;
             child=Process.Start(start)??throw new IOException("Could not start policy test host.");

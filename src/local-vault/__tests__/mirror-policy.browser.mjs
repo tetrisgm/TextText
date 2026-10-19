@@ -13,6 +13,7 @@ await copyFile('sync/fixtures/mirror-lifecycle.json',path.join(output,'lifecycle
 await copyFile('sync/fixtures/mirror-queue.json',path.join(output,'queue-vectors.json'));
 await copyFile('sync/fixtures/mirror-shared-path.json',path.join(output,'shared-path-vectors.json'));
 await copyFile('sync/fixtures/mirror-tombstone.json',path.join(output,'tombstone-vectors.json'));
+await copyFile('sync/fixtures/mirror-queued-upload-path.json',path.join(output,'queued-upload-path-vectors.json'));
 await copyFile('sync/fixtures/mirror-saved-rename.json',path.join(output,'saved-rename-vectors.json'));
 // Load the exact packaged script without an editor, transport or credentials.
 await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
@@ -61,6 +62,12 @@ try {
   const reply=await page.evaluate(request=>window.texttextMirrorPolicy.tombstone(request),request);
   assert.deepEqual(reply,{...request,decision:vector.decision});
  }
+ const queuedUploadPaths=JSON.parse(await readFile(path.join(output,'queued-upload-path-vectors.json'),'utf8'));
+ for(const [i,vector] of queuedUploadPaths.entries()) {
+  const request={...binding,scope,requestId:'queued-upload-path-'+i,observed:vector.observed};
+  const reply=await page.evaluate(request=>window.texttextMirrorPolicy.queuedUploadPath(request),request);
+  assert.deepEqual(reply,{...request,decision:vector.decision});
+ }
  const savedRenames=JSON.parse(await readFile(path.join(output,'saved-rename-vectors.json'),'utf8'));
  for(const [i,vector] of savedRenames.entries()) {
   const request={...binding,scope,requestId:'saved-rename-'+i,observed:vector.observed};
@@ -80,6 +87,7 @@ try {
  await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.evaluate(request),{...binding,scope,requestId:'old',observed:vectors[0].observed}),/Stale/);
  await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.queue(request),{...binding,scope,requestId:'old-queue',observed:queues[0].observed}),/Stale/);
  await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.sharedPath(request),{...binding,scope,requestId:'old-path',observed:paths[0].observed}),/Stale/);
+ await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.queuedUploadPath(request),{...binding,scope,requestId:'old-queued-rename',observed:queuedUploadPaths[0].observed}),/Stale/);
  await assert.rejects(page.evaluate(request=>window.texttextMirrorPolicy.savedRename(request),{...binding,scope,requestId:'old-saved-rename',observed:savedRenames[0].observed}),/Stale/);
  console.log('PASS packaged mirror policy: shared vectors without an editor, offline evaluation, exact digest, reload fences old page');
 } finally {await browser.close();}

@@ -75,6 +75,25 @@ static class MirrorPolicyTests
             var refused=false;try{await policy.TombstoneAsync(new(true,true,true,false,false,true,true,true,new string('a',64),new string('a',64),"a.textpack","a.textpack","a.textpack","r","r","g","g"));}catch(Exception e) when(e is IOException or JsonException or InvalidOperationException){refused=true;}
             check(refused,"tombstone reply refuses forged/unknown fields: "+altered);
         }
+        foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-queued-upload-path.json"))).RootElement.EnumerateArray()) {
+            var policy=NativePolicyTestHost.Create();
+            check(await policy.QueuedUploadPathAsync(vector.GetProperty("observed").Deserialize<MirrorQueuedUploadPathObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorQueuedUploadPathDecision>(json),"source queued upload path vector: "+vector.GetProperty("name"));
+        }
+        foreach(var altered in new[]{"scope","requestId","pageId","digest","generation","observed","decision","action","unknown-field","unknown-observed","missing-lifecycle"}) {
+            var policy=new MirrorPolicy(digest,scope,(script,ct)=>{
+                if(script.Contains(".handshake("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1}));
+                if(script.Contains(".bind("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1,scope},json));
+                var request=JsonNode.Parse(script[(script.IndexOf('(')+1)..^1])!;request["decision"]=JsonSerializer.SerializeToNode(new MirrorQueuedUploadPathDecision("defer"),json);
+                if(altered=="action")request["decision"]!["action"]="future";
+                else if(altered=="unknown-field")request["future"]=1;
+                else if(altered=="unknown-observed")request["observed"]!["future"]=1;
+                else if(altered=="missing-lifecycle")request["observed"]!.AsObject().Remove("pendingLifecycle");
+                else request[altered]="invalid";
+                return Task.FromResult(request.ToJsonString());
+            });
+            var refused=false;try{await policy.QueuedUploadPathAsync(JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-queued-upload-path.json"))).RootElement[0].GetProperty("observed").Deserialize<MirrorQueuedUploadPathObservation>(json)!);}catch(Exception e) when(e is IOException or JsonException or InvalidOperationException){refused=true;}
+            check(refused,"queued upload path reply refuses forged/unknown fields: "+altered);
+        }
         foreach(var vector in JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-saved-rename.json"))).RootElement.EnumerateArray()) {
             var policy=NativePolicyTestHost.Create();
             check(await policy.SavedRenameAsync(vector.GetProperty("observed").Deserialize<MirrorSavedRenameObservation>(json)!)==vector.GetProperty("decision").Deserialize<MirrorSavedRenameDecision>(json),"source saved rename vector: "+vector.GetProperty("name"));
@@ -93,6 +112,14 @@ static class MirrorPolicyTests
             var refused=false;try{await policy.SavedRenameAsync(JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-saved-rename.json"))).RootElement[0].GetProperty("observed").Deserialize<MirrorSavedRenameObservation>(json)!);}catch(Exception e) when(e is IOException or JsonException or InvalidOperationException){refused=true;}
             check(refused,"saved rename reply refuses forged/unknown fields: "+altered);
         }
+        var queuedHandshakes=0;
+        var reloadQueuedPolicy=new MirrorPolicy(digest,scope,(script,ct)=>{
+            if(script.Contains(".handshake("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId=++queuedHandshakes==1?"page":"reloaded",generation=1}));
+            if(script.Contains(".bind("))return Task.FromResult(JsonSerializer.Serialize(new{version=1,digest,pageId="page",generation=1,scope},json));
+            var request=JsonNode.Parse(script[(script.IndexOf('(')+1)..^1])!;request["decision"]=JsonSerializer.SerializeToNode(new MirrorQueuedUploadPathDecision("defer"),json);return Task.FromResult(request.ToJsonString());
+        });
+        var reloadQueuedRefused=false;try{await reloadQueuedPolicy.QueuedUploadPathAsync(JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRoot(),"sync","fixtures","mirror-queued-upload-path.json"))).RootElement[0].GetProperty("observed").Deserialize<MirrorQueuedUploadPathObservation>(json)!);}catch(MirrorPolicyUnavailableException){reloadQueuedRefused=true;}
+        check(reloadQueuedRefused&&queuedHandshakes==2,"queued upload path refuses page reload after decision");
         var unknownLaneRequests=0;
         var unknownLanePolicy=new MirrorPolicy(digest,scope,(script,ct)=>{
             unknownLaneRequests++;throw new IOException("Unknown lane must not reach the policy page.");
