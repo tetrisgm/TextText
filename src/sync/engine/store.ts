@@ -295,6 +295,26 @@ async function stableIndexedItem(
   };
 }
 
+/** Creation must not introduce a spelling that aliases an existing portable parent.
+ * Run under the vault lock, before any helper can create directories. */
+async function requirePortableCreationParents(layout: Layout, relativePath: string): Promise<void> {
+  let parent = layout.workspace;
+  for (const component of packPath(relativePath).split("/").slice(0, -1)) {
+    const names = await fs.readdir(parent);
+    const folded = component.normalize("NFC").toLowerCase();
+    const matches = names.filter(name => name.normalize("NFC").toLowerCase() === folded);
+    if (matches.some(name => name !== component) || matches.length > 1) {
+      throw new Error("Portable folder spelling conflicts with an existing folder");
+    }
+    const actual = matches[0];
+    if (actual === undefined) return;
+    const next = path.join(parent, actual);
+    const info = await fs.lstat(next);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Vault parent is not a regular directory");
+    parent = next;
+  }
+}
+
 async function targetPath(layout: Layout, relativePath: string): Promise<string> {
   const parts = packPath(relativePath).split("/");
   let parent = layout.workspace;
@@ -745,6 +765,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       return saved.result;
     }
     if (input.receiptOnly) throw new Error("No completed receipt exists for this approved operation.");
+    if (input.baseRevision === null) await requirePortableCreationParents(layout, input.relativePath);
     let templateSource: { itemId: string; revision: string; relativePath: string } | undefined;
     if (input.folderDefaultCreation && !input.templateCreation) {
       if (input.baseRevision !== null) throw new Error("Folder defaults are creation only");
@@ -825,6 +846,7 @@ export async function writeVaultTextpack(input: VaultWrite): Promise<VaultWriteR
       input.bytes = encodePack(pack, { ...pack.file, ...writePayload(pack.file, document, { template, sourceJSON }) });
       validatePack(input.bytes, input.itemId);
     }
+    if (input.baseRevision === null) await requirePortableCreationParents(layout, input.relativePath);
     // Identity is stable independently of title. Moves require a separate operation.
     let deletedRevision: string | undefined;
     for (const item of await fs.readdir(layout.items)) {

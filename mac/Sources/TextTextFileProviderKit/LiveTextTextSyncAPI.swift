@@ -128,6 +128,19 @@ public struct TextTextAgentCommandReply: Decodable, Sendable {
     }
 }
 
+/// Full physical vault inventory for CLI paths, independent of the legacy SQL catalog.
+public struct TextTextCLIInventory: Sendable {
+    public let workspaceId: String
+    public let accountId: String
+    public let name: String
+    public let folders: [String]
+    public let items: [LocalVaultRemoteItem]
+    public init(workspaceId: String, accountId: String, name: String, folders: [String], items: [LocalVaultRemoteItem]) {
+        self.workspaceId = workspaceId; self.accountId = accountId; self.name = name
+        self.folders = folders; self.items = items
+    }
+}
+
 /// The production `TextTextSyncAPI`: async URLSession calls against the platform's
 /// /api/sync/v1 routes, authenticated with the workspace `wsk_` token. The File
 /// Provider extension constructs one of these once it has the token from the
@@ -160,6 +173,39 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
     }
 
     // MARK: Reads
+
+    public func canonicalCLIInventory(expectedWorkspaceId: String? = nil, expectedAccountId: String? = nil) async -> Result<TextTextCLIInventory, TextTextSyncError> {
+        struct Directory: Decodable, Equatable {
+            let workspaceId: String
+            let accountId: String
+            let name: String
+        }
+        func directory() async throws -> Directory {
+            switch await send("GET", "/api/vault", headers: ["Cache-Control": "no-cache"]) {
+            case .failure(let error): throw error
+            case .success(let reply):
+                guard reply.status == 200, reply.data.count <= 65_536,
+                      let value = try? JSONDecoder().decode(Directory.self, from: reply.data),
+                      !value.workspaceId.isEmpty, !value.accountId.isEmpty,
+                      expectedWorkspaceId == nil || expectedWorkspaceId == value.workspaceId,
+                      expectedAccountId == nil || expectedAccountId == value.accountId
+                else { throw TextTextSyncError.decode("The canonical workspace connection could not be verified") }
+                return value
+            }
+        }
+        do {
+            let before = try await directory()
+            let transport = try HTTPLocalVaultSyncTransport(origin: origin, workspaceId: before.workspaceId, token: token, session: session, accountId: before.accountId)
+            let items = try await transport.manifest()
+            guard let folders = await transport.authoritativeFolders(), items.count <= 40_000, folders.count <= 20_000 else {
+                throw TextTextSyncError.decode("The canonical workspace inventory is unavailable")
+            }
+            let after = try await directory()
+            guard before == after else { throw TextTextSyncError.decode("The canonical workspace account changed") }
+            return .success(.init(workspaceId: before.workspaceId, accountId: before.accountId, name: before.name, folders: folders, items: items))
+        } catch let error as TextTextSyncError { return .failure(error) }
+        catch { return .failure(.decode("The canonical workspace inventory could not be verified")) }
+    }
 
     public func workspace() async -> Result<TextTextWorkspace, TextTextSyncError> {
         await get("/api/sync/v1/workspace", as: TextTextWorkspace.self)

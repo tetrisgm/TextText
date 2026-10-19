@@ -43,14 +43,20 @@ final class LocalWorkspaceCommands: @unchecked Sendable {
               data.count <= 65_536 else {
             throw TextTextCLIError.workspaceUnavailable("the account connection could not be verified")
         }
-        struct Account: Decodable { let workspaceId: String }
+        struct Account: Decodable { let workspaceId: String; let accountId: String }
         guard let account = try? JSONDecoder().decode(Account.self, from: data),
-              account.workspaceId == binding.workspaceId,
+              account.workspaceId == binding.workspaceId, !account.accountId.isEmpty,
               try PortableWorkspaceBinding.read(root: root) == binding,
               let latest = DeviceCredentials.load(environment: environment),
               latest.token == credentials.token, latest.serverOrigin == credentials.serverOrigin else {
             throw TextTextCLIError.workspaceUnavailable("the signed-in account does not match this folder")
         }
-        return RemoteDocumentStore(api: LiveTextTextSyncAPI(origin: candidate.origin, token: credentials.token, session: session))
+        return RemoteDocumentStore(api: LiveTextTextSyncAPI(origin: candidate.origin, token: credentials.token, session: session), expectedWorkspaceId: binding.workspaceId, expectedAccountId: account.accountId, validateAuthority: { [root, environment] in
+            guard try PortableWorkspaceBinding.read(root: root) == binding,
+                  let latest = DeviceCredentials.load(environment: environment),
+                  latest.token == credentials.token, latest.serverOrigin == credentials.serverOrigin else {
+                throw TextTextCLIError.workspaceUnavailable("the signed-in account connection changed")
+            }
+        })
     }
 }

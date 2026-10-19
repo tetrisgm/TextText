@@ -46,7 +46,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
         LocalCommandProtocol.handler = { request in
             paths.append(request.url!.path)
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer wsk_test")
-            if request.url!.path == "/api/vault" { return (200, #"{"workspaceId":"workspace-a"}"#) }
+            if request.url!.path == "/api/vault" { return (200, #"{"workspaceId":"workspace-a","accountId":"account-a"}"#) }
             if request.httpMethod == "GET" { return (200, #"{"commands":[{"name":"get_workspace"}]}"#) }
             return (200, #"{"content":[{"type":"text","text":"command worked"}]}"#)
         }
@@ -72,7 +72,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
         var paths: [String] = []
         LocalCommandProtocol.handler = { request in
             paths.append(request.url!.path)
-            return (200, #"{"workspaceId":"workspace-a"}"#)
+            return (200, #"{"workspaceId":"workspace-a","accountId":"account-a"}"#)
         }
         let workspace = try await CLIWorkspace.locate(environment: environment, commandSession: session)
         XCTAssertTrue(workspace.usesRemoteSync)
@@ -84,7 +84,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
             LocalCommandProtocol.handler = { _ in
                 if status == "offline" { throw URLError(.notConnectedToInternet) }
                 if status == "revoked" { return (401, "{}") }
-                return (200, #"{"workspaceId":"workspace-b"}"#)
+                return (200, #"{"workspaceId":"workspace-b","accountId":"account-b"}"#)
             }
             do {
                 _ = try await CLIWorkspace.locate(environment: environment, commandSession: session)
@@ -105,7 +105,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
     func testWrongWorkspaceDoesNotDispatchCommand() async throws {
         LocalCommandProtocol.handler = { request in
             XCTAssertEqual(request.url!.path, "/api/vault")
-            return (200, #"{"workspaceId":"workspace-b"}"#)
+            return (200, #"{"workspaceId":"workspace-b","accountId":"account-b"}"#)
         }
         await assertCommandRejected()
     }
@@ -114,7 +114,7 @@ final class LocalWorkspaceCommandsTests: XCTestCase {
         LocalCommandProtocol.handler = { request in
             XCTAssertEqual(request.url!.path, "/api/vault")
             try Data(#"{"token":"wsk_rotated","serverOrigin":"https://texttext.app"}"#.utf8).write(to: credential)
-            return (200, #"{"workspaceId":"workspace-a"}"#)
+            return (200, #"{"workspaceId":"workspace-a","accountId":"account-a"}"#)
         }
         await assertCommandRejected()
         LocalCommandProtocol.handler = { request in

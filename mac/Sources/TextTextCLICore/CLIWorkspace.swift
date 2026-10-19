@@ -6,6 +6,7 @@ import TextTextFileProviderKit
 /// than `TextTextSyncAPI` makes the remote CLI path independently testable while
 /// still reusing the production authenticated sync transport.
 public protocol TextTextCLISyncAPI: Sendable {
+    func canonicalCLIInventory(expectedWorkspaceId: String?, expectedAccountId: String?) async -> Result<TextTextCLIInventory, TextTextSyncError>
     func workspace() async -> Result<TextTextWorkspace, TextTextSyncError>
     func manifest(folderId: String) async
         -> Result<[TextTextManifestItem], TextTextSyncError>
@@ -159,7 +160,12 @@ public enum CLIWorkspace: Sendable {
             let origin = credentials.validatedServerOrigin
         {
             let api = LiveTextTextSyncAPI(origin: origin, token: credentials.token)
-            return .remote(RemoteDocumentStore(api: api))
+            return .remote(RemoteDocumentStore(api: api, validateAuthority: {
+                guard let latest = DeviceCredentials.load(environment: environment),
+                      latest.token == credentials.token, latest.serverOrigin == credentials.serverOrigin else {
+                    throw TextTextCLIError.workspaceUnavailable("the signed-in account changed")
+                }
+            }))
         }
 
         // Finder integration is optional and may be disabled. Never silently
@@ -478,12 +484,18 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     }
 
     private let api: any TextTextCLISyncAPI
+    private let expectedWorkspaceId: String?
+    private let expectedAccountId: String?
+    private let validateAuthority: @Sendable () throws -> Void
     private let cacheLock = NSLock()
     private var contentByItemId: [String: TextTextFileContent] = [:]
     private var documentByItemId: [String: RemoteDocument] = [:]
 
-    public init(api: any TextTextCLISyncAPI) {
+    public init(api: any TextTextCLISyncAPI, expectedWorkspaceId: String? = nil, expectedAccountId: String? = nil, validateAuthority: @escaping @Sendable () throws -> Void = {}) {
+        self.validateAuthority = validateAuthority
         self.api = api
+        self.expectedWorkspaceId = expectedWorkspaceId
+        self.expectedAccountId = expectedAccountId
     }
 
     /// Server paths are data, never absolute filesystem locations. Reject a
@@ -551,6 +563,8 @@ public final class RemoteDocumentStore: @unchecked Sendable {
             }
         }
 
+        // A supplied parent is an exact scope, never a hint for global title search.
+        guard !normalized.contains("/") else { throw TextTextCLIError.documentNotFound(name) }
         let needle = ((normalized as NSString).lastPathComponent as NSString)
             .deletingPathExtension.lowercased()
         let matches = documents.filter {
@@ -740,10 +754,12 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         if let body { arguments["body"] = body }
         if let kind { arguments["kind"] = kind }
         let argumentsJSON = String(decoding: try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys]), as: UTF8.self)
+        try validateAuthority()
         let result = await api.agentRunCommand(
             name: "create_item", argumentsJSON: argumentsJSON,
             agentName: CLICommandActor.current?.name,
             agentIntent: CLICommandActor.current?.message)
+        try validateAuthority()
         let itemId: String
         let authoritativePath: String?
         switch result {
@@ -757,11 +773,13 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         case .failure(.network):
             // A lost response may have committed. Reusing the same key makes
             // one bounded retry safe instead of creating a duplicate.
-            switch await api.agentRunCommand(
+            try validateAuthority()
+            let retry = await api.agentRunCommand(
                 name: "create_item", argumentsJSON: argumentsJSON,
                 agentName: CLICommandActor.current?.name,
                 agentIntent: CLICommandActor.current?.message)
-            {
+            try validateAuthority()
+            switch retry {
             case .success(let value):
                 guard let id = value.structuredContent?.item?.id, !id.isEmpty else {
                     throw TextTextCLIError.workspaceUnavailable(
@@ -789,16 +807,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         }) {
             return created
         }
-        let folderPath = displayPath(
-            for: targetFolder, folders: current.workspace.folders)
-        let filename = TextTextFilename.filename(
-            title: title, slug: itemId, representation: .textpack)
-        return RemoteDocument(
-            path: [folderPath, filename].filter { !$0.isEmpty }.joined(separator: "/"),
-            itemId: itemId,
-            folderId: targetFolder.id,
-            workspaceHandle: current.workspace.blog.handle,
-            representation: .textpack)
+        throw TextTextCLIError.workspaceUnavailable("the created document is absent from the canonical inventory")
     }
 
     @discardableResult
@@ -874,71 +883,60 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     }
 
     private func snapshot() async throws -> Snapshot {
-        let workspace: TextTextWorkspace
-        switch await api.workspace() {
-        case .success(let value): workspace = value
+        try validateAuthority()
+        let inventory: TextTextCLIInventory
+        switch await api.canonicalCLIInventory(expectedWorkspaceId: expectedWorkspaceId, expectedAccountId: expectedAccountId) {
+        case .success(let value): inventory = value
         case .failure(let error): throw Self.cliError(error)
         }
-
-        let manifests = try await withThrowingTaskGroup(
-            of: (TextTextWorkspaceFolder, [TextTextManifestItem]).self
-        ) { group in
-            for folder in workspace.folders {
-                group.addTask { [api] in
-                    switch await api.manifest(folderId: folder.id) {
-                    case .success(let entries): return (folder, entries)
-                    case .failure(let error): throw Self.cliError(error)
-                    }
-                }
-            }
-            var values: [(TextTextWorkspaceFolder, [TextTextManifestItem])] = []
-            for try await value in group { values.append(value) }
-            return values
+        try validateAuthority()
+        guard expectedWorkspaceId == nil || expectedWorkspaceId == inventory.workspaceId,
+              expectedAccountId == nil || expectedAccountId == inventory.accountId else {
+            throw TextTextCLIError.workspaceUnavailable("the signed-in workspace changed")
         }
-
-        var documents: [RemoteDocument] = []
-        for (folder, entries) in manifests {
-            let siblings = TextTextFilename.disambiguate(
-                entries.compactMap {
-                    TextTextItemMapper.item(
-                        for: $0, inFolder: folder.id,
-                        handle: workspace.blog.handle, readOnly: false)
-                })
-            let folderPath = displayPath(for: folder, folders: workspace.folders)
-            for item in siblings {
-                guard let itemId = item.serverId,
-                    let representation = item.representation
-                else { continue }
-                documents.append(
-                    RemoteDocument(
-                        path: [folderPath, item.filename]
-                            .filter { !$0.isEmpty }.joined(separator: "/"),
-                        itemId: itemId,
-                        folderId: folder.id,
-                        workspaceHandle: workspace.blog.handle,
-                        representation: representation))
+        func fold(_ value: String) -> String { value.precomposedStringWithCanonicalMapping.lowercased() }
+        var folderPaths = Set<String>()
+        var folders: [TextTextWorkspaceFolder] = []
+        for value in inventory.folders {
+            let components = value.split(separator: "/", omittingEmptySubsequences: false)
+            guard !value.isEmpty, value.utf8.count <= 4096, !value.contains("\\"), !value.contains(":"),
+                  !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+                  folderPaths.insert(fold(value)).inserted else {
+                throw TextTextCLIError.workspaceUnavailable("the canonical folder inventory is ambiguous or invalid")
             }
+            let mode = fold(value) == "notes" ? "notes" : fold(value) == "bookmarks" ? "bookmarks" : fold(value) == "blog" ? "blog" : ""
+            folders.append(.init(id: value, name: String(components.last!), path: value, mode: mode, parentId: components.count > 1 ? components.dropLast().joined(separator: "/") : nil))
+        }
+        var identities = Set<String>(), paths = Set<String>(), documents: [RemoteDocument] = []
+        for item in inventory.items where !item.isDeleted {
+            let value = try Self.commandPath(item.relativePath, fallback: "")
+            let parent = value.split(separator: "/").dropLast().joined(separator: "/")
+            guard !item.itemId.isEmpty, identities.insert(item.itemId).inserted, paths.insert(fold(value)).inserted,
+                  parent.isEmpty || folders.contains(where: { $0.path == parent }) else {
+                throw TextTextCLIError.workspaceUnavailable("the canonical document inventory is ambiguous or invalid")
+            }
+            documents.append(.init(path: value, itemId: item.itemId, folderId: parent, workspaceHandle: inventory.workspaceId, representation: .textpack))
         }
         documents.sort { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
-        let byPath = Dictionary(
-            uniqueKeysWithValues: workspace.folders.map {
-                (displayPath(for: $0, folders: workspace.folders).lowercased(), $0)
-            })
-        return Snapshot(
-            workspace: workspace, documents: documents,
-            foldersByDisplayPath: byPath)
+        let workspace = TextTextWorkspace(blog: .init(handle: inventory.workspaceId, name: inventory.name, username: nil), folders: folders)
+        return Snapshot(workspace: workspace, documents: documents, foldersByDisplayPath: Dictionary(uniqueKeysWithValues: folders.map { (fold($0.path), $0) }))
     }
 
     private func fetchCommandContent(
         _ document: RemoteDocument
     ) async throws -> TextTextFileContent {
-        switch await api.agentReadItem(
+        try validateAuthority()
+        let result = await api.agentReadItem(
             postId: document.itemId,
             agentName: CLICommandActor.current?.name,
             agentIntent: CLICommandActor.current?.message)
-        {
+        try validateAuthority()
+        switch result {
         case .success(let reply):
-            guard let markdown = reply.structuredContent?.markdown,
+            guard reply.structuredContent?.item?.id == document.itemId,
+                reply.structuredContent?.item?.path == nil || document.path == document.itemId || reply.structuredContent?.item?.path == document.path,
+                let markdown = reply.structuredContent?.markdown,
                 let hash = reply.structuredContent?.item?.hash,
                 !hash.isEmpty
             else {
@@ -956,6 +954,7 @@ public final class RemoteDocumentStore: @unchecked Sendable {
     private func cachedOrFetchContent(
         _ document: RemoteDocument
     ) async throws -> TextTextFileContent {
+        try validateAuthority()
         if let cached = cacheLock.withLock({ contentByItemId[document.itemId] }) {
             return cached
         }
@@ -1005,10 +1004,10 @@ public final class RemoteDocumentStore: @unchecked Sendable {
         let normalized =
             requested
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .lowercased()
+            .precomposedStringWithCanonicalMapping.lowercased()
         if let exact = snapshot.foldersByDisplayPath[normalized] { return exact }
         let matches = snapshot.workspace.folders.filter {
-            $0.path.lowercased() == normalized || $0.name.lowercased() == normalized
+            $0.path.precomposedStringWithCanonicalMapping.lowercased() == normalized || $0.name.precomposedStringWithCanonicalMapping.lowercased() == normalized
         }
         switch matches.count {
         case 0: throw TextTextCLIError.folderNotFound(requested)

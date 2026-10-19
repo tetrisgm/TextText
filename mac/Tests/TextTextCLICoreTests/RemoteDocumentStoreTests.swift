@@ -1,9 +1,92 @@
 import TextTextFileProviderKit
 import XCTest
+import TextTextWorkspaceCore
 
 @testable import TextTextCLICore
 
 final class RemoteDocumentStoreTests: XCTestCase {
+    func testCanonicalInventoryUsesPhysicalPathsBeyondLegacyHundredAndCanonicalFolderForCreate() async throws {
+        let legacy = folder(id: "legacy", name: "Notes", path: "notes", mode: "notes")
+        let api = FakeCLISyncAPI(workspace: workspace(folders: [legacy]), manifests: [:], contents: ["target": ("exact body", "hash")], commandPath: "Notes/New-created.textpack")
+        var entries = (0..<150).map { LocalVaultRemoteItem(itemId: "id-\($0)", relativePath: "Notes/File-\($0).textpack", revision: "r") }
+        entries.append(.init(itemId: "target", relativePath: "Notes/Receipt-target.textpack", revision: "r"))
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: ["Notes"], items: entries))
+        let fresh = RemoteDocumentStore(api: api)
+        let listed = try await fresh.list()
+        let resolved = try await fresh.resolve("Notes/Receipt-target.textpack")
+        XCTAssertEqual(listed.count, 151)
+        XCTAssertEqual(resolved.itemId, "target")
+        let receipt = try await fresh.create(title: "New", body: nil, folder: "Notes", kind: "note", idempotencyKey: "canonical-new")
+        let reopened = try await RemoteDocumentStore(api: api).resolve(receipt.path)
+        XCTAssertEqual(reopened.itemId, "created")
+        XCTAssertEqual(reopened.path, receipt.path)
+        let created = await api.lastCreate()
+        let events = await api.recordedEvents()
+        XCTAssertEqual(created?.folderPath, "Notes")
+        XCTAssertFalse(events.contains("workspace"))
+    }
+
+    func testCapturedAuthorityIsRevalidatedAfterInventoryBeforeCreate() async throws {
+        let api = FakeCLISyncAPI(workspace: workspace(folders: []), manifests: [:])
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: ["Notes"], items: []))
+        let authority = ChangingCLIAuthority()
+        let store = RemoteDocumentStore(api: api, validateAuthority: { try authority.validate() })
+        do { _ = try await store.create(title: "No write", folder: "Notes"); XCTFail("changed credential must refuse") } catch {}
+        let created = await api.lastCreate()
+        XCTAssertNil(created)
+    }
+
+    func testCreateRefusesChangedAuthorityAfterSuccessOrLostReplyWithoutRetrying() async throws {
+        for lostReply in [false, true] {
+            let notes = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+            let api = FakeCLISyncAPI(workspace: workspace(folders: [notes]), manifests: [:], commandPath: "Notes/New.textpack")
+            if lostReply { await api.loseNextCreateReply() }
+            let authority = ChangingCLIAuthority(failAfter: 3)
+            let store = RemoteDocumentStore(api: api, validateAuthority: { try authority.validate() })
+            do { _ = try await store.create(title: "New", folder: "Notes"); XCTFail("no stale response acknowledgement") } catch {}
+            let events = await api.recordedEvents()
+            XCTAssertEqual(events.filter { $0 == "run:create_item" }.count, 1)
+        }
+    }
+
+    func testPhysicalReceiptPathWinsOverUnrelatedLegacyVirtualDisplayPath() async throws {
+        let legacy = folder(id: "notes", name: "Notes", path: "Notes", mode: "notes")
+        let api = FakeCLISyncAPI(workspace: workspace(folders: [legacy]), manifests: [legacy.id: [item(id: "wrong", title: "Receipt-target")]])
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: ["Notes"], items: [
+            .init(itemId: "target", relativePath: "Notes/Receipt-target.textpack", revision: "r"),
+            .init(itemId: "wrong", relativePath: "Notes/Other.textpack", revision: "r")]))
+        let resolved = try await RemoteDocumentStore(api: api).resolve("Notes/Receipt-target.textpack")
+        XCTAssertEqual(resolved.itemId, "target")
+        do { _ = try await RemoteDocumentStore(api: api).resolve("Foreign/Receipt-target.textpack"); XCTFail("foreign parent must not fall back to global basename") }
+        catch TextTextCLIError.documentNotFound { }
+    }
+
+    func testDefaultFolderRoleKeepsExistingLowercasePhysicalSpelling() async throws {
+        let api = FakeCLISyncAPI(workspace: workspace(folders: []), manifests: [:], commandPath: "notes/New.textpack")
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: ["notes"], items: []))
+        let created = try await RemoteDocumentStore(api: api).create(title: "New")
+        let request = await api.lastCreate()
+        XCTAssertEqual(request?.folderPath, "notes")
+        XCTAssertEqual(created.path, "notes/New.textpack")
+    }
+
+    func testRequestedFolderNormalizesNFCButSendsExactPhysicalSpelling() async throws {
+        let actual = "Cafe\u{301}"
+        let api = FakeCLISyncAPI(workspace: workspace(folders: []), manifests: [:], commandPath: actual + "/New.textpack")
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: [actual], items: []))
+        _ = try await RemoteDocumentStore(api: api).create(title: "New", folder: "Café")
+        let request = await api.lastCreate()
+        XCTAssertEqual(Array(request!.folderPath.utf8), Array(actual.utf8))
+    }
+
+    func testCanonicalAliasInventoryRefusesBeforeCreateRatherThanPickingSpelling() async throws {
+        let api = FakeCLISyncAPI(workspace: workspace(folders: []), manifests: [:])
+        await api.setCanonicalInventory(.init(workspaceId: "workspace", accountId: "account", name: "Fixture", folders: ["Notes", "notes"], items: []))
+        do { _ = try await RemoteDocumentStore(api: api).list(); XCTFail("ambiguous inventory must refuse") } catch {}
+        let events = await api.recordedEvents()
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testCLIWorkspaceChoosesSignedInDeviceCredentialWithoutAMount() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -521,6 +604,8 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         let agentIntent: String?
     }
 
+    private var canonicalOverride: TextTextCLIInventory?
+    func setCanonicalInventory(_ value: TextTextCLIInventory) { canonicalOverride = value }
     private let workspaceValue: TextTextWorkspace
     private var manifests: [String: [TextTextManifestItem]]
     private let contents: [String: (markdown: String, hash: String)]
@@ -558,6 +643,24 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
                 TextTextAgentCommandReply(
                     item: TextTextAgentCommandItem(id: "updated", title: "Updated", hash: "hash-2"))
             )
+    }
+
+    func canonicalCLIInventory(expectedWorkspaceId: String?, expectedAccountId: String?) async -> Result<TextTextCLIInventory, TextTextSyncError> {
+        if let canonicalOverride { return .success(canonicalOverride) }
+        // Legacy-shaped inputs below are test fixture builders only. Production
+        // inventory never invokes the old workspace or folder-manifest routes.
+        var entries: [LocalVaultRemoteItem] = []
+        for folder in workspaceValue.folders {
+            let mapped = TextTextFilename.disambiguate((manifests[folder.id] ?? []).compactMap {
+                TextTextItemMapper.item(for: $0, inFolder: folder.id, handle: workspaceValue.blog.handle, readOnly: false)
+            })
+            for item in mapped {
+                if let id = item.serverId {
+                    entries.append(.init(itemId: id, relativePath: folder.path + "/" + item.filename, revision: "fixture"))
+                }
+            }
+        }
+        return .success(.init(workspaceId: workspaceValue.blog.handle, accountId: "fixture-account", name: workspaceValue.blog.name, folders: workspaceValue.folders.map(\.path), items: entries))
     }
 
     func workspace() async -> Result<TextTextWorkspace, TextTextSyncError> {
@@ -641,6 +744,9 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
         let created = Self.item(id: "created", title: "Field notes")
         if let folder = workspaceValue.folders.first(where: { $0.path == folderPath }) {
             manifests[folder.id, default: []].append(created)
+        }
+        if let value = canonicalOverride, let commandPath {
+            canonicalOverride = .init(workspaceId: value.workspaceId, accountId: value.accountId, name: value.name, folders: value.folders, items: value.items + [.init(itemId: "created", relativePath: commandPath, revision: "hash-created")])
         }
         return .success(
             TextTextAgentCommandReply(
@@ -729,5 +835,17 @@ private actor FakeCLISyncAPI: TextTextCLISyncAPI {
             kind: "note", slug: id, title: title, status: "draft",
             hash: "manifest-\(id)", id: id, date: nil, createdAt: nil,
             updatedAt: nil, url: "/api/sync/v1/files/\(id)")
+    }
+}
+
+private final class ChangingCLIAuthority: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reads = 0
+    private let failAfter: Int
+    init(failAfter: Int = 1) { self.failAfter = failAfter }
+    func validate() throws {
+        lock.lock(); defer { lock.unlock() }
+        reads += 1
+        if reads > failAfter { throw TextTextCLIError.workspaceUnavailable("fixture account changed") }
     }
 }
