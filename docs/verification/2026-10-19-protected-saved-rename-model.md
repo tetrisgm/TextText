@@ -17,3 +17,12 @@ Both models reject unknown/duplicate fields, invalid Unicode, trailing commas, f
 - Both consume the same 32 structured, nine raw-record and two raw-map codec cases, plus 1,000/1,001 map limits and raw-state duplicate/Unicode checks.
 
 No existing Sync integration, live format publication, installed app or owner content changed. Actual PC full integration and actionable recovery UI remain separate work.
+
+## Receipt-identity correction after model preparation
+
+Follow-up to `7f968c14`: a terminal-rejected to stopped transition now requires the exact existing terminal receipt, including its revision and path. A separately valid-shaped substituted receipt is refused before the state writer. The original preparation evidence above is retained.
+
+- Mac: 16 tests, zero failures or skips, exit zero; `/private/tmp/texttext-shared-rename-model-receipt-identity-20261019.log`. New negative cases substitute the terminal revision or path; the unchanged receipt remains accepted.
+- Portable C#: 106 checks, zero failures or skips, exit zero; `/private/tmp/texttext-protected-saved-model-receipt-guard-20261019.log`, SHA256 `e988286a24a1a0959d56c19bed6506f01a6782d6037b8051cafcf95c543ce1f5`. This retains the prior 104 checks and adds both substitution refusals.
+
+This correction remains value-model validation. It does not establish integrated rename recovery, publish a profile, or change owner content.

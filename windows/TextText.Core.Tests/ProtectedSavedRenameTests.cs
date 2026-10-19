@@ -62,6 +62,9 @@ static class ProtectedSavedRenameTests
         Refuses(()=>ProtectedSavedRename.Stop(ProtectedSavedRename.Consume(pending,Receipt(deleted:true)).Rejected!,new("Local.textpack","Server.textpack",Lifecycle,Lifecycle)),check,"deleted server target cannot fabricate stopped live paths");
         Refuses(()=>ProtectedSavedRename.Stop(ProtectedSavedRename.Consume(pending,Receipt() with{Revision=null}).Rejected!,new("Local.textpack","Server.textpack",Lifecycle,Lifecycle)),check,"missing server revision remains review only");
         var stopped=Stopped();var restarted=JsonSerializer.Deserialize<ProtectedSavedRename.Record>(JsonSerializer.Serialize(stopped))!;
+        var terminalMap=new Dictionary<string,ProtectedSavedRename.Record>{{Item,rejected}};
+        Refuses(()=>ProtectedSavedRename.Replace(new(Root,Scope),terminalMap,Item,rejected,stopped with{Receipt=stopped.Receipt! with{Revision=new string('e',64)}}),check,"stopping cannot replace the immutable typed rejection revision");
+        Refuses(()=>ProtectedSavedRename.Replace(new(Root,Scope),terminalMap,Item,rejected,stopped with{Receipt=stopped.Receipt! with{RelativePath="Changed.textpack"},Resolution=stopped.Resolution! with{RemotePath="Changed.textpack"}}),check,"stopping cannot replace the immutable typed rejection path");
         check(ProtectedSavedRename.StoppedFactsMatch(restarted,"Local.textpack","Server.textpack",Lifecycle,Lifecycle,true),"stopped exact paths/generations remain matching after restart");
         // The evidence matcher intentionally receives no text hash/revision.
         check(ProtectedSavedRename.StoppedFactsMatch(restarted,"Local.textpack","Server.textpack",Lifecycle,Lifecycle,true),"peer text edits do not invalidate path suppression evidence");

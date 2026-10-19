@@ -151,6 +151,17 @@ final class LocalVaultSharedRenameTests: XCTestCase {
         let completed = try Model.commit(context: .init(rootHash: root, scope: scope), current: next, itemId: "item", expected: record, replacement: nil, completion: receipt(record, status: "moved", path: record.request.destination, revision: revision)) { committed = $0 }
         XCTAssertTrue(completed.isEmpty)
     }
+    func testStoppingCannotReplaceTheExactTerminalReceipt() throws {
+        let old = try rejected()
+        for (path, changedRevision) in [("Notes/A.textpack", localHash), ("Notes/Other.textpack", revision)] {
+            guard case .rejected(let changed) = try Model.consume(receipt(pending(), path: path, revision: changedRevision), for: pending()) else { return XCTFail() }
+            let proposed = try Model.stopped(changed, resolution: .init(localPath: "Notes/B.textpack", remotePath: path, localLifecycle: "generation", remoteLifecycle: "generation"))
+            XCTAssertThrowsError(try Model.commit(context: .init(rootHash: root, scope: scope), current: ["item": old], itemId: "item", expected: old, replacement: proposed) { _ in XCTFail("Terminal receipt identity changed") })
+        }
+        let valid = try Model.stopped(old, resolution: .init(localPath: "Notes/B.textpack", remotePath: "Notes/A.textpack", localLifecycle: "generation", remoteLifecycle: "generation"))
+        let result = try Model.commit(context: .init(rootHash: root, scope: scope), current: ["item": old], itemId: "item", expected: old, replacement: valid) { XCTAssertEqual($0["item"]?.receipt, old.receipt) }
+        XCTAssertEqual(result["item"], valid)
+    }
     func testStoppedReplacementRequiresDurableExactArchiveBeforeWholeStateCommit() throws {
         let old = try stopped(), fresh = pending(destination: "Notes/C.textpack", operation: "22222222-2222-4222-8222-222222222222")
         let current = ["item": old]; var events: [String] = [], identities: [String] = []

@@ -209,6 +209,7 @@ public static class ProtectedSavedRename
             Validate(replacement,basis.RootHash,basis.Scope);
             if(expected.Request==replacement.Request) {
                 if(expected.BaselineHash!=replacement.BaselineHash||expected.Lifecycle!=replacement.Lifecycle||
+                   expected.Phase==Phase.TerminalRejected&&replacement.Receipt!=expected.Receipt||
                    !(expected==replacement||expected.Phase==Phase.Pending&&replacement.Phase==Phase.TerminalRejected||expected.Phase==Phase.TerminalRejected&&replacement.Phase==Phase.Stopped))throw Changed();
             } else {
                 if(observed is null)throw Changed();ValidateFreshReplacement(expected,replacement,observed);

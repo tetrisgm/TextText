@@ -274,7 +274,7 @@ enum LocalVaultSharedRename {
         if let expected, let replacement {
             if expected.request == replacement.request {
                 guard expected.rootHash == replacement.rootHash, expected.scope == replacement.scope, expected.baselineHash == replacement.baselineHash, expected.lifecycle == replacement.lifecycle,
-                      (expected == replacement || expected.phase == .pending && replacement.phase == .terminalRejected || expected.phase == .terminalRejected && replacement.phase == .stopped) else { throw Failure.changed }
+                      (expected == replacement || expected.phase == .pending && replacement.phase == .terminalRejected || expected.phase == .terminalRejected && replacement.phase == .stopped && expected.receipt == replacement.receipt) else { throw Failure.changed }
             } else {
                 guard expected.phase == .stopped, replacement.phase == .pending, expected.request.operationId != replacement.request.operationId,
                       expected.scope == replacement.scope, expected.rootHash == replacement.rootHash, expected.request.itemId == replacement.request.itemId,
