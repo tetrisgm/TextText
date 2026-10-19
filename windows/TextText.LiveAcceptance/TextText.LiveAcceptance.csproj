@@ -4,5 +4,5 @@
     <UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../TextText.Windows/TextText.Windows.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../TextText.Windows/TextText.Windows.csproj" AdditionalProperties="TextTextStressActor=true" /></ItemGroup>
 </Project>

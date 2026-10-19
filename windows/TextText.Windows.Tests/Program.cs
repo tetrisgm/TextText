@@ -11,6 +11,10 @@ using TextText.Windows;
 
 var failures = 0;
 void Assert(bool condition, string name) { Console.WriteLine((condition ? "ok   " : "FAIL ") + name); if (!condition) failures++; }
+#if TEXTTEXT_STRESS_ACTOR
+await PrivateActorWorkspaceTests.Run(Assert);
+if(args.Contains("--isolated-workspace-only"))return failures==0?0:1;
+#endif
 await AccountIdentityTests.Run(Assert);
 static byte[] Pack(string body, string id) {
     using var output = new MemoryStream();

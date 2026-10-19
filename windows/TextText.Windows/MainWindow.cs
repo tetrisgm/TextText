@@ -32,6 +32,10 @@ public sealed partial class MainWindow : Window
     private bool closeAfterActivation;
     private readonly RendererFlushGuard flushGuard = new();
     private readonly string? webViewProfile;
+#if TEXTTEXT_STRESS_ACTOR
+    private readonly PrivateActorWorkspace? privateActorWorkspace;
+    public MainWindow(string webViewProfile, PrivateActorWorkspace workspace) : this(webViewProfile) { privateActorWorkspace = workspace; }
+#endif
     // Integration tests can isolate browser drafts while retaining the real
     // native transport. The application entry point always uses the default.
     public MainWindow(string? webViewProfile = null)
@@ -48,6 +52,28 @@ public sealed partial class MainWindow : Window
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+#if TEXTTEXT_STRESS_ACTOR
+        if(privateActorWorkspace is {} isolated) {
+            try {
+                var captured=CredentialStore.Load() ?? throw new IOException("The private actor requires the existing signed-in account.");
+                var accountId=await AccountIdentity.ResolveAsync(http,Origin,captured.Token,captured.AccountId,lifetime.Token);
+                var verified=captured with {AccountId=accountId};account=verified;
+                var directory=new WorkspaceDirectory(http,Origin,()=>Task.FromResult(captured.Token));
+                var selected=await directory.AuthorizeAsync(isolated.WorkspaceId,lifetime.Token);
+                lifetime.Token.ThrowIfCancellationRequested();
+                if(!ReferenceEquals(account,verified)||CredentialStore.Load()!=captured)throw new SharedAccountMismatchException();
+                isolated.PrepareVerified(Origin,accountId);
+                await OpenWorkspace(isolated.Root,replacement:selected,prepareCommit:async()=>{
+                    var reauthorized=await directory.AuthorizeAsync(isolated.WorkspaceId,lifetime.Token);
+                    if(reauthorized!=selected||!ReferenceEquals(account,verified)||CredentialStore.Load()!=captured)throw new SharedAccountMismatchException();
+                    isolated.RevalidateBeforeBinding(Origin,accountId);
+                });
+                isolated.VerifyPublished(Origin,accountId);
+                isolated.Ready.TrySetResult();
+            } catch(Exception error) { isolated.Ready.TrySetException(error); }
+            return;
+        }
+#endif
         try { account = CredentialStore.Load(); if(account is not null) { try { await VerifyAccountIdentity(lifetime.Token); } catch { ShowAccountVerificationRequired(); return; } selectedWorkspace = WorkspaceSelection.Load(account.WorkspaceId); await OpenWorkspace(); } else ShowLogin(); }
         catch (LegacyAccountStateException) { ShowRetainedWorkReview(); }
         catch { if (account is not null) ShowWorkspaceUnavailable(); else ShowLogin("Your saved sign-in could not be opened. Please sign in again."); }
@@ -165,7 +191,15 @@ public sealed partial class MainWindow : Window
         var identity = account ?? throw new InvalidOperationException("Sign in required");
         var active = identity with { WorkspaceId = replacement?.Id ?? ActiveWorkspaceId, Name = replacement?.Name ?? ActiveWorkspaceName };
         if(!Guid.TryParse(active.WorkspaceId,out _)) throw new InvalidOperationException("Invalid workspace");
+#if TEXTTEXT_STRESS_ACTOR
+        string nextRoot;
+        if(privateActorWorkspace is {} isolatedRoot) {
+            if(active.WorkspaceId!=isolatedRoot.WorkspaceId||selectedRoot!=isolatedRoot.Root)throw new IOException("Private actor workspace cannot change.");
+            nextRoot=isolatedRoot.Root;
+        } else nextRoot=selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
+#else
         var nextRoot = selectedRoot ?? WorkspaceRoot(active.WorkspaceId);
+#endif
         Directory.CreateDirectory(nextRoot);
         WorkspaceLocation.Bind(nextRoot, Origin.AbsoluteUri, active.WorkspaceId);
         var nextWeb = new WebView2 { Width = 1, Height = 1, IsHitTestVisible = false };
@@ -217,6 +251,9 @@ public sealed partial class MainWindow : Window
             () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task)));
         try { nextBridge = CreateBridge(); }
         catch(LegacyAccountStateException) {
+#if TEXTTEXT_STRESS_ACTOR
+            if(privateActorWorkspace is not null)throw;
+#endif
             if(!await ReviewRetainedWork(nextRoot,active,identity))throw;
             if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
             nextBridge = CreateBridge();
@@ -295,6 +332,9 @@ public sealed partial class MainWindow : Window
             case "native.chooseWorkspaceFolder": await ChooseWorkspaceFolder(); return null;
             case "native.settings": MessageBox.Show(this,$"{account?.Name}\n\nFiles: {root}","TextText settings",MessageBoxButton.OK,MessageBoxImage.Information); return null;
             case "native.signOut":
+#if TEXTTEXT_STRESS_ACTOR
+                if(privateActorWorkspace is not null)throw new IOException("The private actor cannot change the saved sign-in.");
+#endif
                 if(MessageBox.Show(this,"Log out of TextText? Your saved files remain on this computer.","TextText",MessageBoxButton.OKCancel) != MessageBoxResult.OK) return null;
                 if(transitioning) return null;
                 transitioning = true;

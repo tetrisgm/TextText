@@ -34,7 +34,7 @@ static class Stress
         public bool Online { get => Volatile.Read(ref online) != 0; set => Volatile.Write(ref online, value ? 1 : 0); }
     }
 
-    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20, string? IdentityReceipt = null, JsonElement? LeafMove = null);
+    sealed record Config(string File, string ItemId, string WorkspaceId, string Title, int TotalMinutes = 20, string? IdentityReceipt = null, JsonElement? LeafMove = null, PrivateActorWorkspace.Isolation? Isolation = null);
     const int MaxRequestBytes = 256 * 1024, MaxText = 64 * 1024, MaxEditText = 1024;
     static readonly TimeSpan ObserveBound = TimeSpan.FromSeconds(30), EditBound = TimeSpan.FromSeconds(15);
     static readonly Regex MarkerPattern = new(@"\[(mac|pc)-(app|web|cli) r(\d+) [a-z]+\d+\]", RegexOptions.Compiled);
@@ -47,6 +47,12 @@ static class Stress
         try
         {
             var config = JsonSerializer.Deserialize<Config>(File.ReadAllText(configPath), Program.Json) ?? throw new Exception("Missing stress config");
+            using(var raw=JsonDocument.Parse(File.ReadAllBytes(configPath))) {
+                var fields=raw.RootElement.EnumerateObject().Where(p=>p.Name.Equals("isolation",StringComparison.OrdinalIgnoreCase)).ToArray();
+                if(fields.Length>0) {
+                    if(fields.Length!=1||fields[0].Name!="isolation"||PrivateActorWorkspace.ParseIsolation(fields[0].Value)!=config.Isolation)throw new IOException("Invalid private actor isolation config.");
+                }
+            }
             Validate(config);
             if (!Path.IsPathFullyQualified(session) || !Directory.Exists(session)) throw new Exception("Stress session directory must be an existing absolute directory created by the relay.");
             if (Directory.EnumerateFiles(session, "rep-*.json").Any() || File.Exists(Path.Combine(session, "events.jsonl"))) throw new Exception("Stress session directory was already used; use a new session directory.");
@@ -78,8 +84,10 @@ static class Stress
             var generationMatch = GenerationPattern.Match(Path.GetFileName(Path.TrimEndingDirectorySeparator(session)));
             var generation = generationMatch.Success ? int.Parse(generationMatch.Groups[1].Value) : 1;
             MainWindow.WorkspaceFactory = context => new WindowsBridge(context);
-            var window = new MainWindow(Path.Combine(Path.GetFullPath(session), "webview-profile"));
-            window.ActivateFiles([config.File]);
+            var isolated=config.Isolation is {} isolation ? new PrivateActorWorkspace(isolation,session,config.File,config.WorkspaceId,config.ItemId,config.Title) : null;
+            var profile=Path.Combine(Path.GetFullPath(session), "webview-profile");
+            var window = isolated is null ? new MainWindow(profile) : new MainWindow(profile,isolated);
+            if(isolated is null)window.ActivateFiles([config.File]);
             var exit = 1;
             window.Loaded += async (_, _) =>
             {
@@ -87,6 +95,16 @@ static class Stress
                 var runner = new Runner(window, config, session, generation, transport, Record, $"native-mainwindow/{version}/{assemblyHash[..16]}");
                 try
                 {
+                    if(isolated is not null) {
+                        await isolated.Ready.Task.WaitAsync(TimeSpan.FromSeconds(90),timeout.Token);
+                        var bridge=Program.Field(window,"bridge") as INativeWorkspaceBridge ?? throw new IOException("Private actor bridge is unavailable.");
+                        await Program.Until(async()=>{
+                            var ready=JsonSerializer.SerializeToElement(await bridge.InvokeAsync("files.ready",JsonSerializer.SerializeToElement(new{itemId=config.ItemId}),timeout.Token));
+                            return ready.GetProperty("ready").GetBoolean()&&File.Exists(config.File);
+                        },timeout.Token,"Private actor fixture did not materialize through native sync.");
+                        isolated.VerifyFixture();
+                        window.ActivateFiles([config.File]);
+                    }
                     await runner.Loop(timeout.Token).ConfigureAwait(false);
                     exit = runner.Failure is null ? 0 : 1;
                 }
@@ -151,7 +169,7 @@ static class Stress
             || config.TotalMinutes is < 1 or > 120)
             throw new Exception("Invalid stress config: absolute .textpack File, Guid ItemId, WorkspaceId, Title starting 'Six-client acceptance ' equal to the file name, TotalMinutes 1..120.");
         if(config.LeafMove is {} leafMove)LeafMoveObservation.ValidateConfig(config.File,config.Title,leafMove);
-        if (TextPackStore.Identity(File.ReadAllBytes(config.File)) != config.ItemId) throw new Exception("Test file identity mismatch.");
+        if (config.Isolation is null && TextPackStore.Identity(File.ReadAllBytes(config.File)) != config.ItemId) throw new Exception("Test file identity mismatch.");
     }
 
     sealed class Runner(MainWindow window, Config config, string session, int generation, CollaborationTransportGate transport, Action<object> log, string adapterName)

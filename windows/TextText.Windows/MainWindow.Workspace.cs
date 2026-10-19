@@ -52,6 +52,9 @@ public sealed partial class MainWindow
     }
     private async Task SwitchWorkspace(JsonElement parameters,CancellationToken ct)
     {
+#if TEXTTEXT_STRESS_ACTOR
+        if(privateActorWorkspace is not null)throw new IOException("The private actor workspace is fixed for this run.");
+#endif
         if(parameters.ValueKind != JsonValueKind.Object || parameters.EnumerateObject().Count()!=1 || !parameters.TryGetProperty("workspaceId",out var value) || value.ValueKind!=JsonValueKind.String)throw new InvalidOperationException("Choose a workspace.");
         if(transitioning || closing)throw new InvalidOperationException("Finish the current operation first.");
         var identity=account ?? throw new InvalidOperationException("Sign in required");
@@ -75,6 +78,9 @@ public sealed partial class MainWindow
     }
     public async Task ChooseWorkspaceFolder(string? initialDirectory = null)
     {
+#if TEXTTEXT_STRESS_ACTOR
+        if(privateActorWorkspace is not null)throw new IOException("The private actor folder is fixed for this run.");
+#endif
         if (transitioning || closing || account is null) return;
         var picker = new Microsoft.Win32.OpenFolderDialog { Title = "Open workspace folder", Multiselect = false };
         if (initialDirectory is not null && Directory.Exists(initialDirectory)) picker.InitialDirectory = initialDirectory;
