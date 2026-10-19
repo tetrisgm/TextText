@@ -20,7 +20,18 @@ static class QueuedUploadPathAdoptionTests
     }
     public static async Task UnknownGeneration(string temp,Action<bool,string> check)
     {
-        using var fixture=await Fixture.Create(temp,"unknown",known:false);
+        using var fixture=await Fixture.Create(temp,"unknown",known:false,expectUnsupportedStaging:!OperatingSystem.IsWindows());
+        if(!OperatingSystem.IsWindows()) {
+            var portableBefore=JsonSerializer.Serialize(fixture.State());var remoteBefore=fixture.Remote.Data.ToArray();
+            bool Retained()=>JsonSerializer.Serialize(fixture.State())==portableBefore&&fixture.State().Outbox.Count==0&&
+                File.ReadAllBytes(fixture.Store.Resolve(Original)).SequenceEqual(fixture.Changed)&&!File.Exists(fixture.Store.Resolve(Moved))&&
+                fixture.Remote.Data.SequenceEqual(remoteBefore)&&fixture.Remote.Attempts.Count==0&&!fixture.Sync.HasEligiblePending;
+            check(RetainedFileReplacement.Fingerprint(fixture.Store.Resolve(Original)) is null&&Retained(),
+                "portable unknown-generation staging requires unavailable Windows fingerprint and retains exact changed bytes without operation or dispatch");
+            await fixture.Pass();fixture.Restart();await fixture.Pass();
+            check(Retained(),"portable unknown-generation staging remains retained without fabricated operation or eligible retry across restart");
+            return;
+        }
         var before=fixture.Proof();fixture.Remote.Item=fixture.Remote.Item with{RelativePath=Moved};
         await fixture.Pass();
         check(fixture.Proof()==before&&fixture.Remote.Attempts.Count==0&&!fixture.Sync.HasEligiblePending&&fixture.Sync.Status.Error=="A queued file update needs review before its path can change. Your file is kept on this device.",
@@ -122,16 +133,20 @@ static class QueuedUploadPathAdoptionTests
         public required TextPackStore Store;public required Remote Remote;public required SyncEngine Sync;public required byte[] Changed;
         public SyncEngine.State State()=>JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(Store.StateDirectory,"sync.json")))!;
         public SyncEngine.Operation Pending=>State().Outbox.Single();
-        public static async Task<Fixture> Create(string temp,string name,bool known=true)
+        public static async Task<Fixture> Create(string temp,string name,bool known=true,bool expectUnsupportedStaging=false)
         {
+            if(expectUnsupportedStaging&&(OperatingSystem.IsWindows()||known))throw new ArgumentException("Unsupported staging is only a portable unknown-generation fixture.");
             var suffix=name+"-"+Guid.NewGuid().ToString("N");
             var store=new TextPackStore(Path.Combine(temp,"queued-path-"+suffix),Path.Combine(temp,"queued-state-"+suffix));
             AccountRootOwnership.Open(store,new(Scope.Origin),Scope.WorkspaceId,Account);
             var original=Pack("Initial",known);var remote=new Remote(original,known);
             var fixture=new Fixture{Store=store,Remote=remote,Changed=Pack("Pending exact bytes",known),Sync=new(store,remote,Account,NativePolicyTestHost.Create(Account))};
             await fixture.Sync.SyncAsync();File.WriteAllBytes(store.Resolve(Original),fixture.Changed);
-            remote.Offline=true;await fixture.Pass();remote.Attempts.Clear();
-            if(fixture.Pending.Hash!=TextPackStore.Hash(fixture.Changed))throw new Exception("Fixture did not stage actual changed bytes.");
+            remote.Offline=true;await fixture.Pass();
+            if(expectUnsupportedStaging) {
+                if(fixture.State().Outbox.Count!=0||remote.Attempts.Count!=0)throw new Exception("Portable unknown generation unexpectedly staged or dispatched an operation.");
+            } else if(fixture.Pending.Hash!=TextPackStore.Hash(fixture.Changed))throw new Exception("Fixture did not stage actual changed bytes.");
+            remote.Attempts.Clear();
             return fixture;
         }
         public async Task Pass(){try{await Sync.SyncAsync();}catch(HttpRequestException){} }

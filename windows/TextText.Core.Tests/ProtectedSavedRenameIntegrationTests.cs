@@ -444,7 +444,15 @@ static class ProtectedSavedRenameIntegrationTests
         if(mode=="known")check(fixture.Saved() is {} saved&&saved.Request.OperationId==original.Id&&saved.Request.BaseRevision==original.Revision&&saved.BaselineHash==original.Hash&&saved.Request.Source==original.Path&&fixture.State()["SharedRenames"]![Id] is null,"known legacy command preserves captured hash/path/revision and ID despite newer text baseline");
         else {
             var review=await fixture.Sync.SavedFileMoveRecoveryReadAsync(original.Id);
-            check(fixture.Saved() is null&&fixture.State()["SharedRenames"]![Id]!.ToJsonString()==JsonSerializer.SerializeToNode(original)!.ToJsonString()&&fixture.Remote.Requests.Count==0&&fixture.Sync.Status.Error=="A saved file move needs review. Its original command and local file are retained."&&review.State=="review"&&review.RequestHash is null&&review.Inspection is null&&!review.RetryAllowed&&!review.KeepNamesAllowed,"legacy "+mode+" remains exact raw review evidence without fabricated generation, terminal proof, or actions");
+            var expectedError="A saved file move needs review. Its original command and local file are retained.";
+            if(mode=="unknown"&&!OperatingSystem.IsWindows()) {
+                // Unknown legacy work requires native generation discovery. The
+                // portable runner cannot supply Windows file identity; it must
+                // retain the command and refuse rather than simulate that proof.
+                check(RetainedFileReplacement.Fingerprint(fixture.Store.Resolve("Local.textpack")) is null,"portable unknown legacy command has no Windows native fingerprint");
+                expectedError=new FileChangedException().Message;
+            }
+            check(fixture.Saved() is null&&fixture.State()["SharedRenames"]![Id]!.ToJsonString()==JsonSerializer.SerializeToNode(original)!.ToJsonString()&&fixture.Remote.Requests.Count==0&&fixture.Sync.Status.Error==expectedError&&review.State=="review"&&review.RequestHash is null&&review.Inspection is null&&!review.RetryAllowed&&!review.KeepNamesAllowed,"legacy "+mode+" remains exact raw review evidence without fabricated generation, terminal proof, or actions");
         }
     }
     static async Task WrongBinding(string temp,string field,Action<bool,string> check) {

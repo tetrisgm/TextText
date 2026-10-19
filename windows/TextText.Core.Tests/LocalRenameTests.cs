@@ -28,7 +28,7 @@ static class LocalRenameTests
         temp=Path.Combine(temp,"clean-close-path");
         var files=Test.OwnedPathStore(Path.Combine(temp,"root"),Path.Combine(temp,"state"));
         var bytes=Pack("clean unchanged text");var original=files.Write("Original.textpack",bytes);
-        var remote=new Test.Fake();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote);
+        var remote=new Test.Fake{Data=bytes,Item=new(Identity,original.Path,original.Hash,Lifecycle:"path-fixture-generation")};var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();
         var statePath=Path.Combine(files.StateDirectory,"sync.json");
         SyncEngine.State State()=>JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!;
         SharedCheckpoint Clean(string path,long generation) {
@@ -56,10 +56,10 @@ static class LocalRenameTests
     {
         var files = Test.OwnedPathStore(Path.Combine(temp, "local-rename"), Path.Combine(temp, "local-rename-state"));
         var initial = files.Write("Notes/Original.textpack", Pack("baseline"));
-        var remote = new Test.Fake();
+        var remote = new Test.Fake{Data=files.Read(initial.Path),Item=new(Identity,initial.Path,initial.Hash,Lifecycle:"path-fixture-generation")};
         var sync = Test.NewOwnedPathSync(files, remote);
         await sync.SyncAsync();
-        await Test.AttestPathGeneration(sync, remote);
+        var initialUploadCount=remote.UploadCount;
         var target = "Archive/Moved.textpack";
         var pending = Pack("pending human edit");
         var next = Pack("pending human edit and more");
@@ -82,7 +82,7 @@ static class LocalRenameTests
             assert(!File.Exists(files.Resolve(initial.Path)) && files.Read(target).SequenceEqual(next),
                 "raw external rename never recreates old path or loses pending bytes");
             await sync.SyncAsync(localChangesOnly: true);
-            assert(remote.Item?.RelativePath == target && remote.UploadCount == 1 && files.Read(target).SequenceEqual(next),
+            assert(remote.Item?.RelativePath == target && remote.UploadCount == initialUploadCount && files.Read(target).SequenceEqual(next),
                 "active raw rename announces path without uploading pending editor bytes");
         }
         using var reopened = new SharedEditingStore(files, Test.NewOwnedPathSync(files, remote),Test.PathAccount);
@@ -106,7 +106,7 @@ static class LocalRenameTests
     {
         var files=Test.OwnedPathStore(Path.Combine(temp,"rename-"+ordering),Path.Combine(temp,"rename-state-"+ordering));
         var initial=files.Write("Notes/Before.textpack",Pack("baseline"));
-        var remote=new Test.Fake();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();
+        var remote=new Test.Fake{Data=files.Read(initial.Path),Item=new(Identity,initial.Path,initial.Hash,Lifecycle:"path-fixture-generation")};var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();
         var pending=Pack("human pending");var cp=Checkpoint(initial.Path,initial.Hash,pending,1);
         var editing=new SharedEditingStore(files,sync,Test.PathAccount);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
@@ -182,7 +182,8 @@ static class LocalRenameTests
     {
         var files=Test.OwnedPathStore(Path.Combine(temp,"announcement-"+scenario),Path.Combine(temp,"announcement-state-"+scenario));
         var initial=files.Write("Original.textpack",Pack("baseline"));
-        var remote=new RenameTransport();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote.Inner);
+        var remote=new RenameTransport();remote.Inner.Data=files.Read(initial.Path);remote.Inner.Item=new(Identity,initial.Path,initial.Hash,Lifecycle:"path-fixture-generation");
+        var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();var initialUploadCount=remote.Inner.UploadCount;
         var editing=new SharedEditingStore(files,sync,Test.PathAccount);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
         var pending=Pack("retained pending writing");
@@ -228,7 +229,7 @@ static class LocalRenameTests
             if(!closed)await sync.SyncAsync();
             assert(remote.Ids.Count==2&&remote.Ids[0]==remote.Ids[1]&&State().ProtectedRenames.Count==0&&State().Items[Identity].Path=="Moved.textpack",
                 "restart replays identical path operation and clears only its confirmed receipt");
-            assert(files.Read("Moved.textpack").SequenceEqual(next)&&session.Checkpoint?.Pending==!closed&&remote.Inner.UploadCount==1,
+            assert(files.Read("Moved.textpack").SequenceEqual(next)&&session.Checkpoint?.Pending==!closed&&remote.Inner.UploadCount==initialUploadCount,
                 "lost path response retains correct journal across "+scenario);
             if(closed)assert(State().Items[Identity].Revision==TextPackStore.Hash(next)&&State().Items[Identity].Hash==TextPackStore.Hash(next),"old move receipt preserves separately ACKed current text hash/revision pair");
         } else if(scenario is "moved-during-reply" or "ack-moved-during-reply") {
