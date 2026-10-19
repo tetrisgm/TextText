@@ -6,7 +6,7 @@ export default defineConfig({ ...base, test: { ...base.test,
   include: [
     'src/sync/session-owner.test.ts',
     'src/local-vault/item-location.test.ts',
-    'src/local-vault/{local-shared-handoff,native-handoff-draft,handoff-update,editor-surface-host,shared-open}.test.ts',
+    'src/local-vault/{local-shared-handoff,native-handoff-draft,handoff-update,editor-surface-host,shared-open,file-mutation-handoff}.test.ts',
     'src/lib/vault/folder-move-{metadata,boundary}.db.test.ts',
     'src/lib/ai/__tests__/proposal-staging.db.test.ts',
     'src/lib/vault/folder-move-review.test.ts',

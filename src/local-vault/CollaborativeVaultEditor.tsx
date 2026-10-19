@@ -2,6 +2,7 @@
 import { HostedVaultEditor } from "./editor-surface-host";
 import { VaultNoteTemplatePicker } from "./VaultNoteTemplatePicker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { EditorImagePasteRequest, EditorImagePasteResult, LocalDocumentRebind } from "@/components/document/UnifiedDocumentEditor";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/document";
@@ -29,6 +30,7 @@ import { packIdentity } from "./pack";
 import type { NativeSharedSession } from "./shared-open";
 import { acquireVaultDocument, type VaultDocumentHandle } from "./document-session";
 import { applyStoryDetails, type StoryDetails } from "./story-details";
+import { closeFileMutationOwner, guardFileMutationInput } from "./file-mutation-handoff";
 
 export type VaultCollaborationConfig = { localHandoff?: import("./local-handoff-capability").LocalHandoffCapability; namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
 export type VaultEditorProps = {
@@ -77,6 +79,16 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const clientRef = useRef<FileCollaborationClient | null>(null);
   const nativeSessionRef = useRef<NativeSharedSession | null>(null);
   const sessionRef = useRef<VaultDocumentHandle | null>(null);
+  const viewEpochRef = useRef(0);
+  const mountedRef = useRef(true);
+  const mutationInputGuardRef = useRef<(() => void) | null>(null);
+  const viewKey = JSON.stringify([config.namespace, config.accountId ?? null, config.workspaceId, config.itemId, config.localFiles ? root : null]);
+  const viewKeyRef = useRef(viewKey); viewKeyRef.current = viewKey;
+  const reopenRef = useRef<{ key: string; generation: number; handle?: VaultDocumentHandle; resolve: () => void; reject: (error: Error) => void } | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; mutationInputGuardRef.current?.(); mutationInputGuardRef.current = null; reopenRef.current?.reject(new Error("The document view changed.")); reopenRef.current = null; };
+  }, []);
   useEffect(() => {
     if (packIdentity(initial.markdown) === config.itemId && packIdentity(file.current.markdown) === config.itemId) {
       file.current = { ...file.current, path: initial.path };
@@ -113,9 +125,14 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   const resolveAssets = useCallback((document: DocumentSnapshot) => substitute(document, assets.mapping), [assets]);
   useEffect(() => {
     let stopped = false;
+    ++viewEpochRef.current;
+    if (reopenRef.current && (reopenRef.current.key !== viewKey || reopenRef.current.generation !== generation)) {
+      reopenRef.current.reject(new Error("The document view changed. Its saved file is kept.")); reopenRef.current = null;
+    }
+    const reopening = reopenRef.current;
     let handle: VaultDocumentHandle;
     try { handle = acquireVaultDocument(config, file.current, root); }
-    catch (error) { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); return; }
+    catch (error) { if (reopenRef.current === reopening) { reopening?.reject(error instanceof Error ? error : new Error("Could not open the shared file.")); reopenRef.current = null; } setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); return; }
     sessionRef.current = handle; acquiredRef.current?.(handle);
     const unsubscribe = handle.session.subscribe({
       changed: session => {
@@ -135,14 +152,29 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         finally { if (!stopped) bind(next, awareness); }
       },
     });
-    void handle.ready.then(() => { if (!stopped) externalReloadRef.current = false; }).catch(error => {
+    void handle.ready.then(() => {
+      if (!stopped) {
+        externalReloadRef.current = false;
+        if (reopening && reopenRef.current === reopening) {
+          if (handle.session.hasClient && handle.session.client.hasBaseline &&
+              !handle.session.client.hasUnreadableJournal && !["error", "recovery", "stale-file", "stale-session"].includes(handle.session.status) &&
+              (!config.localFiles || handle.session.native)) { reopening.handle = handle; reopening.resolve(); }
+          else reopening.reject(new Error("The saved file could not finish reopening. Keep this window open and retry."));
+          reopenRef.current = null;
+        }
+      }
+    }).catch(error => {
       if (stopped) return;
+      if (reopenRef.current === reopening) { reopening?.reject(error instanceof Error ? error : new Error("Could not reopen the file.")); reopenRef.current = null; }
       if (config.localFiles && externalReloadRef.current && error instanceof VaultError && error.code === "local_changed") {
         setWaitingForExternalSync(true); setStatus("offline"); setDetail("Waiting for the updated file to sync…");
       } else { setStatus("error"); setDetail(error instanceof Error ? error.message : "Could not open the shared file."); }
     });
     return () => {
-      stopped = true; unsubscribe();
+      stopped = true; ++viewEpochRef.current;
+      const plannedReopen = viewKeyRef.current === viewKey && reopenRef.current?.key === viewKey && reopenRef.current.generation === generation + 1;
+      if (!plannedReopen) { mutationInputGuardRef.current?.(); mutationInputGuardRef.current = null; }
+      unsubscribe();
       if (sessionRef.current === handle) sessionRef.current = null;
       if (handle.session.hasClient && clientRef.current === handle.session.client) clientRef.current = null;
       if (nativeSessionRef.current === handle.session.native) nativeSessionRef.current = null;
@@ -204,10 +236,14 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
   }, [publishFlush, updateArticle]);
   useEffect(() => { registerFlush(flush, () => file.current, publishFlush, saveStoryDetails, async () => clientRef.current?.flushLocalResult() ?? null); }, [flush, publishFlush, registerFlush, saveStoryDetails]);
   const reset = useCallback(async (recovered = false, waitForSync = false) => {
+    const epoch = viewEpochRef.current, key = viewKey;
+    const current = () => mountedRef.current && viewEpochRef.current === epoch && viewKeyRef.current === key;
+    const assertCurrent = () => { if (!current()) throw new Error("The document view changed. Its saved file is kept."); };
     detachedSaveRef.current.clear();
     const shared = clientRef.current;
     try {
       const fresh = await vaultRequest<VaultFile>("read", { path: shared?.relativePath ?? file.current.path });
+      assertCurrent();
       const freshSnapshot = readDocument(fresh);
       if (shared) {
         const handle = sessionRef.current;
@@ -217,9 +253,11 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           else if (waitForSync && config.localFiles) await detachedSaveRef.current.retireDurably(shared, fresh);
           else await shared.discardCleanJournalDurably();
         })) throw new Error("Save or recover the pending edits before reopening.");
+        assertCurrent();
         if (sessionRef.current === handle) sessionRef.current = null;
         if (clientRef.current === shared) clientRef.current = null;
       }
+      assertCurrent();
       file.current = fresh; setOpened(fresh); setSnapshot(freshSnapshot);
       setClient(null); bind(null); setStatus("offline");
       if (waitForSync) {
@@ -230,26 +268,75 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
         setDetail(""); setGeneration(value => value + 1);
       }
       onChanged();
+      return true;
     } catch (error) {
+      if (!current()) return false;
       detachedSaveRef.current.clear();
       if (waitForSync) setStatus("error");
       setDetail(error instanceof Error ? error.message : "Could not reopen the file.");
+      return false;
     }
-  }, [config.itemId, config.localFiles, onChanged, bind]);
-  const withFileMutation = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
+  }, [config.itemId, config.localFiles, onChanged, bind, viewKey]);
+  const detachClosedOwner = useCallback((handle: VaultDocumentHandle) => {
+    if (sessionRef.current !== handle || handle.phase !== "closed") throw new Error("The document session changed.");
+    sessionRef.current = null; clientRef.current = null; nativeSessionRef.current = null;
+    setClient(null); bind(null); setCanEdit(false);
+  }, [bind]);
+  const withFileMutation = useCallback(async <T,>(action: (handle: VaultDocumentHandle, assertCurrent: () => void) => Promise<T>): Promise<T> => {
     const handle = sessionRef.current;
     if (!handle) throw new Error("The document session is still opening.");
-    return handle.runExclusive(async () => {
-      const surface = surfaceRef.current;
-      if (surface) surface.inert = true;
-      handle.session.pausePresence(true);
-      try { return await action(); }
-      finally { if (surface) surface.inert = false; handle.session.pausePresence(false); }
-    });
-  }, []);
+    const epoch = viewEpochRef.current, surface = surfaceRef.current;
+    const assertCurrent = () => {
+      if (!mountedRef.current || viewEpochRef.current !== epoch ||
+          (sessionRef.current !== handle && !(handle.phase === "closed" && sessionRef.current === null)))
+        throw new Error("The document view changed. Its saved file is kept.");
+    };
+    if (surface) surface.inert = true;
+    const removeInputGuard = surface ? guardFileMutationInput(surface) : () => {};
+    mutationInputGuardRef.current = removeInputGuard;
+    handle.session.pausePresence(true);
+    let result!: T, failure: unknown, reopened = false;
+    try {
+      try { result = await handle.runExclusive(() => action(handle, assertCurrent)); }
+      catch (error) { failure = error; }
+      // runExclusive has released its closing tombstone before a new owner can
+      // acquire. Keep the old input surface inert until the new owner is ready.
+      if (handle.phase === "closed" && mountedRef.current && viewEpochRef.current === epoch) {
+        if (sessionRef.current === handle) detachClosedOwner(handle);
+        let waiter!: NonNullable<typeof reopenRef.current>;
+        const ready = new Promise<void>((resolve, reject) => { waiter = { key: viewKey, generation: generation + 1, resolve, reject }; reopenRef.current = waiter; });
+        void ready.catch(() => {});
+        if (!await reset()) {
+          waiter.reject(new Error("Could not reopen the saved file."));
+          if (reopenRef.current === waiter) reopenRef.current = null;
+        }
+        try {
+          await ready;
+          if (!mountedRef.current || viewKeyRef.current !== viewKey || sessionRef.current !== waiter.handle)
+            throw new Error("The document view changed. Its saved file is kept.");
+          // Commit the newly bound editor (including a busy caller's controls)
+          // before releasing inert/input exclusion. This is outside React render.
+          flushSync(() => setBusy(false));
+          reopened = true;
+        }
+        catch (error) { failure ??= error; if (mountedRef.current && viewKeyRef.current === viewKey) setStatus("error"); }
+      }
+      if (failure) throw failure;
+      if (handle.phase === "closed" && !reopened) throw new Error("The document view changed. Its saved file is kept.");
+      return result;
+    } finally {
+      // On failed reopen, commit removal of the destroyed old editor before
+      // restoring access to recovery controls. Never leave those controls inert.
+      if (handle.phase === "closed" && !reopened) flushSync(() => {});
+      removeInputGuard();
+      if (mutationInputGuardRef.current === removeInputGuard) mutationInputGuardRef.current = null;
+      if (surface) surface.inert = false;
+      if (handle.phase !== "closed") handle.session.pausePresence(false);
+    }
+  }, [detachClosedOwner, generation, reset, viewKey]);
   const pasteImages = useCallback(async (request: EditorImagePasteRequest): Promise<EditorImagePasteResult> => {
-    try { return await withFileMutation(async () => {
-    let closedNativeSession = false;
+    const mutationView = viewKeyRef.current;
+    try { return await withFileMutation(async (handle, assertCurrent) => {
     try {
       const shared = clientRef.current;
       if (!shared?.hasBaseline || !shared.canEdit) throw new Error("The shared document is not ready for image paste.");
@@ -269,35 +356,29 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       if (JSON.stringify(documentSnapshotFromYDoc(shared.doc)) !== JSON.stringify(request.document)) {
         throw new Error("The shared document changed. Paste the image again.");
       }
-      const native = nativeSessionRef.current;
-      if (native) {
-        shared.setActive(false);
-        if (!await shared.flushLocal()) throw new Error("Finish saving the local file before pasting an image.");
-        await sessionRef.current?.session.closeNative();
-        nativeSessionRef.current = null;
-        closedNativeSession = true;
-      }
+      assertCurrent();
+      await closeFileMutationOwner(handle, source, request.document, assertCurrent);
+      assertCurrent();
+      detachClosedOwner(handle);
       const written = await vaultRequest<VaultFile>("write", {
         ...writePayload(source, edit.document),
         addedAssets: edit.addedAssets,
       });
+      assertCurrent();
       file.current = written;
       latestSnapshot.current = edit.document;
       setOpened(written);
       setSnapshot(edit.document);
       onChanged();
-      await reset();
       return { caret: edit.caret };
     } catch (error) {
-      if (closedNativeSession) await reset().catch(() => {});
-      setDetail(error instanceof Error ? error.message : "The image could not be pasted. Your text is still here.");
-      return undefined;
+      throw error;
     }
     }); } catch (error) {
-      setDetail(error instanceof Error ? error.message : "The image could not be pasted.");
+      if (mountedRef.current && viewKeyRef.current === mutationView) setDetail(error instanceof Error ? error.message : "The image could not be pasted.");
       return undefined;
     }
-  }, [config.itemId, flush, onChanged, reset, withFileMutation]);
+  }, [config.itemId, detachClosedOwner, flush, onChanged, withFileMutation]);
   useEffect(() => {
     if (status !== "stale-session" || !config.localFiles || autoResettingRef.current) return;
     autoResettingRef.current = true;
@@ -348,18 +429,21 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const keepCopy = async () => {
+    const mutationView = viewKeyRef.current;
     setBusy(true);
     try {
-      await withFileMutation(async () => {
+      await withFileMutation(async (handle, assertCurrent) => {
         const source = file.current, document = latestSnapshot.current;
         const fresh = await vaultRequest<VaultFile>("create", { title: `${document.content.title || "Untitled"} (recovered)`, folder: source.path.split("/").slice(0, -1).join("/"), sourcePath: source.path, sourceHash: source.hash });
         const recovered = await vaultRequest<VaultFile>("write", writePayload({ ...source, path: fresh.path, hash: fresh.hash, markdown: fresh.markdown }, document));
-        const handle = sessionRef.current;
-        if (!handle) throw new Error("The document session changed. The recovery copy remains saved.");
+        assertCurrent();
         await handle.session.recoverTo(recovered);
-        onChanged(); await reset(true);
+        assertCurrent();
+        if (!await handle.closeExclusive(() => handle.session.client.clearRetiredAfterRecoveryDurably()))
+          throw new Error("The recovery copy is saved. Reopen the original after its journal finishes saving.");
+        assertCurrent(); detachClosedOwner(handle); onChanged();
       });
-    } catch (error) { setDetail(error instanceof Error ? error.message : "Could not save the recovery copy."); }
+    } catch (error) { if (mountedRef.current && viewKeyRef.current === mutationView) setDetail(error instanceof Error ? error.message : "Could not save the recovery copy."); }
     finally { setBusy(false); }
   };
   const saveLook = async (name: string) => {
@@ -403,8 +487,9 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
           onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) setReading(true); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {
+            const mutationView = viewKeyRef.current;
             props.onClose(); setBusy(true);
-            void withFileMutation(async () => {
+            void withFileMutation(async (handle, assertCurrent) => {
               if (!await flush()) throw new Error("Save pending edits before changing the look.");
               if (clientRef.current?.hasPendingChanges) throw new Error("Reconnect and finish sharing pending edits before changing the look.");
               const source = await vaultRequest<VaultFile>("read", { path: file.current.path });
@@ -412,16 +497,13 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
               // its presentation, with the same file's revision guarding the write.
               const current = readDocument(source);
               const next = { ...current, presentation: { ...current.presentation, template: { id: nextTemplate.id, version: nextTemplate.version } } };
-              const native = nativeSessionRef.current;
-              if (native) {
-                clientRef.current?.setActive(false);
-                if (!await clientRef.current?.flushLocal()) throw new Error("Finish saving the local file before changing the look.");
-                await sessionRef.current?.session.closeNative();
-                nativeSessionRef.current = null;
-              }
+              assertCurrent();
+              await closeFileMutationOwner(handle, source, current, assertCurrent);
+              assertCurrent(); detachClosedOwner(handle);
               const written = await vaultRequest<VaultFile>("write", writePayload(source, next, { template: nextTemplate, sourceJSON }));
-              file.current = written; setOpened(written); setSnapshot(next); onChanged(); await reset();
-            }).catch(error => setDetail(error.message)).finally(() => setBusy(false));
+              assertCurrent();
+              file.current = written; setOpened(written); setSnapshot(next); onChanged();
+            }).catch(error => { if (mountedRef.current && viewKeyRef.current === mutationView) setDetail(error.message); }).finally(() => setBusy(false));
           }} />} />}
     </>}
   </section>;

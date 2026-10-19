@@ -248,3 +248,15 @@ test('readonly asset pack reader and proof sources/tests are recursive fingerpri
     }
   } finally {await fs.rm(temporary,{recursive:true,force:true});}
 });
+
+
+test('native and hosted file mutation handoff regressions are required and fingerprinted', async () => {
+  const verifier = await fs.readFile(new URL('./verify.mjs', import.meta.url), 'utf8');
+  assert.ok(inputs.includes('src') && inputs.includes('sync'));
+  assert.ok(verifier.includes("['--import', 'tsx', 'src/local-vault/__tests__/verify-file-mutation-handoff.mts', ...mode]"));
+  for (const flag of ['--hosted', '--template', '--write-failure', '--unknown-write', '--read-failure', '--held-ready', '--switch-at-read', '--unmount-at-read', '--recovery', '--copy-failure']) assert.ok(verifier.includes(flag), flag);
+  for (const config of ['vitest.config.mts', 'vitest.client.config.mts']) {
+    const source = await fs.readFile(new URL(config, import.meta.url), 'utf8');
+    assert.ok(source.includes('file-mutation-handoff'), config);
+  }
+});

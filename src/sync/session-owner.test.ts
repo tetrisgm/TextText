@@ -117,4 +117,31 @@ describe("page session ownership", () => {
     await expect(a.runExclusive(mutation)).rejects.toThrow("other view"); expect(mutation).not.toHaveBeenCalled();
     await a.release(); await b.release();
   });
+  it("retains the closed owner tombstone through an external file write", async () => {
+    const owner = new SessionOwner(), value = session(), writing = gate<void>();
+    const a = owner.acquire("a", () => value); await a.ready;
+    const mutation = a.runExclusive(async () => {
+      expect(await a.closeExclusive()).toBe(true);
+      await writing.promise;
+    });
+    await vi.waitFor(() => expect(a.phase).toBe("closed"));
+    expect(owner.size).toBe(1);
+    expect(() => owner.acquire("a", session)).toThrow("finishing a save");
+    const release = a.release();
+    writing.resolve(); await mutation; expect(await release).toBe(true);
+    expect(owner.size).toBe(0);
+    const next = owner.acquire("a", session); await next.release();
+  });
+  it("releases only the exact closed tombstone after a failed external write", async () => {
+    const owner = new SessionOwner(), value = session();
+    const a = owner.acquire("a", () => value); await a.ready;
+    await expect(a.runExclusive(async () => {
+      expect(await a.closeExclusive()).toBe(true);
+      expect(() => owner.acquire("a", session)).toThrow("finishing a save");
+      throw Error("CAS refused");
+    })).rejects.toThrow("CAS refused");
+    expect(owner.size).toBe(0);
+    const next = owner.acquire("a", session); expect(next.lifecycle).not.toBe(a.lifecycle); await next.release();
+  });
+
 });

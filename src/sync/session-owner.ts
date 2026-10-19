@@ -82,7 +82,7 @@ export class SessionOwner<T extends OwnedSession> {
           if (prepare) await prepare();
           await current.session.close();
           current.phase = "closed";
-          if (this.entries.get(key) === current) this.entries.delete(key);
+          if (!operationActive && this.entries.get(key) === current) this.entries.delete(key);
           if (exclusive) { released = true; current.refs--; }
           return true;
         } catch { if (current.revision === revision) current.phase = "retained-error"; return false; }
@@ -106,7 +106,9 @@ export class SessionOwner<T extends OwnedSession> {
         if (released || current.refs !== 1 || current.closing || operationActive) return Promise.reject(new Error("Close the other view of this document before changing its file."));
         current.closing = true; operationActive = true; current.operationBusy = true;
         const result = Promise.resolve().then(action).finally(() => {
-          operationActive = false; current.closing = false; current.operationBusy = false; operation = null;
+          operationActive = false; current.operationBusy = false; operation = null;
+          if (current.phase === "closed" && this.entries.get(key) === current) this.entries.delete(key);
+          current.closing = false;
         });
         operation = result;
         return result;
