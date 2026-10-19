@@ -1,4 +1,25 @@
 import Foundation
+import CoreFoundation
+
+/// The immutable command and transport binding travel with every typed reply.
+/// A generic HTTP conflict is deliberately not a terminal rename receipt.
+public struct LocalVaultProtectedRenameRequest: Codable, Sendable, Equatable {
+    public let operationId: String, itemId: String, source: String, destination: String, baseRevision: String
+    public init(operationId: String, itemId: String, source: String, destination: String, baseRevision: String) {
+        self.operationId = operationId; self.itemId = itemId; self.source = source; self.destination = destination; self.baseRevision = baseRevision
+    }
+}
+public struct LocalVaultProtectedRenameScope: Codable, Sendable, Equatable {
+    public let origin: String, workspaceId: String
+    public let accountId: String?
+}
+public struct LocalVaultProtectedRenameReceipt: Codable, Sendable, Equatable {
+    public let request: LocalVaultProtectedRenameRequest
+    public let scope: LocalVaultProtectedRenameScope
+    public let status: String, relativePath: String
+    public let revision: String?
+    public let deleted: Bool
+}
 
 public struct LocalVaultRemoteItem: Codable, Sendable, Equatable {
     public let itemId: String
@@ -84,6 +105,7 @@ public protocol LocalVaultSyncTransport: Sendable {
     func download(itemId: String) async throws -> LocalVaultRemotePack
     func upload(itemId: String, path: String, data: Data, baseRevision: String?, operationId: String, nativeEditor: Bool) async throws -> String
     func rename(itemId: String, from: String, to: String, baseRevision: String, operationId: String) async throws -> String
+    func protectedRename(_ request: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt
     func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws
     func binaryManifest(itemId: String) async throws -> LocalVaultBinaryManifest
     func binaryRead(itemId: String, entryPath: String) async throws -> Data
@@ -101,6 +123,7 @@ public struct LocalVaultBinaryManifest: Codable, Sendable {
 }
 
 public extension LocalVaultSyncTransport {
+    func protectedRename(_ request: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt { throw LocalVaultSyncFailure.invalidResponse }
     func inspectFolderCase(_ command: LocalVaultFolderCaseRequest) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
     func cancelFolderCase(_ command: LocalVaultFolderCaseRequest, inspection: String) async throws -> LocalVaultFolderCaseServerRecovery { throw LocalVaultSyncFailure.invalidResponse }
     func folderCaseContext() async -> LocalVaultFolderCaseContext? { nil }
@@ -117,6 +140,7 @@ public extension LocalVaultSyncTransport {
 /// Bearer credentials live only in this transport, never in vault files.
 public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     private let endpoint: URL
+    private let protectedRenameScope: LocalVaultProtectedRenameScope
     private let accountId: String?
     private var token: String
     private let session: URLSession
@@ -177,6 +201,7 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
     public init(origin: URL, workspaceId: String, token: String, session: URLSession = .shared, accountId: String? = nil) throws {
         try LocalVaultSyncBinding.validate(origin: origin, workspaceId: workspaceId)
         self.endpoint = origin.appendingPathComponent("api/vault").appendingPathComponent(workspaceId).appendingPathComponent("items")
+        self.protectedRenameScope = .init(origin: origin.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")), workspaceId: workspaceId, accountId: accountId)
         if let accountId { _ = try LocalVaultAccountIdentity.validate(accountId) }
         self.accountId = accountId
         self.token = token; self.session = session
@@ -344,6 +369,93 @@ public actor HTTPLocalVaultSyncTransport: LocalVaultSyncTransport {
         struct Receipt: Decodable { let revision: String }
         let (data, _) = try await send(request)
         return try JSONDecoder().decode(Receipt.self, from: data).revision
+    }
+
+    public func protectedRename(_ command: LocalVaultProtectedRenameRequest) async throws -> LocalVaultProtectedRenameReceipt {
+        try Self.validateProtectedRename(command)
+        guard accountId != nil else { throw LocalVaultSharedFailure.account }
+        let credential = token
+        var request = request(endpoint.appendingPathComponent(command.itemId))
+        request.httpMethod = "PATCH"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["relativePath": command.destination])
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("\"\(command.baseRevision)\"", forHTTPHeaderField: "If-Match")
+        request.setValue(command.source.addingPercentEncoding(withAllowedCharacters: .alphanumerics), forHTTPHeaderField: "X-TextText-Base-Path")
+        request.setValue(command.operationId, forHTTPHeaderField: "X-TextText-Operation-Id")
+        // This path alone reads 409 bodies. Ordinary mutations keep their
+        // existing conflict behavior. No error body is a terminal receipt.
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard token == credential else { throw LocalVaultSharedFailure.account }
+        guard let response = response as? HTTPURLResponse else { throw LocalVaultSyncFailure.invalidResponse }
+        guard response.url == request.url else { throw LocalVaultSyncFailure.invalidResponse }
+        guard response.statusCode == 200 || response.statusCode == 409 else { throw LocalVaultSyncFailure.httpStatus(response.statusCode) }
+        return try Self.parseProtectedRename(command, scope: protectedRenameScope, status: response.statusCode, data: data)
+    }
+    private static func renameDigest(_ value: String) -> Bool {
+        value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+    private static func renamePath(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 1024 && value.lowercased().hasSuffix(".textpack") &&
+        !value.unicodeScalars.contains { $0.value < 32 || $0.value == 127 || $0 == "\\" || $0 == ":" } &&
+        value.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+    private static func validateProtectedRename(_ command: LocalVaultProtectedRenameRequest) throws {
+        func segment(_ value: String) -> Bool {
+            value.range(of: "\\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z", options: .regularExpression) != nil
+        }
+        guard segment(command.operationId), segment(command.itemId), renamePath(command.source), renamePath(command.destination), renameDigest(command.baseRevision) else { throw LocalVaultSyncFailure.invalidResponse }
+    }
+    /// Flat wire objects only. Count every key, including duplicates that
+    /// Foundation's dictionary decoder would otherwise silently overwrite.
+    private static func protectedRenameKeys(_ data: Data) throws -> [String] {
+        let bytes = Array(data); var i = 0; var keys: [String] = []
+        func whitespace() { while i < bytes.count && [9, 10, 13, 32].contains(bytes[i]) { i += 1 } }
+        func string() throws -> Data {
+            guard i < bytes.count, bytes[i] == 34 else { throw LocalVaultSyncFailure.invalidResponse }
+            let start = i; i += 1
+            while i < bytes.count {
+                if bytes[i] == 92 { i += 2; continue }
+                if bytes[i] == 34 { i += 1; return Data(bytes[start..<i]) }
+                i += 1
+            }
+            throw LocalVaultSyncFailure.invalidResponse
+        }
+        whitespace(); guard i < bytes.count, bytes[i] == 123 else { throw LocalVaultSyncFailure.invalidResponse }; i += 1
+        while true {
+            whitespace(); guard i < bytes.count, bytes[i] != 125 else { throw LocalVaultSyncFailure.invalidResponse }
+            keys.append(try JSONDecoder().decode(String.self, from: string()))
+            whitespace(); guard i < bytes.count, bytes[i] == 58 else { throw LocalVaultSyncFailure.invalidResponse }; i += 1; whitespace()
+            if i < bytes.count, bytes[i] == 34 { _ = try string() }
+            else { while i < bytes.count && ![44, 125].contains(bytes[i]) { guard bytes[i] != 123 && bytes[i] != 91 else { throw LocalVaultSyncFailure.invalidResponse }; i += 1 } }
+            whitespace(); guard i < bytes.count else { throw LocalVaultSyncFailure.invalidResponse }
+            if bytes[i] == 125 { i += 1; break }
+            guard bytes[i] == 44 else { throw LocalVaultSyncFailure.invalidResponse }; i += 1
+        }
+        whitespace(); guard i == bytes.count, Set(keys).count == keys.count else { throw LocalVaultSyncFailure.invalidResponse }; return keys
+    }
+    static func parseProtectedRename(_ command: LocalVaultProtectedRenameRequest, scope: LocalVaultProtectedRenameScope, status: Int, data: Data) throws -> LocalVaultProtectedRenameReceipt {
+        try validateProtectedRename(command)
+        guard let accountId = scope.accountId, let origin = URL(string: scope.origin) else { throw LocalVaultSyncFailure.invalidResponse }
+        _ = try LocalVaultAccountIdentity.validate(accountId)
+        try LocalVaultSyncBinding.validate(origin: origin, workspaceId: scope.workspaceId)
+        guard data.count <= 16384, status == 200 || status == 409 else { throw LocalVaultSyncFailure.invalidResponse }
+        let keys = try protectedRenameKeys(data)
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw LocalVaultSyncFailure.invalidResponse }
+        let deleted = value["deleted"] != nil
+        let expected = Set(["status", "itemId", "relativePath", "revision"] + (deleted ? ["deleted"] : []))
+        guard Set(keys) == expected, value["itemId"] as? String == command.itemId,
+              let resultStatus = value["status"] as? String, let path = value["relativePath"] as? String, renamePath(path) else { throw LocalVaultSyncFailure.invalidResponse }
+        let revision = value["revision"] as? String
+        if status == 200 {
+            guard resultStatus == "moved", path == command.destination, revision == command.baseRevision, !deleted else { throw LocalVaultSyncFailure.invalidResponse }
+        } else {
+            guard resultStatus == "conflict", (value["revision"] is NSNull || revision.map(renameDigest) == true) else { throw LocalVaultSyncFailure.invalidResponse }
+            if deleted {
+                guard let flag = value["deleted"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID(), flag.boolValue else { throw LocalVaultSyncFailure.invalidResponse }
+            }
+        }
+        return .init(request: command, scope: scope, status: resultStatus, relativePath: path, revision: revision, deleted: deleted)
     }
 
     public func delete(itemId: String, path: String, baseRevision: String, operationId: String) async throws {

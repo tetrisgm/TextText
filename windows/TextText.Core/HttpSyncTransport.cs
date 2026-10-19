@@ -4,6 +4,9 @@ using System.Text;
 using System.Text.Json;
 namespace TextText.Core;
 public sealed record SyncAccountCredential(string Token,string AccountId);
+public sealed record ProtectedRenameRequest(string OperationId,string ItemId,string Source,string Destination,string BaseRevision);
+public sealed record ProtectedRenameScope(string Origin,string WorkspaceId,string? AccountId);
+public sealed record ProtectedRenameReceipt(ProtectedRenameRequest Request,ProtectedRenameScope Scope,string Status,string RelativePath,string? Revision,bool Deleted);
 public sealed class HttpSyncTransport : ISyncTransport
 {
     readonly bool ownerFallback; readonly HttpClient http; readonly Uri endpoint; readonly Func<Task<string>> token; string? etag; IReadOnlyList<RemoteItem> cached=[];
@@ -35,7 +38,7 @@ public sealed class HttpSyncTransport : ISyncTransport
             return current;
         } finally {credentialGate.Release();}
     }
-    async Task<HttpResponseMessage> Send(Func<HttpRequestMessage> create,CancellationToken ct) {
+    async Task<HttpResponseMessage> Send(Func<HttpRequestMessage> create,CancellationToken ct,bool protectedRename=false) {
         var credential=await Credential(ct);
         for(var attempt=0;;attempt++) {
             using var request=create();request.Headers.Authorization=new("Bearer",credential);
@@ -46,16 +49,16 @@ public sealed class HttpSyncTransport : ISyncTransport
                 try {fresh=await Credential(ct);}catch {response.Dispose();throw;}
                 if(fresh!=credential){response.Dispose();credential=fresh;continue;}
             }
-            if(response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed) {response.Dispose();throw new SyncConflictException();}
-            if(!response.IsSuccessStatusCode && response.StatusCode!=HttpStatusCode.NotModified) {var code=response.StatusCode;response.Dispose();throw new HttpRequestException("Sync request failed ("+(int)code+").",null,code);}
+            if(!protectedRename && (response.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)) {response.Dispose();throw new SyncConflictException();}
+            if(!response.IsSuccessStatusCode && response.StatusCode!=HttpStatusCode.NotModified && !(protectedRename&&response.StatusCode==HttpStatusCode.Conflict)) {var code=response.StatusCode;response.Dispose();throw new HttpRequestException("Sync request failed ("+(int)code+").",null,code);}
             try { _=await Credential(ct); } catch {response.Dispose();throw;}
             return response;
         }
     }
-    static async Task<byte[]> Bytes(HttpResponseMessage response,CancellationToken ct) {
-        if(response.Content.Headers.ContentLength>64*1024*1024)throw new InvalidDataException("Remote file too large.");
+    static async Task<byte[]> Bytes(HttpResponseMessage response,CancellationToken ct,int maximum=64*1024*1024) {
+        if(response.Content.Headers.ContentLength>maximum)throw new InvalidDataException("Remote file too large.");
         using var output=new MemoryStream();using var input=await response.Content.ReadAsStreamAsync(ct);var buffer=new byte[65536];int count;
-        while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>64*1024*1024)throw new InvalidDataException("Remote file too large.");output.Write(buffer,0,count);}return output.ToArray();
+        while((count=await input.ReadAsync(buffer,ct))>0){if(output.Length+count>maximum)throw new InvalidDataException("Remote file too large.");output.Write(buffer,0,count);}return output.ToArray();
     }
     public IReadOnlyList<string> Folders {get;private set;}=[];
     public IReadOnlyList<string>? AuthoritativeFolders {get;private set;}
@@ -122,5 +125,56 @@ public sealed class HttpSyncTransport : ISyncTransport
     public Task<string> RenameAsync(string itemId,string from,string to,string baseRevision,string operationId,CancellationToken cancellation=default)=>Mutation(()=>{
         var r=new HttpRequestMessage(HttpMethod.Patch,Item(itemId)){Content=new StringContent(JsonSerializer.Serialize(new{relativePath=to}),Encoding.UTF8,"application/json")};r.Headers.Add("X-TextText-Base-Path",Uri.EscapeDataString(from));Match(r,baseRevision,operationId);return r;
     },cancellation);
+    /// Only a strictly validated endpoint receipt can resolve a protected move.
+    /// Generic conflicts and lost replies remain ambiguous to its caller.
+    public async Task<ProtectedRenameReceipt> ProtectedRenameAsync(ProtectedRenameRequest command,CancellationToken cancellation=default) {
+        ValidateProtectedRename(command);
+        if(accountId is null)throw new SharedAccountMismatchException();
+        using var response=await Send(()=>{
+            var request=new HttpRequestMessage(HttpMethod.Patch,Item(command.ItemId)) {
+                Content=new StringContent(JsonSerializer.Serialize(new{relativePath=command.Destination}),Encoding.UTF8,"application/json")
+            };
+            request.Headers.Add("X-TextText-Base-Path",Uri.EscapeDataString(command.Source));
+            Match(request,command.BaseRevision,command.OperationId);return request;
+        },cancellation,protectedRename:true);
+        if(response.RequestMessage?.RequestUri!=Item(command.ItemId))throw new InvalidDataException("Protected move response changed endpoint.");
+        var bytes=await Bytes(response,cancellation,16384);
+        _=await Credential(cancellation);
+        var scope=new ProtectedRenameScope(endpoint.GetLeftPart(UriPartial.Authority),endpoint.Segments[^2].TrimEnd('/'),accountId);
+        return ParseProtectedRename(command,scope,(int)response.StatusCode,bytes);
+    }
+    static bool RenameDigest(string? value)=>value is {Length:64}&&value.All(c=>c is >= '0' and <= '9' or >= 'a' and <= 'f');
+    static bool RenamePath(string? value) {
+        if(value is not {Length:>0 and <=1024}||!value.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase)||
+           value.Any(c=>c is '\\' or ':' || char.IsControl(c))||value.Split('/').Any(part=>part is "" or "." or ".."))return false;
+        for(var index=0;index<value.Length;index++)if(char.IsSurrogate(value[index])) {
+            if(!char.IsHighSurrogate(value[index])||index+1>=value.Length||!char.IsLowSurrogate(value[++index]))return false;
+        }
+        return true;
+    }
+    static void ValidateProtectedRename(ProtectedRenameRequest command) {
+        static bool Segment(string value)=>System.Text.RegularExpressions.Regex.IsMatch(value,@"\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z");
+        if(!Segment(command.OperationId)||!Segment(command.ItemId)||!RenamePath(command.Source)||!RenamePath(command.Destination)||!RenameDigest(command.BaseRevision))throw new InvalidDataException("Invalid protected move command.");
+    }
+    public static ProtectedRenameReceipt ParseProtectedRename(ProtectedRenameRequest command,ProtectedRenameScope scope,int status,byte[] bytes) {
+        ValidateProtectedRename(command);
+        if(scope.AccountId is null||!System.Text.RegularExpressions.Regex.IsMatch(scope.AccountId,@"\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z")||
+           !Uri.TryCreate(scope.Origin,UriKind.Absolute,out var origin)||origin.Scheme!="https"||origin.AbsolutePath!="/"||!string.IsNullOrEmpty(origin.UserInfo)||!string.IsNullOrEmpty(origin.Query)||!string.IsNullOrEmpty(origin.Fragment)||
+           !System.Text.RegularExpressions.Regex.IsMatch(scope.WorkspaceId,@"\A[A-Za-z0-9_-]+\z"))throw new InvalidDataException("Verified protected move ownership is required.");
+        if(bytes.Length>16384||status is not(200 or 409))throw new InvalidDataException("Ambiguous protected move response.");
+        using var document=JsonDocument.Parse(bytes);var value=document.RootElement;
+        if(value.ValueKind!=JsonValueKind.Object)throw new InvalidDataException("Invalid protected move receipt.");
+        var properties=value.EnumerateObject().ToArray();
+        var expected=new[]{"status","itemId","relativePath","revision"};
+        var deleted=value.TryGetProperty("deleted",out var deletion);
+        if(deleted)expected=[..expected,"deleted"];
+        if(properties.Length!=expected.Length||!properties.Select(x=>x.Name).Order(StringComparer.Ordinal).SequenceEqual(expected.Order(StringComparer.Ordinal)))throw new InvalidDataException("Unknown protected move receipt field.");
+        string? Text(string name)=>value.GetProperty(name).ValueKind==JsonValueKind.String?value.GetProperty(name).GetString():null;
+        var resultStatus=Text("status");var path=Text("relativePath");var revision=Text("revision");
+        if(Text("itemId")!=command.ItemId||!RenamePath(path)||
+           (status==200?(resultStatus!="moved"||path!=command.Destination||revision!=command.BaseRevision||deleted):
+             (resultStatus!="conflict"||value.GetProperty("revision").ValueKind is not(JsonValueKind.Null or JsonValueKind.String)||revision is not null&&!RenameDigest(revision)||deleted&&deletion.ValueKind!=JsonValueKind.True)))throw new InvalidDataException("Mismatched protected move receipt.");
+        return new(command,scope,resultStatus!,path!,revision,deleted);
+    }
     public async Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default){using var response=await Send(()=>{var r=new HttpRequestMessage(HttpMethod.Delete,Item(itemId));r.Headers.Add("X-TextText-Base-Path",Uri.EscapeDataString(path));Match(r,baseRevision,operationId);return r;},cancellation);}
 }
