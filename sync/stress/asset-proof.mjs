@@ -72,12 +72,19 @@ export function validateAssetProof(value, context) {
     value.selectedItemId !== value.itemId || (context.role.endsWith('-web') ? value.selectedPath !== null : value.selectedPath !== value.relativePath)) {
     throw Error('Asset proof selected session mismatch');
   }
-  const assets = value.assetHashes;
-  data(assets, Reflect.ownKeys(assets));
-  const names = Object.keys(assets);
-  if (names.length < 1 || names.length > 32 || names.some(name => !path(name, true) || !hash(assets[name]))) throw Error('Invalid bounded asset map');
+  const assets = validateAssetHashes(value.assetHashes);
   plainTree(context.documentSnapshot);
   if (documentObservation(context.documentSnapshot).hash !== value.documentSha256) throw Error('Asset proof full document mismatch');
   // Detach the map so later actor mutations cannot alter accepted evidence.
-  return Object.freeze({ ...value, assetHashes: Object.freeze(JSON.parse(canonicalJSON(assets))) });
+  return Object.freeze({ ...value, assetHashes: assets });
+}
+
+// Shared strict transport map validator. The returned detached map is a pin or
+// an observation according to its caller; it never manufactures observed data.
+export function validateAssetHashes(assets) {
+  data(assets, Reflect.ownKeys(assets));
+  if (Reflect.ownKeys(assets).some(key => typeof key !== 'string')) throw Error('Invalid bounded asset map');
+  const names = Object.keys(assets);
+  if (names.length < 1 || names.length > 32 || names.some(name => !path(name, true) || !hash(assets[name]))) throw Error('Invalid bounded asset map');
+  return Object.freeze(JSON.parse(canonicalJSON(assets)));
 }

@@ -9,7 +9,7 @@ import { coreDatabaseEnvironment, inputs, fingerprint, validateReceipt, recordPa
 
 test('manual verification discovers every runner regression including new protocol helpers', async () => {
   const actual = await stressTestPaths();
-  for (const name of ['build-private-actor', 'identity', 'native-close-lifecycle', 'malformed-repair', 'undo-redo', 'file-adapter', 'browser-adapter', 'asset-proof', 'asset-pack-proof', 'asset-proof-observation']) {
+  for (const name of ['build-private-actor', 'identity', 'native-close-lifecycle', 'malformed-repair', 'undo-redo', 'file-adapter', 'browser-adapter', 'asset-proof', 'asset-pack-proof', 'asset-proof-observation', 'asset-proof-wave']) {
     assert.ok(actual.includes(`sync/stress/${name}.test.mjs`));
   }
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-stress-discovery-'));
@@ -234,7 +234,7 @@ test('actual WebView2 smoke registers folder vectors in every existing policy ph
 test('readonly asset pack reader and proof sources/tests are recursive fingerprint inputs',async()=>{
   assert.ok(inputs.includes('sync'));
   const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'texttext-asset-inputs-'));
-  const names=['pack-reader.mjs','asset-proof.mjs','asset-pack-proof.mjs','asset-proof-observation.mjs','asset-proof-observation.test.mjs'];
+  const names=['pack-reader.mjs','asset-proof.mjs','asset-pack-proof.mjs','asset-proof-observation.mjs','asset-proof-observation.test.mjs','asset-proof-wave.mjs','asset-proof-wave.test.mjs'];
   try {
     await fs.mkdir(path.join(temporary,'sync/stress'),{recursive:true});
     for(const name of names) await fs.writeFile(path.join(temporary,'sync/stress',name),'original');
