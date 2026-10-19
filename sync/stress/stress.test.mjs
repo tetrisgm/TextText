@@ -1028,3 +1028,26 @@ for (const fault of [null,'missing-id','old-id','duplicate','content','session',
   if(fault){assert.equal(result.status,'failed');assert.equal(result.soakEvidence,undefined);if(fault==='capability')assert.equal(mutations,0);}
   else{assert.equal(result.status,'passed',JSON.stringify(result.failure));assert.equal(result.soakEvidence.samples,121);assert.equal(result.soakEvidence.acceptance,'partial-not-full-T24');assert.equal(result.soakEvidence.nativeIdleMutations,null);assert.equal(soakRequests,726);}
 });
+
+test('staged asset proof refuses before mutation even with claimed capabilities', async () => {
+  for (const claimed of [false, true]) {
+    const config = makeConfig({rounds:1});
+    config.assetProof = {version:1};
+    config.expectedAssetHashes = {'assets/photo.jpg':'a'.repeat(64)};
+    let mutations=0;
+    const {ProcessAdapter} = await import('./adapter.mjs');
+    const coordinator = new Coordinator(config, {adapterFactory(role,c) {
+      const actor=new ProcessAdapter(role,c.command,{env:c.env}), emit=actor.emit.bind(actor), send=actor.send.bind(actor);
+      actor.send=message=>{if(['prepare','edit'].includes(message.type)) mutations++;return send(message);};
+      actor.emit=(type,message,...args)=>{
+        if(type==='message' && message.type==='attest' && claimed) message.binaryAssetObservation=1;
+        return emit(type,message,...args);
+      };
+      return actor;
+    }});
+    const result=await coordinator.run();
+    assert.equal(result.status,'failed');
+    assert.match(JSON.stringify(result.failure), new RegExp(claimed ? 'asset-proof-adapters-unavailable' : 'asset-proof-capability-missing'));
+    assert.equal(mutations,0);
+  }
+});

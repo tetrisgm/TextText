@@ -1,3 +1,4 @@
+import {validateAssetProofConfig} from './asset-proof.mjs';
 import {setTimeout as finiteDelay} from 'node:timers/promises';
 import {FiniteSoak, validateSoak, SOAK_LIMITS} from './finite-soak.mjs';
 import {validateSoakSample} from './soak-correlation.mjs';
@@ -76,6 +77,8 @@ export function planRounds(seed, rounds, pattern = 'append', sustainedTyping, un
 export function validateConfig(config) {
   const fail = (m) => { throw new Error(`config: ${m}`); };
   if (!config || typeof config !== 'object') fail('must be an object');
+  if (config.assetProof !== undefined) config.assetProof = validateAssetProofConfig(config.assetProof);
+  if (config.assetProof && (!config.expectedAssetHashes || Object.keys(config.expectedAssetHashes).length === 0)) fail('assetProof requires explicit real asset hashes');
   if (!MODES.has(config.mode)) fail('mode must be "real" or "simulated"');
   if (!Number.isInteger(config.seed)) fail('seed must be an integer');
   if (!Number.isInteger(config.rounds) || config.rounds < 0 || config.rounds > 10_000) fail('rounds must be 0..10000');
@@ -575,6 +578,11 @@ export class Coordinator {
     }
     const attest = await pending;
     this.checkAttestations(attest);
+    if (this.config.assetProof) {
+      if (ROLES.some(role => attest.get(role)?.binaryAssetObservation !== 1)) throw new StressFailure('asset-proof-capability-missing', {});
+      // Staged protocol only: no adapter is yet authorized to supply this proof.
+      throw new StressFailure('asset-proof-adapters-unavailable', {});
+    }
     if (this.config.soak && ROLES.some(role => attest.get(role)?.finiteSoakCorrelation !== 1)) throw new StressFailure('soak-correlation-capability-missing', {});
   }
 
