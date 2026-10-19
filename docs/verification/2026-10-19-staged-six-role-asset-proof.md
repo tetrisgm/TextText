@@ -21,7 +21,8 @@ Relevant parser and coordinator tests cover source/scope/sample/session mismatch
 The first focused test attempt incorrectly expected `Coordinator.run()` to reject; it actually returns a failed summary. That fixture-only failure is retained at `/private/tmp/texttext-asset-proof-focused-20261019.log`. The corrected test checks exact failure codes and zero mutation dispatches. This is not evidence of an installed product defect.
 
 Final source-frozen Node gate: **97 passed, 0 failed, 0 skipped** (`node --test --test-concurrency=1 sync/stress/asset-proof.test.mjs sync/stress/stress.test.mjs`). All four code/test input hashes match before and after. This comprises six parser tests and 91 existing/new coordinator tests. Log: `/private/tmp/texttext-asset-proof-exact-final-20261019.log`, SHA-256 `c58be4f53b15d3b891eac848bf00109dadffbd3cab7ec2d91b99fa750de25178`. Syntax, diff whitespace, and receipt-relative-reference checks also passed. Intermediate 95/96-pass runs preceded the final parser tightenings and remain intermediate evidence only.
-# Pure byte-inspection followup
+
+## Pure byte-inspection followup
 
 The separate `asset-pack-proof.mjs` helper inspects actual bounded ZIP bytes, identity, asset hashes and the existing GET envelope without fetching, writing or repacking. It preserves the original document representation. It validates only the existing bounded article shape, **not the complete product schema**; every result carries `requiresValidatedLiveSnapshot: true`. Future callers must compare with an actually product-validated live snapshot and recheck principal/root/session/selection before granting acceptance. A `projection-mismatch` is a refusal and grants no pending authority.
 
