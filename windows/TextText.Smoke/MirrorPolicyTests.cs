@@ -57,6 +57,7 @@ static class MirrorPolicyTests
                 var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json))throw new Exception("Lifecycle vector failed: "+vector.GetProperty("name"));
             }
+            await MirrorAdditionalPolicyTests.VectorsAsync(policy,fixture,"visible",ct);
             var first=vectors.RootElement[0].GetProperty("observed").Deserialize<MirrorObservation>(json)!;
             window.Hide();await policy.DecideAsync(first,ct);
             foreach(var vector in schedules.RootElement.EnumerateArray()) {
@@ -72,6 +73,7 @@ static class MirrorPolicyTests
                 var result=await policy.LifecycleAsync(vector.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(json)!,ct);
                 if(result!=vector.GetProperty("decision").Deserialize<MirrorLifecycleDecision>(json))throw new Exception("Lifecycle vector failed: "+vector.GetProperty("name"));
             }
+            await MirrorAdditionalPolicyTests.VectorsAsync(policy,fixture,"hidden",ct);
             foreach(var field in new[]{"scope","requestId","observed","digest","pageId","disposition"}) {
                 var bad=new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace","connection-a"),async(script,token)=>{
                     var raw=await view.ExecuteScriptAsync(script).WaitAsync(token);
@@ -105,6 +107,8 @@ static class MirrorPolicyTests
             await Navigate();
             refused=false;try{await next.DecideAsync(first,ct);}catch(IOException){refused=true;}
             if(!refused)throw new Exception("Old policy adapter adopted a reloaded page");
+            await MirrorAdditionalPolicyTests.RefusalsAsync(fixture,manifest.RootElement.GetProperty("digest").GetString()!,
+                (script,token)=>view.ExecuteScriptAsync(script).WaitAsync(token),Navigate,ct);
             Console.WriteLine("PASS actual WebView2 packaged policy: all shared vectors without editor, hidden window, reload fenced");
             // Invoke the production factory without loading credentials or a
             // real workspace. The native gate must await the page's readiness.
@@ -118,6 +122,7 @@ static class MirrorPolicyTests
                 var result=await production.DecideAsync(vector.GetProperty("observed").Deserialize<MirrorObservation>(json)!,ct);
                 if(result.ToString().ToLowerInvariant()!=vector.GetProperty("disposition").GetString())throw new Exception("Production policy factory returned wrong action");
             }
+            await MirrorAdditionalPolicyTests.VectorsAsync(production,fixture,"production-factory",ct);
             production.Retire();
             Console.WriteLine("PASS production MainWindow policy factory waits for readiness and executes packaged decisions");
             await MirrorEngineTests.RunAsync(root,hook=>new MirrorPolicy(manifest.RootElement.GetProperty("digest").GetString()!,new("account-a","workspace",Guid.NewGuid().ToString()),async(script,token)=>{
