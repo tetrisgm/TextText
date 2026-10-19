@@ -32,6 +32,10 @@ static class Program
   timeout.Token.Register(()=>app.Dispatcher.BeginInvoke(new Action(()=> { Console.Error.WriteLine("Smoke timed out"); app.Shutdown(1); })));
   window.Loaded += async (_,_)=> { try {
    Console.WriteLine("smoke: loaded"); Directory.CreateDirectory(args[1]);
+   if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "mirror-policy") {
+    Console.WriteLine("smoke: controlled packaged policy, not the full desktop suite");
+    await MirrorPolicyTests.RunAsync(temp,timeout.Token);result=0;return;
+   }
    if(Environment.GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "document-inspection") {
     await NativeStressDocumentInspectionTests.RunAsync(view,temp,args[1],timeout.Token);result=0;return;
    }

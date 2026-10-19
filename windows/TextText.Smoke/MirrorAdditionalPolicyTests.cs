@@ -10,7 +10,7 @@ static class MirrorAdditionalPolicyTests
     static readonly (string Method,string File)[] Policies = [
         ("binaryQueue","queue-vectors.json"), ("sharedPath","shared-path-vectors.json"),
         ("tombstone","tombstone-vectors.json"), ("savedRename","saved-rename-vectors.json"),
-        ("queuedUploadPath","queued-upload-path-vectors.json")];
+        ("queuedUploadPath","queued-upload-path-vectors.json"), ("folder","folder-vectors.json")];
 
     static JsonElement[] Vectors(string fixture,string file,bool binaryOnly=false) {
         using var data=JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture,file)));
@@ -21,6 +21,7 @@ static class MirrorAdditionalPolicyTests
         "sharedPath" => JsonSerializer.Serialize(await policy.SharedPathAsync(observed.Deserialize<MirrorSharedPathObservation>(Json)!,ct),Json),
         "tombstone" => JsonSerializer.Serialize(await policy.TombstoneAsync(observed.Deserialize<MirrorTombstoneObservation>(Json)!,ct),Json),
         "savedRename" => JsonSerializer.Serialize(await policy.SavedRenameAsync(observed.Deserialize<MirrorSavedRenameObservation>(Json)!,ct),Json),
+        "folder" => JsonSerializer.Serialize(await policy.FolderAsync(observed.Deserialize<MirrorFolderObservation>(Json)!,ct),Json),
         "queuedUploadPath" => JsonSerializer.Serialize(await policy.QueuedUploadPathAsync(observed.Deserialize<MirrorQueuedUploadPathObservation>(Json)!,ct),Json),
         _ => throw new InvalidOperationException("Unknown isolated policy test")
     };

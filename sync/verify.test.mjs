@@ -215,3 +215,18 @@ test('folder policy source, fixtures and native suites participate in official g
   assert.ok(native.includes('FolderPolicyTests|'));
   assert.match(native, /for suite in [^;]*\bFolderPolicy\b/);
 });
+
+test('actual WebView2 smoke registers folder vectors in every existing policy phase', async () => {
+  const helper = await fs.readFile(new URL('../windows/TextText.Smoke/MirrorAdditionalPolicyTests.cs', import.meta.url), 'utf8');
+  const smoke = await fs.readFile(new URL('../windows/TextText.Smoke/MirrorPolicyTests.cs', import.meta.url), 'utf8');
+  const fixture = await fs.readFile(new URL('../src/local-vault/__tests__/mirror-policy.browser.mjs', import.meta.url), 'utf8');
+  const program = await fs.readFile(new URL('../windows/TextText.Smoke/Program.cs', import.meta.url), 'utf8');
+  assert.ok(program.includes('GetEnvironmentVariable("TEXTTEXT_SMOKE_CASE") == "mirror-policy"'));
+  assert.ok(program.includes('await MirrorPolicyTests.RunAsync(temp,timeout.Token)'));
+  assert.ok(inputs.includes('windows/TextText.Smoke'));
+  assert.ok(helper.includes('("folder","folder-vectors.json")'));
+  assert.ok(helper.includes('policy.FolderAsync('));
+  for (const phase of ['visible', 'hidden', 'production-factory']) assert.ok(smoke.includes(`fixture,"${phase}"`));
+  assert.ok(smoke.includes('MirrorAdditionalPolicyTests.RefusalsAsync('));
+  assert.ok(fixture.includes("copyFile('sync/fixtures/mirror-folder.json',path.join(output,'folder-vectors.json'))"));
+});
