@@ -127,6 +127,67 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
 }
 public struct LocalVaultMirrorSharedPathDecision: Codable, Equatable, Sendable { public let action: String }
 
+public struct LocalVaultMirrorTombstoneObservation: Codable, Equatable, Sendable {
+    public let remotePresent: Bool
+    public let remoteDeleted: Bool
+    public let remoteAuthoritative: Bool
+    public let editorOwned: Bool
+    public let recoveryBlocked: Bool
+    public let localPresent: Bool
+    public let localUnique: Bool
+    public let localIdentityVerified: Bool
+    public let localHash: String?
+    public let baselineHash: String?
+    public let localPath: String?
+    public let baselinePath: String?
+    public let remotePath: String?
+    public let baselineRevision: String?
+    public let remoteRevision: String?
+    public let localLifecycle: String?
+    public let remoteLifecycle: String?
+    public init(remotePresent: Bool, remoteDeleted: Bool, remoteAuthoritative: Bool, editorOwned: Bool, recoveryBlocked: Bool, localPresent: Bool, localUnique: Bool, localIdentityVerified: Bool, localHash: String?, baselineHash: String?, localPath: String?, baselinePath: String?, remotePath: String?, baselineRevision: String?, remoteRevision: String?, localLifecycle: String?, remoteLifecycle: String?) {
+        self.remotePresent = remotePresent
+        self.remoteDeleted = remoteDeleted
+        self.remoteAuthoritative = remoteAuthoritative
+        self.editorOwned = editorOwned
+        self.recoveryBlocked = recoveryBlocked
+        self.localPresent = localPresent
+        self.localUnique = localUnique
+        self.localIdentityVerified = localIdentityVerified
+        self.localHash = localHash
+        self.baselineHash = baselineHash
+        self.localPath = localPath
+        self.baselinePath = baselinePath
+        self.remotePath = remotePath
+        self.baselineRevision = baselineRevision
+        self.remoteRevision = remoteRevision
+        self.localLifecycle = localLifecycle
+        self.remoteLifecycle = remoteLifecycle
+    }
+    private enum CodingKeys: String, CodingKey { case remotePresent, remoteDeleted, remoteAuthoritative, editorOwned, recoveryBlocked, localPresent, localUnique, localIdentityVerified, localHash, baselineHash, localPath, baselinePath, remotePath, baselineRevision, remoteRevision, localLifecycle, remoteLifecycle }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(remotePresent, forKey: .remotePresent)
+        try c.encode(remoteDeleted, forKey: .remoteDeleted)
+        try c.encode(remoteAuthoritative, forKey: .remoteAuthoritative)
+        try c.encode(editorOwned, forKey: .editorOwned)
+        try c.encode(recoveryBlocked, forKey: .recoveryBlocked)
+        try c.encode(localPresent, forKey: .localPresent)
+        try c.encode(localUnique, forKey: .localUnique)
+        try c.encode(localIdentityVerified, forKey: .localIdentityVerified)
+        try c.encode(localHash, forKey: .localHash)
+        try c.encode(baselineHash, forKey: .baselineHash)
+        try c.encode(localPath, forKey: .localPath)
+        try c.encode(baselinePath, forKey: .baselinePath)
+        try c.encode(remotePath, forKey: .remotePath)
+        try c.encode(baselineRevision, forKey: .baselineRevision)
+        try c.encode(remoteRevision, forKey: .remoteRevision)
+        try c.encode(localLifecycle, forKey: .localLifecycle)
+        try c.encode(remoteLifecycle, forKey: .remoteLifecycle)
+    }
+}
+public struct LocalVaultMirrorTombstoneDecision: Codable, Equatable, Sendable { public let action: String }
+
 public struct LocalVaultMirrorQueueCandidate: Codable, Equatable, Sendable {
     public let operationId: String
     public let conflicted: Bool, editorOwned: Bool, recoveryBlocked: Bool, permitted: Bool
@@ -189,6 +250,10 @@ public actor LocalVaultMirrorPolicy {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision
     }
+    private struct TombstoneReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorTombstoneObservation, decision: LocalVaultMirrorTombstoneDecision
+    }
     private struct QueueReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorQueueObservation, decision: LocalVaultMirrorQueueDecision
@@ -229,6 +294,14 @@ public actor LocalVaultMirrorPolicy {
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
                   Set(observation.keys) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
+                  let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
+        }
+        if method == "tombstone" {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
+                  let observation = object["observed"] as? [String: Any],
+                  Set(observation.keys) == Set(["remotePresent", "remoteDeleted", "remoteAuthoritative", "editorOwned", "recoveryBlocked", "localPresent", "localUnique", "localIdentityVerified", "localHash", "baselineHash", "localPath", "baselinePath", "remotePath", "baselineRevision", "remoteRevision", "localLifecycle", "remoteLifecycle"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }
@@ -310,6 +383,20 @@ public actor LocalVaultMirrorPolicy {
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
               ["hold", "unchanged", "follow-remote", "announce-local", "adopt-path"].contains(reply.decision.action) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
+    }
+
+    public func tombstone(_ observed: LocalVaultMirrorTombstoneObservation) async throws -> LocalVaultMirrorTombstoneDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("tombstone", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: TombstoneReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              ["defer", "no-local", "remove-local", "retain-conflict"].contains(reply.decision.action) else { throw Failure.stale }
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.decision

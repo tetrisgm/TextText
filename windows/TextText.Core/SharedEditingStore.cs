@@ -130,6 +130,30 @@ public sealed class SharedEditingStore(TextPackStore store,SyncEngine sync,strin
         var target=UniqueProjection(store,itemId);
         return RebaseProjection(store,itemId,target.Path,adoptingExternalChange:true);
     });
+    internal sealed record ProtectionSnapshot(string Fingerprint,bool Protected);
+    // Read fixed retained files only. Never Recover/Follow/Save or create a directory.
+    internal static ProtectionSnapshot ReadProtectionSnapshot(TextPackStore store,string itemId,string? accountId) {
+        if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))throw new InvalidDataException("Invalid identity.");
+        var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        RetainedFileReplacement.CheckPath(directory);var hashes=new SortedDictionary<string,string>(StringComparer.Ordinal);var blocked=false;
+        foreach(var name in new[]{"checkpoint.json","intent.json","move-intent.json","binary-intent.json","acknowledge.json"}) {
+            var path=System.IO.Path.Combine(directory,name);RetainedFileReplacement.CheckPath(path);if(!File.Exists(path))continue;
+            var bytes=RetainedFileReplacement.Read(path,90*1024*1024);using var json=JsonDocument.Parse(bytes);var value=json.RootElement;
+            if(value.ValueKind!=JsonValueKind.Object||value.TryGetProperty("Version",out var version)&&(!version.TryGetInt32(out var number)||number!=1))throw new InvalidDataException("Unknown shared protection state.");
+            if(name is "checkpoint.json" or "acknowledge.json") {
+                RetainedFileReplacement.JsonFields(bytes,["Version","ItemId","Path","ProjectedHash","AcknowledgedRevision","Epoch","Seq","JournalGeneration","Journal","Pending","RetiredReason"],["ItemId","Path","ProjectedHash","AcknowledgedRevision","Epoch","Seq","JournalGeneration","Journal","Pending"]);
+                var cp=JsonSerializer.Deserialize<SharedCheckpoint>(bytes)??throw new InvalidDataException("Invalid checkpoint.");Validate(store,cp);
+                if(cp.ItemId!=itemId||JournalAccount(cp)!=accountId)throw new SharedAccountMismatchException();blocked|=cp.Pending||cp.RetiredReason is not null||name=="acknowledge.json";
+            } else {
+                if(name=="intent.json"){RetainedFileReplacement.JsonFields(bytes,["Version","BeforeHash","Payload","Checkpoint"],["Version","BeforeHash","Payload","Checkpoint"]);var intent=JsonSerializer.Deserialize<Intent>(bytes)??throw new InvalidDataException("Invalid intent.");Validate(store,intent.Checkpoint);if(intent.Checkpoint.ItemId!=itemId||JournalAccount(intent.Checkpoint)!=accountId)throw new SharedAccountMismatchException();}
+                if(name=="move-intent.json"){var intent=ReadMoveIntent(path)??throw new InvalidDataException("Invalid move intent.");Validate(store,intent.Checkpoint);if(intent.Checkpoint.ItemId!=itemId||JournalAccount(intent.Checkpoint)!=accountId)throw new SharedAccountMismatchException();}
+                if(name=="binary-intent.json"){RetainedFileReplacement.JsonFields(bytes,["Version","ItemId","Path","BeforeHash","AfterHash"],["Version","ItemId","Path","BeforeHash","AfterHash"]);var intent=JsonSerializer.Deserialize<BinaryIntent>(bytes)??throw new InvalidDataException("Invalid binary intent.");if(intent.ItemId!=itemId)throw new InvalidDataException("Invalid binary identity.");}
+                blocked=true;
+            }
+            hashes[name]=TextPackStore.Hash(bytes);
+        }
+        return new(JsonSerializer.Serialize(hashes),blocked);
+    }
     internal static bool HasReadyCheckpoint(TextPackStore store,string itemId) {
         if(!Regex.IsMatch(itemId,@"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}\z"))return false;
         var directory=System.IO.Path.Combine(store.StateDirectory,"shared-editing",itemId);

@@ -456,6 +456,43 @@ public actor LocalVaultSync {
         }
         return decision
     }
+    private func tombstoneDecision(itemId id: String, localPaths: [String], remote: LocalVaultRemoteItem) async throws -> LocalVaultMirrorTombstoneDecision {
+        guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
+        let baseline = state.baselines[id], lifecycle = state.lifecycles?[id], pending = state.outbox[id], conflict = state.conflicts[id]
+        let intent = try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id)
+        let protection = try sharedStore.protectionSnapshot(itemId: id), live = sharedSessions[id]
+        let path = localPaths.first
+        let metadata = try path.map { try LocalVaultDocumentStore(root: root).readMetadata(path: $0) }
+        let protected = live != nil || protection.protected
+        func current() throws {
+            try Task.checkCancellation()
+            try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)
+            if let accountId { try LocalVaultAccountRootOwnership.open(root: root, binding: state.binding, accountId: accountId) }
+            guard state.baselines[id] == baseline, state.lifecycles?[id] == lifecycle, state.outbox[id] == pending, state.conflicts[id] == conflict,
+                  try LocalVaultDeviceState.deletionSnapshot(root: root, itemId: id) == intent,
+                  sharedSessions[id]?.token == live?.token, sharedSessions[id]?.path == live?.path, sharedSessions[id]?.hash == live?.hash,
+                  try sharedStore.protectionSnapshot(itemId: id) == protection else { throw LocalVaultSyncFailure.changed }
+            let freshPath = try uniqueSameIdentityPath(itemId: id, excluding: "")
+            guard freshPath == path else { throw LocalVaultSyncFailure.changed }
+            if let path, let metadata {
+                let fresh = try LocalVaultDocumentStore(root: root).readMetadata(path: path)
+                guard fresh.hash == metadata.hash, MarkdownIdentityCodec.extract(from: fresh.contents.markdown)?.itemId == id else { throw LocalVaultSyncFailure.changed }
+            }
+            try assertReplacementReadable(itemId: id)
+        }
+        let observation = LocalVaultMirrorTombstoneObservation(remotePresent: true, remoteDeleted: remote.isDeleted, remoteAuthoritative: true,
+            editorOwned: protected, recoveryBlocked: pending != nil || conflict != nil || intent != nil, localPresent: path != nil,
+            localUnique: localPaths.count == 1, localIdentityVerified: metadata.flatMap { MarkdownIdentityCodec.extract(from: $0.contents.markdown)?.itemId } == id,
+            localHash: metadata?.hash, baselineHash: baseline?.localHash, localPath: path, baselinePath: baseline?.path, remotePath: remote.relativePath,
+            baselineRevision: baseline?.revision, remoteRevision: remote.revision, localLifecycle: baseline == nil ? nil : lifecycle, remoteLifecycle: remote.lifecycle)
+        let decision = try await mirrorPolicy.tombstone(observation); try current()
+        if decision.action == "remove-local" || decision.action == "retain-conflict" {
+            let fresh = try await transport.manifest().filter { $0.itemId == id }; try current()
+            guard fresh.count == 1, fresh[0] == remote else { throw LocalVaultSyncFailure.changed }
+        }
+        return decision
+    }
+
     private func followedSharedPath(itemId: String) throws -> (path: String, hash: String)? {
         let live = sharedSessions[itemId]
         if live?.retired == true { return nil }
@@ -1616,7 +1653,7 @@ public actor LocalVaultSync {
         for id in ids[start..<(start + count)] {
             var activePath = localByID[id]?.first ?? remoteByID[id]?.relativePath ?? state.baselines[id]?.path ?? id
             do {
-                if try sharedProtection(itemId: id) {
+                if remoteByID[id]?.isDeleted != true, try sharedProtection(itemId: id) {
                     let pathDecision = try await protectedPathDecision(itemId: id, localPaths: localByID[id] ?? [], remote: remoteByID[id])
                     // Content protection must not pin an identity to an obsolete
                     // path. Rebase only a unique, unchanged shared projection.
@@ -1704,9 +1741,6 @@ public actor LocalVaultSync {
                     state.identities?.removeValue(forKey: document.path)
                     throw LocalVaultSyncFailure.changed
                 }
-                if let document, LocalVaultDeviceState.isCloudManaged(root: root) {
-                    try LocalVaultDeviceState.clearDeletionIfRestored(root: root, itemId: id, path: document.path)
-                }
                 if let conflict = state.conflicts[id],
                    conflict.localHash == (document?.hash ?? baseline?.localHash),
                    conflict.remoteRevision == remote?.revision,
@@ -1714,9 +1748,10 @@ public actor LocalVaultSync {
                     report.conflicts += conflict.paths; continue
                 }
                 if let remote, remote.isDeleted {
+                    let disposition = try await tombstoneDecision(itemId: id, localPaths: localByID[id] ?? [], remote: remote)
+                    if disposition.action == "defer" || disposition.action == "no-local" { continue }
                     if let document, let localPath {
-                        if let baseline, baseline.localHash == document.hash, baseline.revision == remote.revision,
-                           baseline.path == localPath, baseline.path == remote.relativePath {
+                        if disposition.action == "remove-local" {
                             try removeLocal(path: localPath, expectedHash: document.hash)
                             state.identities?.removeValue(forKey: localPath)
                             state.baselines.removeValue(forKey: id)
@@ -1730,8 +1765,11 @@ public actor LocalVaultSync {
                             state.outbox.removeValue(forKey: id)
                             try persist(); try? FileManager.default.removeItem(at: payload(pending))
                         }
-                    } else { state.baselines.removeValue(forKey: id) }
+                    }
                     try persist(); continue
+                }
+                if let document, LocalVaultDeviceState.isCloudManaged(root: root) {
+                    try LocalVaultDeviceState.clearDeletionIfRestored(root: root, itemId: id, path: document.path)
                 }
                 if document == nil {
                     guard indexComplete else { report.hasMore = true; continue }

@@ -177,6 +177,30 @@ public sealed partial class SyncEngine
         }
         return decision;
     }
+    async Task<MirrorTombstoneDecision> TombstoneDecision(State state,string id,Baseline baseline,PackFile? projection,RemoteItem remote,CancellationToken ct) {
+        if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("Tombstone policy unavailable.");
+        var capturedState=JsonSerializer.Serialize(state);var intent=store.Intent(id);var editing=IsEditing(id);
+        var protection=SharedEditingStore.ReadProtectionSnapshot(store,id,accountId);
+        var matches=store.Scan().Where(file=>file.ItemId==id).ToArray();
+        var transportCapabilities=JsonSerializer.Serialize(transport.Capabilities);
+        void Current() {
+            ct.ThrowIfCancellationRequested();var current=Load();
+            var files=store.Scan().Where(file=>file.ItemId==id).ToArray();
+            if(JsonSerializer.Serialize(current)!=capturedState||store.Intent(id)!=intent||IsEditing(id)!=editing||
+               JsonSerializer.Serialize(transport.Capabilities)!=transportCapabilities||SharedEditingStore.ReadProtectionSnapshot(store,id,accountId)!=protection||files.Length!=matches.Length||
+               files.Length==1&&(projection is null||files[0].Path!=projection.Path||files[0].Hash!=projection.Hash))throw new FileChangedException();
+            store.AssertReplacementReadable(id);
+        }
+        var observed=new MirrorTombstoneObservation(true,remote.Deleted,true,editing||protection.Protected,intent is not null||state.SharedRenames.ContainsKey(id)||Blocked(state,id)||state.Outbox.Any(op=>op.ItemId==id)||state.BinaryOutbox.Any(op=>op.ItemId==id)||state.PendingPull?.ItemId==id,
+            projection is not null,matches.Length==1,projection?.ItemId==id,projection?.Hash,baseline.Hash,projection?.Path,baseline.Path,remote.RelativePath,
+            baseline.Revision,remote.Revision,baseline.Lifecycle,remote.Lifecycle);
+        var decision=await mirrorPolicy.TombstoneAsync(observed,ct);Current();
+        if(decision.Action is "remove-local" or "retain-conflict") {
+            var fresh=(await transport.ManifestAsync(ct)).Where(item=>item.ItemId==id).ToArray();Current();
+            if(fresh.Length!=1||fresh[0]!=remote)throw new FileChangedException();
+        }
+        return decision;
+    }
     async Task AnnounceSharedRename(State state,string id,Baseline baseline,PackFile projection,RemoteItem remote,CancellationToken ct) {
         if(state.SharedRenames.TryGetValue(id,out var retained)&&(remote.Deleted||retained.Lifecycle!=remote.Lifecycle)) {
             if(!retained.Conflicted){state.SharedRenames[id]=retained with{Conflicted=true};Save(state);}
@@ -286,6 +310,14 @@ public sealed partial class SyncEngine
             local=store.Scan().ToDictionary(x=>x.ItemId);
             foreach(var pair in state.Items.ToArray()) {
                 cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(store.ReplacementBlocked(id))continue;
+                if(remote.TryGetValue(id,out var tombstoneRemote)&&tombstoneRemote.Deleted) {
+                    var tombstoneBaseline=pair.Value;var tombstoneFile=local.GetValueOrDefault(id);
+                    var disposition=await TombstoneDecision(state,id,tombstoneBaseline,tombstoneFile,tombstoneRemote,cancellation);
+                    if(disposition.Action is "defer" or "no-local")continue;
+                    if(tombstoneFile is null)throw new FileChangedException();
+                    if(disposition.Action=="retain-conflict") {store.Preserve(store.Read(tombstoneFile.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",id,tombstoneFile.Path,null,tombstoneBaseline.Revision,tombstoneFile.Hash,null,true));continue;}
+                    store.RemoveRetaining(tombstoneFile.Path,tombstoneFile.Hash);state.Items.Remove(id);Save(state);store.ClearIntent(id);local.Remove(id);continue;
+                }
                 if(!IsEditing(id) && state.BinaryOutbox.Any(x=>x.ItemId==id)) {
                     if(remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted)
                         await SyncOpenBinary(state,local.GetValueOrDefault(id),pair.Value,binaryRemote,cancellation);
@@ -330,10 +362,7 @@ public sealed partial class SyncEngine
                 }
                 // Provider-evicted or transiently absent files are never inferred to be deletions.
                 if(file==null) continue;
-                if(server is { Deleted:true }) {
-                    if(file.Hash!=baseline.Hash) { store.Preserve(store.Read(file.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",id,file.Path,null,baseline.Revision,file.Hash,null,true));continue; }
-                    store.RemoveRetaining(file.Path,file.Hash);state.Items.Remove(id);Save(state);store.ClearIntent(id);local.Remove(id);continue;
-                }
+
                 if(server==null) continue; // Missing visibility is not authority to delete or recreate.
                 if(file.Path!=baseline.Path) {
                     if(server.RelativePath==file.Path) {

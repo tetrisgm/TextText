@@ -1,3 +1,4 @@
+import tombstoneVectors from "../../sync/fixtures/mirror-tombstone.json";
 import sharedPathVectors from "../../sync/fixtures/mirror-shared-path.json";
 import queueVectors from "../../sync/fixtures/mirror-queue.json";
 import lifecycleVectors from "../../sync/fixtures/mirror-lifecycle.json";
@@ -24,6 +25,18 @@ describe("portable mirror policy host", () => {
     }
     host.retire();
     expect(() => host.sharedPath({...request, observed: sharedPathVectors[0].observed})).toThrow("Stale");
+  });
+  it("fences tombstone decisions with exact scope, observation and request echo", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of tombstoneVectors) {
+      const input = {...request, observed: vector.observed};
+      expect(host.tombstone(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.tombstone({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.tombstone({...input, scope: {...scope, accountId: "foreign"}})).toThrow("Stale");
+      expect(() => host.tombstone({...input, observed: {...vector.observed, payload: "forbidden"}})).toThrow();
+    }
+    host.retire();
+    expect(() => host.tombstone({...request, observed: tombstoneVectors[0].observed})).toThrow("Stale");
   });
   it("covers all local/remote/refresh combinations, retaining upload CAS on concurrent edits", () => {
     for (const vector of vectors) expect(mirrorDisposition(validateMirrorObservation(vector.observed)), vector.name).toBe(vector.disposition);

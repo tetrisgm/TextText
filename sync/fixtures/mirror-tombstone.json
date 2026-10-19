@@ -1,0 +1,502 @@
+[
+  {
+    "name": "exact attested baseline and known generation may remove",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "remove-local"
+    }
+  },
+  {
+    "name": "local bytes changed",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "remote revision advanced before trash",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-b",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "remote path changed before trash",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Moved/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "local rename remains retained",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Renamed.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "unknown retained generation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": null,
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "unknown remote generation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": null
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "both generations unknown",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": null,
+      "remoteLifecycle": null
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "different generation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-b"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "no baseline",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": null,
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": null,
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": null,
+      "remoteRevision": "revision-a",
+      "localLifecycle": null,
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "retain-conflict"
+    }
+  },
+  {
+    "name": "editor owns projection",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": true,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "recovery blocks mutation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": true,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "tombstone is not authoritative",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": false,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "remote item is live",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": false,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "multiple local identities",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": false,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "local stable identity unverified",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": false,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "no remote visibility",
+    "observed": {
+      "remotePresent": false,
+      "remoteDeleted": false,
+      "remoteAuthoritative": false,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": true,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": "Notes/Fixture.textpack",
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": null,
+      "baselineRevision": "revision-a",
+      "remoteRevision": null,
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": null
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "no local file authorizes no content mutation",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": false,
+      "localUnique": false,
+      "localIdentityVerified": false,
+      "localHash": null,
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": null,
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "no-local"
+    }
+  },
+  {
+    "name": "no local file still defers when blocked",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": true,
+      "editorOwned": false,
+      "recoveryBlocked": true,
+      "localPresent": false,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": null,
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": null,
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  },
+  {
+    "name": "no local file still defers without authority",
+    "observed": {
+      "remotePresent": true,
+      "remoteDeleted": true,
+      "remoteAuthoritative": false,
+      "editorOwned": false,
+      "recoveryBlocked": false,
+      "localPresent": false,
+      "localUnique": true,
+      "localIdentityVerified": true,
+      "localHash": null,
+      "baselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "localPath": null,
+      "baselinePath": "Notes/Fixture.textpack",
+      "remotePath": "Notes/Fixture.textpack",
+      "baselineRevision": "revision-a",
+      "remoteRevision": "revision-a",
+      "localLifecycle": "generation-a",
+      "remoteLifecycle": "generation-a"
+    },
+    "decision": {
+      "action": "defer"
+    }
+  }
+]

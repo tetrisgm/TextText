@@ -796,9 +796,12 @@ final class LocalVaultSyncTests: XCTestCase {
     }
 
     func testRemoteRenameAndDeletionPreserveHistory() async throws {
-        let bytes = try pack("Initial")
-        try putLocal(bytes)
+        let archive = try Archive(data: pack("Initial"), accessMode: .update)
+        let marker = Data(#"{"version":1,"generation":"history-generation"}"#.utf8)
+        try archive.addEntry(with: "texttext-lifecycle.json", type: .file, uncompressedSize: Int64(marker.count)) { position, size in marker.subdata(in: Int(position)..<Int(position) + size) }
+        let bytes = try XCTUnwrap(archive.data)
         let transport = FakeVaultTransport()
+        await transport.restore(itemId: itemId, path: path, data: bytes, lifecycle: "history-generation")
         let sync = try engine(transport)
         _ = try await sync.sync()
         let renamed = "Moved/Note.textpack"
@@ -1523,7 +1526,7 @@ actor FakeVaultTransport: LocalVaultSyncTransport {
         if receipts[operationId] != nil { return }
         guard let item = items[itemId], item.revision == baseRevision, item.relativePath == path else { throw LocalVaultSyncFailure.conflict }
         items.removeValue(forKey: itemId)
-        tombstones[itemId] = .init(itemId: itemId, relativePath: path, revision: baseRevision, deleted: true)
+        tombstones[itemId] = .init(itemId: itemId, relativePath: path, revision: baseRevision, deleted: true, lifecycle: lifecycles[itemId])
         receipts[operationId] = baseRevision
     }
 

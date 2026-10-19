@@ -12,6 +12,7 @@ await copyFile('sync/fixtures/mirror-schedule.json',path.join(output,'schedule-v
 await copyFile('sync/fixtures/mirror-lifecycle.json',path.join(output,'lifecycle-vectors.json'));
 await copyFile('sync/fixtures/mirror-queue.json',path.join(output,'queue-vectors.json'));
 await copyFile('sync/fixtures/mirror-shared-path.json',path.join(output,'shared-path-vectors.json'));
+await copyFile('sync/fixtures/mirror-tombstone.json',path.join(output,'tombstone-vectors.json'));
 // Load the exact packaged script without an editor, transport or credentials.
 await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
 const manifest=JSON.parse(await readFile(path.join(output,'mirror-policy.json'),'utf8'));
@@ -51,6 +52,12 @@ try {
  for(const [i,vector] of paths.entries()) {
   const request={...binding,scope,requestId:'path-'+i,observed:vector.observed};
   const reply=await page.evaluate(request=>window.texttextMirrorPolicy.sharedPath(request),request);
+  assert.deepEqual(reply,{...request,decision:vector.decision});
+ }
+ const tombstones=JSON.parse(await readFile(path.join(output,'tombstone-vectors.json'),'utf8'));
+ for(const [i,vector] of tombstones.entries()) {
+  const request={...binding,scope,requestId:'tombstone-'+i,observed:vector.observed};
+  const reply=await page.evaluate(request=>window.texttextMirrorPolicy.tombstone(request),request);
   assert.deepEqual(reply,{...request,decision:vector.decision});
  }
  const queues=JSON.parse(await readFile(path.join(output,'queue-vectors.json'),'utf8'));

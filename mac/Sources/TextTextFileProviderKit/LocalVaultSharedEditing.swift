@@ -124,6 +124,38 @@ struct LocalVaultSharedEditingStore: Sendable {
         var expectedAssetHash: String?
         var assetHash: String?
     }
+    struct ProtectionSnapshot: Equatable, Sendable { let fingerprints: [String: String]; let protected: Bool }
+    /// No recovery, account adoption, projection following, or acknowledgement.
+    /// Callers compare this exact evidence again after a suspended policy RPC.
+    func protectionSnapshot(itemId: String) throws -> ProtectionSnapshot {
+        let directory = try itemDirectory(itemId)
+        var fingerprints: [String: String] = [:], protected = false
+        for name in ["checkpoint.json", "intent.json", "move-intent.json", "binary-intent.json"] {
+            guard let bytes = try read(directory.appendingPathComponent(name), limit: 9 * 1024 * 1024) else { continue }
+            guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw LocalVaultSharedFailure.invalid }
+            if let version = object["version"], !(version is NSNull), (version as? Int != 1 || CFGetTypeID(version as CFTypeRef) == CFBooleanGetTypeID()) { throw LocalVaultSharedFailure.invalid }
+            if name == "checkpoint.json" {
+                guard Set(object.keys).isSubset(of: Set(["version", "itemId", "path", "projectedHash", "acknowledgedRevision", "epoch", "seq", "journalGeneration", "journal", "pending", "retiredReason"])) else { throw LocalVaultSharedFailure.invalid }
+                let checkpoint = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: bytes)
+                guard checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }
+                try validate(checkpoint); try requireAccount(checkpoint)
+                protected = protected || checkpoint.pending || checkpoint.retiredReason != nil
+            } else {
+                // Any retained intent is a fence. Decode its existing schema
+                // without invoking its completion/recovery path.
+                if name == "intent.json" {
+                    guard Set(object.keys).isSubset(of: Set(["version", "beforeHash", "checkpoint", "markdown", "documentJSON"])) else { throw LocalVaultSharedFailure.invalid }
+                    let intent = try JSONDecoder().decode(Intent.self, from: bytes); guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }; try validate(intent.checkpoint); try requireAccount(intent.checkpoint)
+                }
+                if name == "move-intent.json" { let intent = try decodeMoveIntent(bytes); guard intent.checkpoint.itemId == itemId else { throw LocalVaultSharedFailure.invalid }; try validate(intent.checkpoint); try requireAccount(intent.checkpoint) }
+                if name == "binary-intent.json" { guard Set(object.keys).isSubset(of: Set(["version", "itemId", "path", "beforeHash", "afterHash", "entryPath", "expectedAssetHash", "assetHash"])) else { throw LocalVaultSharedFailure.invalid }; let intent = try JSONDecoder().decode(BinaryIntent.self, from: bytes); guard intent.itemId == itemId else { throw LocalVaultSharedFailure.invalid } }
+                protected = true
+            }
+            fingerprints[name] = TextTextStableDigest.sha256Hex(bytes)
+        }
+        return .init(fingerprints: fingerprints, protected: protected)
+    }
+
     private func itemDirectory(_ itemId: String, create: Bool = false) throws -> URL {
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
         try LocalVaultAccountRootOwnership.requireNoAdoption(root: root)

@@ -12,7 +12,7 @@ cp mac/Package.resolved "$lock_copy"
 test_log=$(mktemp)
 trap 'cp "$lock_copy" mac/Package.resolved; rm -f "$lock_copy" "$test_log"' EXIT
 TEXTTEXT_STORE=1 TEXTTEXT_VAULT_HTTP_TEST=1 swift test --package-path mac --jobs 2 \
-  --filter 'LocalVault(SharedPathPolicyTests|FolderCaseSyncTests|FolderCaseHTTPTests|ConflictRetentionTests|ReplacementSyncTests|SharedReplacementFenceTests|RecoveryAssetTests|OpaqueReplacementTests|MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests|ReplacementRecoveryRegistryTests|RetainedFileReplacementTests|RetainedFileRemovalTests|RetainedReplacementProfileTests|FolderCaseRenameTests|FolderRenameBridgeTests|FolderPropagationProfileTests|FolderSyncRecoveryBridgeTests|LocalHandoffProfileTests|LocalHandoffBridgeTests' 2>&1 | tee "$test_log"
+  --filter 'LocalVault(SharedPathPolicyTests|FolderCaseSyncTests|FolderCaseHTTPTests|ConflictRetentionTests|ReplacementSyncTests|SharedReplacementFenceTests|RecoveryAssetTests|OpaqueReplacementTests|MirrorPolicyHostTests|AccountStateAdoptionTests|AccountRootOwnershipTests|AccountIdentityTests|SyncTests|SharedEditingTests|RecoveryTests|DeviceStateTests|HTTPContractTests|SessionLifecycleTests|ConnectionControllerTests|CollaborationTests)|StableFileSnapshotTests|DocumentCreationTests|RemoteDocumentStoreTests|ReplacementRecoveryRegistryTests|RetainedFileReplacementTests|RetainedFileRemovalTests|RetainedReplacementProfileTests|FolderCaseRenameTests|FolderRenameBridgeTests|FolderPropagationProfileTests|FolderSyncRecoveryBridgeTests|LocalHandoffProfileTests|LocalHandoffBridgeTests|MirrorTombstoneIntegrationTests|SharedRenameProfileTests|ProtectedRenameTransportTests' 2>&1 | tee "$test_log"
 # Swift exits successfully even if a filter selects zero tests. Fail closed.
 for suite in SharedPathPolicy FolderCaseSync FolderCaseHTTP ConflictRetention ReplacementSync SharedReplacementFence RecoveryAsset OpaqueReplacement MirrorPolicyHost AccountStateAdoption AccountRootOwnership AccountIdentity Sync SharedEditing Recovery DeviceState HTTPContract SessionLifecycle ConnectionController Collaboration; do
   grep -Eq "Test Case '.*LocalVault${suite}Tests .*' passed" "$test_log" || {
@@ -21,7 +21,7 @@ for suite in SharedPathPolicy FolderCaseSync FolderCaseHTTP ConflictRetention Re
   }
 done
 
-for suite in DocumentCreation RemoteDocumentStore StableFileSnapshot ReplacementRecoveryRegistry RetainedFileReplacement RetainedFileRemoval RetainedReplacementProfile FolderCaseRename FolderRenameBridge FolderPropagationProfile FolderSyncRecoveryBridge LocalHandoffProfile LocalHandoffBridge; do
+for suite in DocumentCreation RemoteDocumentStore StableFileSnapshot ReplacementRecoveryRegistry RetainedFileReplacement RetainedFileRemoval RetainedReplacementProfile FolderCaseRename FolderRenameBridge FolderPropagationProfile FolderSyncRecoveryBridge LocalHandoffProfile LocalHandoffBridge MirrorTombstoneIntegration SharedRenameProfile ProtectedRenameTransport; do
   grep -Eq "Test Case '.*${suite}Tests .*' passed" "$test_log" || {
     echo "Required native creation suite did not execute: ${suite}Tests" >&2
     exit 1
