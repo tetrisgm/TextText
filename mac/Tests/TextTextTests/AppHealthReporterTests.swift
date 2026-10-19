@@ -18,7 +18,7 @@ final class AppHealthReporterTests: XCTestCase {
             }
         }
 
-        let store = StateStore()
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
         let reporter = AppHealthReporter(
             stateStore: store,
             syncRootProvider: { root },
@@ -66,7 +66,7 @@ final class AppHealthReporterTests: XCTestCase {
         }
 
         let report = AppHealthReporter(
-            stateStore: StateStore(),
+            stateStore: StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil),
             syncRootProvider: { root },
             finderStatusProvider: { .healthyFixture },
             vaultSelectionProvider: { .none },
@@ -107,7 +107,7 @@ final class AppHealthReporterTests: XCTestCase {
             localDevelopment: true, includeAttestation: false)
         let reportForBundle: (Bundle) -> TextTextHealthReport = { bundle in
             AppHealthReporter(
-                stateStore: StateStore(),
+                stateStore: StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil),
                 syncRootProvider: { root },
                 finderStatusProvider: { .healthyFixture },
                 vaultSelectionProvider: { .none },
@@ -153,7 +153,7 @@ final class AppHealthReporterTests: XCTestCase {
             .healthyFixture,
         ]
         let reporter = AppHealthReporter(
-            stateStore: StateStore(),
+            stateStore: StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil),
             syncRootProvider: { root },
             finderStatusProvider: { snapshots.removeFirst() },
             vaultSelectionProvider: { .none },
@@ -186,7 +186,7 @@ final class AppHealthReporterTests: XCTestCase {
                 unsetenv("TEXTTEXT_STATE_DIR")
             }
         }
-        let store = StateStore()
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
         let probe = FileProviderReadinessProbe(
             maximumSamples: 3, interval: 0, wait: { _ in })
         let pending = AppHealthReporter(
@@ -233,7 +233,7 @@ final class AppHealthReporterTests: XCTestCase {
                 unsetenv("TEXTTEXT_STATE_DIR")
             }
         }
-        let store = StateStore()
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
         store.saveCredentials(Credentials(
             token: "wsk_health_fixture",
             serverOrigin: "https://texttext.example",
@@ -289,7 +289,7 @@ final class AppHealthReporterTests: XCTestCase {
         }
 
         let report = AppHealthReporter(
-            stateStore: StateStore(),
+            stateStore: StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil),
             syncRootProvider: { workspace },
             finderStatusProvider: { .healthyFixture },
             fileProviderDomainEnabledProvider: { true },
@@ -323,7 +323,7 @@ final class AppHealthReporterTests: XCTestCase {
                 unsetenv("TEXTTEXT_STATE_DIR")
             }
         }
-        let store = StateStore()
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
         store.saveCredentials(Credentials(
             token: "wsk_health_fixture",
             serverOrigin: "https://texttext.example",
@@ -375,7 +375,7 @@ final class AppHealthReporterTests: XCTestCase {
         let state = try temporaryDirectory(name: "state-vault-selected")
         let bundle = try releaseBundle()
         try withStateDirectory(state) {
-            let store = StateStore()
+            let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
             store.saveCredentials(.healthFixture)
             let bookmark = try vault.bookmarkData(
                 options: [.withSecurityScope], includingResourceValuesForKeys: nil,
@@ -418,7 +418,7 @@ final class AppHealthReporterTests: XCTestCase {
         let state = try temporaryDirectory(name: "state-vault-plain")
         let bundle = try releaseBundle()
         try withStateDirectory(state) {
-            let store = StateStore()
+            let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
             store.saveCredentials(.healthFixture)
             let configuration = LocalVaultConfiguration(
                 rootPath: vault.path, bookmarkData: nil)
@@ -471,7 +471,7 @@ final class AppHealthReporterTests: XCTestCase {
         let state = try temporaryDirectory(name: "state-vault-missing")
         let bundle = try releaseBundle()
         try withStateDirectory(state) {
-            let store = StateStore()
+            let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
             store.saveCredentials(.healthFixture)
             let reportFor: (TextTextHealthVaultSelection) -> TextTextHealthReport = { selection in
                 AppHealthReporter(
@@ -518,7 +518,7 @@ final class AppHealthReporterTests: XCTestCase {
         let state = try temporaryDirectory(name: "state-mount-only")
         let bundle = try releaseBundle()
         try withStateDirectory(state) {
-            let store = StateStore()
+            let store = StateStore(fileManager: StateStoreTestFileManager(root: state), groupContainer: nil, cliCredentialsURL: nil)
             store.saveCredentials(.healthFixture)
             let report = AppHealthReporter(
                 stateStore: store,

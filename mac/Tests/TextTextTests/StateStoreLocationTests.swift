@@ -6,11 +6,13 @@ import XCTest
 /// same app a different way signs you out.
 final class StateStoreLocationTests: XCTestCase {
     private var root: URL!
+    private var fixtureFileManager: StateStoreTestFileManager!
 
     override func setUpWithError() throws {
         root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("statestore-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        fixtureFileManager = StateStoreTestFileManager(root: root)
     }
 
     override func tearDownWithError() throws {
@@ -35,7 +37,7 @@ final class StateStoreLocationTests: XCTestCase {
     }
 
     func testLateIdentityAndWorkspaceResponsesCannotReplaceANewerSignIn() throws {
-        let store = StateStore(groupContainer: try makeContainer(), cliCredentialsURL: nil)
+        let store = StateStore(fileManager: fixtureFileManager, groupContainer: try makeContainer(), cliCredentialsURL: nil)
         let a = Credentials(token: "fixture-a", serverOrigin: "https://texttext.test", tokenName: "A", linkedAt: Date(timeIntervalSince1970: 42))
         let b = Credentials(token: "fixture-b", serverOrigin: "https://texttext.test", tokenName: "B", linkedAt: Date(timeIntervalSince1970: 43))
         store.saveCredentials(a)
@@ -62,31 +64,75 @@ final class StateStoreLocationTests: XCTestCase {
 
     func testUsesGroupContainerWhenOneExists() throws {
         let container = try makeContainer()
-        let store = StateStore(groupContainer: container)
+        let store = StateStore(fileManager: fixtureFileManager, groupContainer: container, cliCredentialsURL: nil)
         XCTAssertEqual(store.baseDir, container.appendingPathComponent("TextText", isDirectory: true))
     }
 
     func testFallsBackToApplicationSupportWithoutAContainer() {
-        let store = StateStore(groupContainer: nil)
-        XCTAssertEqual(store.baseDir, StateStore.legacyBaseDir())
+        let store = StateStore(fileManager: fixtureFileManager, groupContainer: nil, cliCredentialsURL: nil)
+        XCTAssertEqual(store.baseDir, StateStore.legacyBaseDir(fileManager: fixtureFileManager))
     }
 
     func testEnvironmentOverrideStillWins() throws {
         let container = try makeContainer()
         let override = root.appendingPathComponent("explicit", isDirectory: true)
+        let previous = ProcessInfo.processInfo.environment["TEXTTEXT_STATE_DIR"]
         setenv("TEXTTEXT_STATE_DIR", override.path, 1)
-        defer { unsetenv("TEXTTEXT_STATE_DIR") }
-        let store = StateStore(groupContainer: container)
+        defer {
+            if let previous { setenv("TEXTTEXT_STATE_DIR", previous, 1) }
+            else { unsetenv("TEXTTEXT_STATE_DIR") }
+        }
+        let store = StateStore(fileManager: fixtureFileManager, groupContainer: container, cliCredentialsURL: nil)
         XCTAssertEqual(store.baseDir.standardizedFileURL, override.standardizedFileURL)
+    }
+
+    func testConstructorMigratesOwnedLegacyCredentialsAndCacheWithoutOverwritingNewerState() throws {
+        let fm = try XCTUnwrap(fixtureFileManager)
+        let legacy = StateStore.legacyBaseDir(fileManager: fm)
+        try fm.createDirectory(at: legacy, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let credential = Credentials(token: "fixture", serverOrigin: "https://texttext.test",
+            tokenName: "Owned fixture", linkedAt: Date(timeIntervalSince1970: 42))
+        let credentialBytes = try encoder.encode(credential)
+        let cacheBytes = Data("owned workspace cache".utf8)
+        let sources = ["credentials.json": credentialBytes, "account.json": cacheBytes]
+        for (name, bytes) in sources { try bytes.write(to: legacy.appendingPathComponent(name)) }
+        try fm.setAttributes([.posixPermissions: 0o644],
+            ofItemAtPath: legacy.appendingPathComponent("credentials.json").path)
+        let queriesBefore = fm.applicationSupportQueryCount
+        let container = try makeContainer()
+        let store = StateStore(fileManager: fm, groupContainer: container, cliCredentialsURL: nil, stateOrigin: nil)
+        XCTAssertGreaterThan(fm.applicationSupportQueryCount, queriesBefore)
+        XCTAssertEqual(store.baseDir, container.appendingPathComponent("TextText", isDirectory: true))
+        XCTAssertEqual(store.loadCredentials()?.token, credential.token)
+        for (name, bytes) in sources {
+            XCTAssertEqual(try Data(contentsOf: legacy.appendingPathComponent(name)), bytes)
+            XCTAssertEqual(try Data(contentsOf: store.baseDir.appendingPathComponent(name)), bytes)
+        }
+        let mode = try fm.attributesOfItem(atPath: store.credentialsURL.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.int16Value, 0o600)
+        let sourceMode = try fm.attributesOfItem(atPath: legacy.appendingPathComponent("credentials.json").path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(sourceMode?.int16Value, 0o644)
+
+        let newerCredential = Credentials(token: "newer-fixture", serverOrigin: credential.serverOrigin,
+            tokenName: "Newer fixture", linkedAt: Date(timeIntervalSince1970: 43))
+        let newerBytes = try encoder.encode(newerCredential), newerCache = Data("newer cache".utf8)
+        try newerBytes.write(to: store.credentialsURL)
+        try newerCache.write(to: store.accountURL)
+        let reopened = StateStore(fileManager: fm, groupContainer: container, cliCredentialsURL: nil, stateOrigin: nil)
+        XCTAssertEqual(reopened.loadCredentials()?.token, newerCredential.token)
+        XCTAssertEqual(try Data(contentsOf: reopened.accountURL), newerCache)
+        for (name, bytes) in sources { XCTAssertEqual(try Data(contentsOf: legacy.appendingPathComponent(name)), bytes) }
     }
 
     func testCarriesLegacyStateForwardOnce() throws {
         let container = try makeContainer()
-        let legacy = StateStore.legacyBaseDir()
+        let legacy = StateStore.legacyBaseDir(fileManager: fixtureFileManager)
         let fm = FileManager.default
 
-        // A real machine's legacy directory is the one this test cannot write to
-        // safely, so drive the copy directly with a temporary stand-in.
+        // Exercise the copy API with a separate owned source; constructor tests
+        // above use the fixture's isolated Application Support legacy directory.
         let source = root.appendingPathComponent("legacy", isDirectory: true)
         try fm.createDirectory(at: source, withIntermediateDirectories: true)
         try Data(#"{"token":"t"}"#.utf8)
@@ -137,7 +183,7 @@ final class StateStoreLocationTests: XCTestCase {
         try indexBytes.write(to: indexURL)
         try trashedBytes.write(to: trashedURL)
 
-        let store = StateStore(groupContainer: container, cliCredentialsURL: nil)
+        let store = StateStore(fileManager: fixtureFileManager, groupContainer: container, cliCredentialsURL: nil)
         store.deleteCredentials()
 
         XCTAssertEqual(try Data(contentsOf: indexURL), indexBytes)
@@ -167,6 +213,7 @@ final class StateStoreLocationTests: XCTestCase {
         let cliCredential = root.appendingPathComponent(
             "Application Support/TextText/credentials.json")
         let store = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: cliCredential
         )
@@ -200,6 +247,7 @@ final class StateStoreLocationTests: XCTestCase {
         let cliCredential = root.appendingPathComponent(
             "Application Support/TextText/credentials.json")
         let store = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: cliCredential
         )
@@ -234,6 +282,7 @@ final class StateStoreLocationTests: XCTestCase {
         let cliCredential = root.appendingPathComponent(
             "Application Support/TextText/credentials.json")
         let store = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: cliCredential
         )
@@ -259,6 +308,7 @@ final class StateStoreLocationTests: XCTestCase {
         let cliCredential = root.appendingPathComponent(
             "Application Support/TextText/credentials.json")
         let store = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: cliCredential
         )
@@ -284,6 +334,7 @@ final class StateStoreLocationTests: XCTestCase {
         let wouldBeHandshake = root.appendingPathComponent(
             "Application Support/TextText/credentials.json")
         let store = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: nil
         )
@@ -301,6 +352,7 @@ final class StateStoreLocationTests: XCTestCase {
     func testLocalBuildDoesNotReuseOrDeleteProductionSignIn() throws {
         let container = try makeContainer()
         let production = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: nil,
             stateOrigin: URL(string: "https://texttext.app")
@@ -314,6 +366,7 @@ final class StateStoreLocationTests: XCTestCase {
         production.cacheWorkspace(Data("production cache".utf8))
 
         let local = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: container,
             cliCredentialsURL: nil,
             stateOrigin: URL(string: "http://localhost:3000")
@@ -338,6 +391,7 @@ final class StateStoreLocationTests: XCTestCase {
 
     func testLocalBuildRejectsCredentialForAnotherOrigin() throws {
         let local = StateStore(
+            fileManager: fixtureFileManager,
             groupContainer: try makeContainer(),
             cliCredentialsURL: nil,
             stateOrigin: URL(string: "http://localhost:3000")

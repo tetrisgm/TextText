@@ -11,7 +11,7 @@ final class LegacyAccountIdentityRefreshTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = StateStore(groupContainer: root, cliCredentialsURL: nil)
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: root), groupContainer: root, cliCredentialsURL: nil)
         let legacy = Credentials(token: "fixture", serverOrigin: "https://legacy.test", tokenName: "Original", linkedAt: Date(timeIntervalSince1970: 1))
         store.saveCredentials(legacy)
         let entry = root.appendingPathComponent("index.html")
@@ -38,7 +38,7 @@ final class LegacyAccountIdentityRefreshTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = StateStore(groupContainer: root, cliCredentialsURL: nil)
+        let store = StateStore(fileManager: StateStoreTestFileManager(root: root), groupContainer: root, cliCredentialsURL: nil)
         let original = Credentials(token: "fixture", serverOrigin: "https://legacy.test", tokenName: "Original", linkedAt: Date(timeIntervalSince1970: 1))
         store.saveCredentials(original)
         let file = store.baseDir.appendingPathComponent("credentials.json"), before = try Data(contentsOf: file)
@@ -60,7 +60,7 @@ final class LegacyAccountIdentityRefreshTests: XCTestCase {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: root) }
-            let store = StateStore(groupContainer: root, cliCredentialsURL: nil)
+            let store = StateStore(fileManager: StateStoreTestFileManager(root: root), groupContainer: root, cliCredentialsURL: nil)
             let first = Credentials(token: "fixture-a", serverOrigin: "https://legacy.test", tokenName: "Original", linkedAt: Date(timeIntervalSince1970: 1))
             store.saveCredentials(first)
             let app = AppDelegate(store: store), gate = DispatchSemaphore(value: 0)
