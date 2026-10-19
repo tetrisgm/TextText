@@ -1,12 +1,20 @@
 # TextText content-first checkpoint
 
+## Current recovery work, October 19
+
+Continue the existing [27-task completion plan](plans/shared-app-finish-checklist.md); [HANDOFF](HANDOFF.md) is authoritative for current installed identities and external dependencies. The shipped-state and acceptance sections below describe an earlier design baseline, not the current candidate. Main source now includes strict saved-move records, older-reader fencing, shared rename eligibility and shared tombstone decisions. Native immutable replay integration is active in parallel; these newer sources are not installed.
+
+Shared recovery UI is committed in `87fe53b8`: strict inspection, scoped consent, stale-callback isolation and terminal-only stopping. Fourteen unit tests, real React Chromium checks, TypeScript and inspected light/dark screenshots pass; see [UI evidence](verification/2026-10-19-saved-file-move-recovery-ui.md). Native bridge hooks are prepared but await actor and bridge checks. Queued-upload policy/wrappers are committed in `9f13d6ac`; [source proof](verification/2026-10-19-queued-upload-path-policy.md) distinguishes the observed native discrepancy from the pending adapter fix. Next: finish native replay/recovery and queued-upload adapters, run broader native checks, then prepare a coherent installed candidate. Do not imply an unavailable native account review, Apple callback, or changelog connection has completed.
+
+Preserve owner changes to Package.resolved, assistant attachments, tabs tests, Python cache and the editor probe. Root owns shared recovery UI/bridge work; adapter workers own native Sync files. No UI-owned process is running. Current source evidence and actual physical gates are linked from HANDOFF and verification receipts.
+
 ## Settled product
 
 TextText works from ordinary folders of self-contained TextPacks. A person can edit, rename, and move those files directly. The Mac app, web workspace, Finder projection, and agent tools use the same validated document primitives. The [file-vault architecture](design/texttext-file-vault-migration.md) governs storage, collaboration, recovery, and conflicts.
 
 Article, Bookmark, Brief, Case study, Gallery, Note, Page, Project, Talk, Timeline, and To-do are editable starter TextPacks. Reading list, Contact sheet, and Reference index are folder presets over the same primitives. Templates can be created or changed by an agent without adding another content model or executable presentation code.
 
-## Shipped state
+## Historical shipped state
 
 - Public version 0.203 build 1150 shipped from `eef38b7e` and is recorded by `e3f75ce7`. It remains the notarized Sparkle artifact.
 - Clean `main` at `012d78bc` was promoted to Oracle as `tt-1151-012d78bc-6abe91a4`. `/Applications/TextText.app` is the single installed copy at 0.203 build 1151. It is Developer ID signed, arm64, and contains three extensions and `Contents/Helpers/texttext`.
