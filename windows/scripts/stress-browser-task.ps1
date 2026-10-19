@@ -78,6 +78,10 @@ function OwnedTask {
       $record.nodeSha256 -cne (Get-FileHash -LiteralPath $Node -Algorithm SHA256).Hash.ToLowerInvariant()) {
     throw 'Owned task identity changed'
   }
+  # Match the genuine launcher: no OS timeout may kill a guarded editor.
+  if ([Xml.XmlConvert]::ToTimeSpan($task.Settings.ExecutionTimeLimit) -ne [TimeSpan]::Zero) {
+    throw 'Owned browser task lifetime changed'
+  }
   return $task
 }
 foreach($path in @($Driver,$Config,$Session,$Node)) { SafeAncestors $path }
@@ -132,6 +136,7 @@ if($Inspect) {
     try{$profileHash=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes((Get-Item -LiteralPath $profile).FullName)))).Replace('-','').ToLowerInvariant()}finally{$hash.Dispose()}
     Write-ResourceOwnershipProof -RequestPath $OwnershipRequest -Session $Session -TaskName $TaskName -RuntimePid $rows[0].ProcessId -ModulePath $Driver -ProcessKind 'headed-browser' -ProfileScopeHash $profileHash -VerifyTask { $null=OwnedTask;$selected=@(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'"|Where-Object{$_.CommandLine-and$_.CommandLine.Replace([char]92,[char]47).Contains($profile.Replace([char]92,[char]47))-and$_.CommandLine-notmatch'--type='});if($selected.Count-ne1-or$selected[0].ProcessId-ne$rows[0].ProcessId-or$selected[0].SessionId-ne$process.SessionId-or$selected[0].CommandLine-match'--headless'){throw 'Selected browser runtime changed'} }
   }
+  $null=OwnedTask
   exit 0
 }
 if($Finish) {

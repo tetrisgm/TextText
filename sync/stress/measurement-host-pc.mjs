@@ -1,5 +1,5 @@
-// Explicitly invoked on the Windows host for pc-app only. Browser settings
-// verification, Mac/file authority, sampler and coordinator wiring are absent.
+// Explicitly invoked on the Windows host for native/browser inspect only.
+// Mac/file authority, sampler and coordinator wiring are absent.
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, lstatSync } from 'node:fs';
 import { resolve, dirname, join, isAbsolute } from 'node:path';
@@ -57,29 +57,30 @@ export async function inspectPcOwnership(config, dependencies = runtime) {
   const l = exact(json(raw), ['version', 'kind', 'scope', 'root', 'files', 'maxMs', 'features']);
   if (l.version !== 1 || l.kind !== 'trusted-pc-launch-owner-v1') throw Error('Genuine launcher sidechannel unavailable');
   const s = exact(l.scope, ['runId', 'role', 'sourceCommit', 'generation', 'sessionPath', 'moduleSha256', 'profileScopeHash', 'taskName']);
-  if (s.role !== 'pc-app' || !hex(s.sourceCommit, 40) || !hex(s.moduleSha256) || !Number.isInteger(s.generation) || s.generation < 1 || s.generation > 999 || !/^[A-Za-z0-9_-]{1,100}$/.test(s.runId)) throw Error('PC role scope refused');
-  if (!/^TextText-stress-native-[a-f0-9]{32}-[0-9]{3}$/.test(s.taskName) || s.profileScopeHash !== null) throw Error('PC task/profile refused');
-  const files = exact(l.files, ['powershell', 'task', 'helper', 'config', 'module', 'executable']);
+  if (!['pc-app', 'pc-web'].includes(s.role) || !hex(s.sourceCommit, 40) || !hex(s.moduleSha256) || !Number.isInteger(s.generation) || s.generation < 1 || s.generation > 999 || !/^[A-Za-z0-9_-]{1,100}$/.test(s.runId)) throw Error('PC role scope refused');
+  const web = s.role === 'pc-web';
+  if (!(web ? /^TextText-stress-browser-[a-f0-9]{32}$/ : /^TextText-stress-native-[a-f0-9]{32}-[0-9]{3}$/).test(s.taskName) || (web ? !hex(s.profileScopeHash) : s.profileScopeHash !== null)) throw Error('PC task/profile refused');
+  const files = exact(l.files, ['powershell', 'task', 'helper', 'config', 'module', 'executable', ...(web ? ['launcherExecutable', 'child'] : [])]);
   const captured = new Map();
   for (const [name, f] of Object.entries(files)) {
     exact(f, ['path', 'sha256']); if (!hex(f.sha256)) throw Error('Host source pin refused');
     const b = Buffer.from(d.read(f.path, name === 'config' ? 16384 : 268435456)); if (sha(b) !== f.sha256) throw Error('Host input changed'); captured.set(name, b);
   }
-  if (files.module.sha256 !== s.moduleSha256 || files.executable.sha256 !== l.root.executableSha256 || dirname(files.task.path) !== dirname(files.helper.path) || !files.helper.path.endsWith('resource-ownership-task.ps1') || !files.task.path.endsWith('stress-native-task.ps1')) throw Error('Host task source mismatch');
-  if (l.maxMs !== null || l.features !== null) throw Error('Native task parameters refused');
+  if (files.module.sha256 !== s.moduleSha256 || files.executable.sha256 !== l.root.executableSha256 || dirname(files.task.path) !== dirname(files.helper.path) || !files.helper.path.endsWith('resource-ownership-task.ps1') || !files.task.path.endsWith(web ? 'stress-browser-task.ps1' : 'stress-native-task.ps1')) throw Error('Host task source mismatch');
+  if (web ? !Number.isInteger(l.maxMs) || l.maxMs < 1000 || l.maxMs > 7200000 || typeof l.features !== 'string' || !/^[A-Za-z0-9_,.-]{1,2048}$/.test(l.features) || dirname(files.child.path) !== dirname(files.task.path) || !files.child.path.endsWith('stress-browser-child.mjs') : l.maxMs !== null || l.features !== null) throw Error('Task parameters refused');
   const preReceipt = new Uint8Array(Buffer.from(JSON.stringify({ version: 1, kind: 'owned-role-runtime-v1', ...s, root: l.root })));
   const preNow = d.now();
   validateResourceOwnership({ expected: { ...s, receiptSha256: sha(preReceipt), rootExecutableSha256: files.executable.sha256 }, receiptBytes: preReceipt,
-    os: { version: 1, observedUtc: new Date(preNow).toISOString(), receiptSha256: sha(preReceipt), sessionPath: s.sessionPath, moduleSha256: s.moduleSha256, profileScopeHash: null, taskName: s.taskName, processKind: 'native-actor', identity: l.root }, nowMs: preNow });
+    os: { version: 1, observedUtc: new Date(preNow).toISOString(), receiptSha256: sha(preReceipt), sessionPath: s.sessionPath, moduleSha256: s.moduleSha256, profileScopeHash: s.profileScopeHash, taskName: s.taskName, processKind: web ? 'headed-browser' : 'native-actor', identity: l.root }, nowMs: preNow });
   // Above validates trusted-record shape only; actual authority still requires
   // the fresh task/OS command and exact runtime comparison below.
   const id = d.uuid(); if (!/^[a-f0-9-]{36}$/.test(id)) throw Error('Fresh request identity refused');
   const outputName = `resource-ownership-${id}.json`, requestPath = join(s.sessionPath, `measurement-request-${id}.json`);
   const request = Buffer.from(JSON.stringify({ version: 1, ...s, outputName }));
   d.create(requestPath, request);
-  const args = ['-NoProfile', '-NonInteractive', '-File', files.task.path,
-    '-Assembly', files.module.path, '-Config', files.config.path, '-Session', s.sessionPath, '-TaskName', s.taskName,
-    '-ExpectedConfigSha256', files.config.sha256, '-ExpectedModuleSha256', s.moduleSha256, '-InspectOwnership', '-OwnershipRequest', requestPath];
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', files.task.path,
+    web ? '-Driver' : '-Assembly', files.module.path, '-Config', files.config.path, '-Session', s.sessionPath, '-TaskName', s.taskName,
+    ...(web ? ['-Node', files.launcherExecutable.path, '-MaxMs', String(l.maxMs), '-ExpectedFeatures', l.features, '-Inspect'] : ['-ExpectedConfigSha256', files.config.sha256, '-ExpectedModuleSha256', s.moduleSha256, '-InspectOwnership']), '-OwnershipRequest', requestPath];
   const wall = d.now(), mono = d.monotonic();
   const result = await d.run(files.powershell.path, args, { deadlineMs: 10000, maxBytes: 65536 });
   // Bounded raw collector output may contain diagnostics; keep private, never log.

@@ -9,7 +9,7 @@ import { coreDatabaseEnvironment, inputs, fingerprint, validateReceipt, recordPa
 
 test('manual verification discovers every runner regression including new protocol helpers', async () => {
   const actual = await stressTestPaths();
-  for (const name of ['build-private-actor', 'identity', 'native-close-lifecycle', 'malformed-repair', 'undo-redo', 'file-adapter', 'browser-adapter', 'asset-proof', 'asset-pack-proof', 'asset-proof-observation', 'asset-proof-wave']) {
+  for (const name of ['build-private-actor', 'identity', 'native-close-lifecycle', 'malformed-repair', 'undo-redo', 'file-adapter', 'browser-adapter', 'asset-proof', 'asset-pack-proof', 'asset-proof-observation', 'asset-proof-wave', 'measurement-host-pc', 'measurement-supervisor']) {
     assert.ok(actual.includes(`sync/stress/${name}.test.mjs`));
   }
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'texttext-stress-discovery-'));
@@ -130,6 +130,7 @@ test('manual native gate selects and requires handoff and retained-work suites',
     'testChangedOwnerDoesNotWakeCapturedConnection', 'testStoppedConnectionDoesNotWakeAfterWrite',
     'testChangedRootDoesNotWakeCapturedConnection']) assert.ok(manual.includes(method));
   assert.ok(manual.includes('Required file mutation handoff cases must not skip.'));
+  assert.ok(manual.includes('windows/scripts/browser-task-lifetime.test.mjs'));
 });
 
 test('default source fingerprint includes binary presets and their generation logic', async () => {
