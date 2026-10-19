@@ -31,6 +31,7 @@ Directory.CreateDirectory(root); Directory.CreateDirectory(state);
 try {
     await AccountBridgeTests.Run(temp,Assert);
     await ReplacementBridgeTests.Run(temp,Assert);
+    await ExternalAssetReopenTests.Run(temp,Assert);
     var local = new TextPackStore(root, state).Write("Notes/Startup.textpack", Pack("startup", "startup-1"));
     var transport = new StalledTransport();
     var events = new ConcurrentQueue<string>();
