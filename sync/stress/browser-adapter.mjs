@@ -27,7 +27,7 @@ import { validateInputSequence, typeInputSequence } from './input-sequence.mjs';
 // production acceptance script uses; a missing profile directory is then created empty.
 //
 // Protocol: see sync/stress/README.md. Requests are handled one at a time, in order.
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, write } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -35,6 +35,24 @@ import { isAbsolute, join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateAuthMode, prepareProfile, establishSavedAppSession } from './browser-session.mjs';
 import { readBody } from './editor-projection.mjs';
+
+// Fixed metadata only: no error/config/document values reach stderr.
+export function createShutdownDiagnostics({write: sink = (line, callback) => write(2, line, callback), monotonic = () => performance.now(), utc = () => new Date().toISOString(), pid = process.pid} = {}) {
+  const seen = new Set();
+  const stages = new Set(['dispatch','handler-entry','retained-refusal','context-close-before','context-close-after','context-close-error','process-exit']);
+  return (stage, origin) => {
+    if (!stages.has(stage) || !['protocol','eof'].includes(origin)) return;
+    const key = stage + ':' + origin;
+    if (seen.has(key)) return;
+    seen.add(key);
+    try {
+      const elapsed = monotonic(), time = utc();
+      if (!Number.isFinite(elapsed) || elapsed < 0 || !Number.isSafeInteger(pid) || pid < 1 || typeof time !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[.]\d{3}Z$/.test(time)) return;
+      const line = JSON.stringify({kind:'browser-shutdown-stage',stage,origin,monotonicMs:elapsed,utc:time,pid}) + '\n';
+      if (Buffer.byteLength(line) <= 384) sink(line, () => {});
+    } catch { /* Diagnostics must not affect shutdown. */ }
+  };
+}
 
 export const ORIGIN = 'https://texttext.app';
 export const ADAPTER_NAME = 'browser-adapter';
@@ -197,6 +215,7 @@ const continuityRemoved = () => {
 class StageError extends Error { constructor(stage, message) { super(message); this.stage = stage; } }
 
 async function main() {
+  const shutdownDiagnostic = createShutdownDiagnostics();
   const platform = roleForPlatform(process.platform);
   const configPath = process.argv[2];
   if (!platform) throw new StageError('platform', 'browser adapter runs only on macOS (Chrome) or Windows (Edge)');
@@ -523,10 +542,14 @@ async function main() {
       });
       out(observed);
     },
-    async shutdown() {
-      if (retainedFailure) return;
+    async shutdown(origin = 'protocol') {
+      shutdownDiagnostic('handler-entry', origin);
+      if (retainedFailure) { shutdownDiagnostic('retained-refusal', origin); return; }
       stopping = true;
-      await context?.close().catch(() => {});
+      shutdownDiagnostic('context-close-before', origin);
+      await context?.close().catch(() => { shutdownDiagnostic('context-close-error', origin); });
+      shutdownDiagnostic('context-close-after', origin);
+      shutdownDiagnostic('process-exit', origin);
       process.exit(0);
     },
   };
@@ -542,7 +565,8 @@ async function main() {
     const round = m.type === 'hello' || m.type === 'shutdown' ? 0 : m.round;
     if (!validateRound(round)) return fail(0, 'input', 'round invalid');
     if (m.type !== 'hello' && m.type !== 'shutdown' && !started) return fail(round, m.type, 'hello required first');
-    queue = queue.then(() => handlers[m.type](m)).catch((error) => {
+    if (m.type === 'shutdown') shutdownDiagnostic('dispatch', 'protocol');
+    queue = queue.then(() => m.type === 'shutdown' ? handlers.shutdown('protocol') : handlers[m.type](m)).catch((error) => {
       if (error.retention) {
         retainedFailure = error.retention;
         // This human-invoked failed actor remains available for recovery. The
@@ -554,7 +578,7 @@ async function main() {
   };
   const rl = createInterface({ input: process.stdin });
   rl.on('line', handle);
-  rl.on('close', () => { queue = queue.then(() => handlers.shutdown()); });
+  rl.on('close', () => { shutdownDiagnostic('dispatch', 'eof'); queue = queue.then(() => handlers.shutdown('eof')); });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
