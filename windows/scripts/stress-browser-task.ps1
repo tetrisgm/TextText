@@ -7,9 +7,11 @@ param(
   [int]$MaxMs=420000,
   [switch]$Finish,
   [switch]$Inspect,
-  [string]$ExpectedFeatures
+  [string]$ExpectedFeatures,
+  [string]$OwnershipRequest
 )
 $ErrorActionPreference='Stop'
+if($OwnershipRequest -and !$Inspect){throw 'Resource collection requires existing-runtime inspect only'}
 Set-StrictMode -Version Latest
 
 function SafeAncestors([string]$Path) {
@@ -124,6 +126,12 @@ if($Inspect) {
     headless=$false
     features=$flags[-1]
   } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Session ('runtime-'+$generation+'.json'))
+  if($OwnershipRequest) {
+    . (Join-Path $PSScriptRoot 'resource-ownership-task.ps1')
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try{$profileHash=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes((Get-Item -LiteralPath $profile).FullName)))).Replace('-','').ToLowerInvariant()}finally{$hash.Dispose()}
+    Write-ResourceOwnershipProof -RequestPath $OwnershipRequest -Session $Session -TaskName $TaskName -RuntimePid $rows[0].ProcessId -ModulePath $Driver -ProcessKind 'headed-browser' -ProfileScopeHash $profileHash -VerifyTask { $null=OwnedTask;$selected=@(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'"|Where-Object{$_.CommandLine-and$_.CommandLine.Replace([char]92,[char]47).Contains($profile.Replace([char]92,[char]47))-and$_.CommandLine-notmatch'--type='});if($selected.Count-ne1-or$selected[0].ProcessId-ne$rows[0].ProcessId-or$selected[0].SessionId-ne$process.SessionId-or$selected[0].CommandLine-match'--headless'){throw 'Selected browser runtime changed'} }
+  }
   exit 0
 }
 if($Finish) {

@@ -6,7 +6,9 @@ param([Parameter(Mandatory=$true)][string]$Assembly,
       [switch]$Finish,
       [switch]$InspectLifetime,
       [string]$ExpectedConfigSha256,
-      [string]$ExpectedModuleSha256)
+      [string]$ExpectedModuleSha256,
+      [switch]$InspectOwnership,
+      [string]$OwnershipRequest)
 $ErrorActionPreference = 'Stop'
 $dotnet = Join-Path $env:LOCALAPPDATA 'TextTextBuild/dotnet/dotnet.exe'
 # Read the same immutable config supplied to the actor; no independent minutes override.
@@ -41,6 +43,32 @@ function AssertLifetime($task) {
       $task.Actions[0].Arguments -cne "`"$Assembly`" --stress `"$Config`" `"$Session`"") { throw 'Native task action differs from the requested actor.' }
   if ([Xml.XmlConvert]::ToTimeSpan($task.Settings.ExecutionTimeLimit).TotalMinutes -ne $executionMinutes) { throw 'Native task lifetime differs from actor config.' }
   AssertInputIdentity
+}
+if($OwnershipRequest -and !$InspectOwnership){throw 'Resource collection requires existing-runtime inspect only'}
+if($InspectOwnership) {
+  if(!$OwnershipRequest -or $Crash -or $Finish){throw 'Resource inspect mode refused'}
+  function SafeDiagnosticPath([string]$path){for($at=[IO.Path]::GetFullPath($path);$at;$at=[IO.Path]::GetDirectoryName($at)){try{$a=[IO.File]::GetAttributes($at)}catch [IO.FileNotFoundException]{continue}catch [IO.DirectoryNotFoundException]{continue};if($a-band[IO.FileAttributes]::ReparsePoint){throw 'Resource diagnostic link refused'}}}
+  foreach($path in @($Assembly,$Config,$Session,$dotnet,$OwnershipRequest,(Join-Path $PSScriptRoot 'resource-ownership-task.ps1'))){SafeDiagnosticPath $path}
+  if($TaskName -cnotmatch '^TextText-stress-native-[a-f0-9]{32}-[0-9]{3}$'){throw 'Resource native task name refused'}
+  $parent=[IO.Path]::GetFullPath([string]$configValue.isolation.sessionRoot)
+  if([IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Session))) -cne $parent){throw 'Resource isolation session refused'}
+  SafeDiagnosticPath $parent
+  $acl=Get-Acl -LiteralPath $parent;$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
+  if(!$acl.AreAccessRulesProtected-or!$acl.GetOwner([Security.Principal.SecurityIdentifier]).Equals($sid)){throw 'Resource protected parent refused'}
+  foreach($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])){if($rule.AccessControlType-ne'Allow'-or$rule.IdentityReference.Value-notin@($sid.Value,'S-1-5-18')){throw 'Resource parent principal refused'}}
+  $task=Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  $expectedArgs='"'+$Assembly+'" --stress "'+$Config+'" "'+$Session+'"'
+  AssertLifetime $task
+  if($task.State -ne 'Running'){throw 'Owned native task changed'}
+  $pidPath=Join-Path $Session 'actor.pid'
+  $actorPid=0
+  if(!(Test-Path -LiteralPath $pidPath -PathType Leaf) -or ![int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(),[ref]$actorPid)){throw 'Native actor PID missing'}
+  $process=Get-Process -Id $actorPid -ErrorAction Stop
+  $meta=Get-CimInstance Win32_Process -Filter ('ProcessId='+$actorPid)
+  if($process.Path -cne $dotnet -or $process.SessionId -le 0 -or !$meta.CommandLine -or !$meta.CommandLine.Contains($expectedArgs)){throw 'Native actor session changed'}
+  . (Join-Path $PSScriptRoot 'resource-ownership-task.ps1')
+  Write-ResourceOwnershipProof -RequestPath $OwnershipRequest -Session $Session -TaskName $TaskName -RuntimePid $actorPid -ModulePath $Assembly -ProcessKind 'native-actor' -ProfileScopeHash $null -VerifyTask { $selected=Get-Process -Id $actorPid -ErrorAction Stop;$selectedMeta=Get-CimInstance Win32_Process -Filter ('ProcessId='+$actorPid);if($selected.Path-cne$dotnet-or$selected.SessionId-le0-or!$selectedMeta.CommandLine-or!$selectedMeta.CommandLine.Contains($expectedArgs)){throw 'Selected native runtime changed'};$current=Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop;AssertLifetime $current;if($current.State-ne'Running'){throw 'Owned native task changed'} }
+  exit 0
 }
 if ($InspectLifetime) {
   $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
