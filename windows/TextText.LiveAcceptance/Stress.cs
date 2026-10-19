@@ -513,17 +513,17 @@ static class Stress
             await Program.Until(async () => await view!.ExecuteScriptAsync($"document.querySelector('.vault-context-location h2')?.textContent?.trim() === {expectedTitle}") == "true", ct, "Production file activation did not open the test item.");
             try
             {
-                await Program.Until(async () => await view!.ExecuteScriptAsync("!!document.querySelector('button[aria-label=\"Edit card\"]') || !!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test reader did not expose its edit action.");
+                await Program.Until(async () => await view!.ExecuteScriptAsync(NativeStressReaderAction.Ready) == "true", ct, "Test reader did not expose its edit action.");
             }
             catch (Exception e)
             {
                 var state = await view!.ExecuteScriptAsync("JSON.stringify({title:document.querySelector('.vault-context-location h2')?.textContent?.trim(),body:document.querySelector('[aria-label=\"Document body\"]')?.textContent?.slice(0,120),buttons:[...document.querySelectorAll('button')].map(b=>b.getAttribute('aria-label')||b.textContent?.trim()).filter(Boolean).slice(0,30),notices:[...document.querySelectorAll('.vault-notice,[role=\"alert\"]')].map(n=>n.textContent?.trim()).slice(0,5)})");
                 throw new Exception("Test reader did not expose its edit action. State: " + state, e);
             }
-            await view!.ExecuteScriptAsync("document.querySelector('button[aria-label=\"Edit card\"]')?.click()");
+            await view!.ExecuteScriptAsync(NativeStressReaderAction.Activate);
             await Task.Delay(1000, ct);
             if (await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") != "true")
-                await view.ExecuteScriptAsync("document.querySelector('button[aria-label=\"Edit card\"]')?.click()");
+                await view.ExecuteScriptAsync(NativeStressReaderAction.Activate);
             await Program.Until(async () => await view.ExecuteScriptAsync("!!document.querySelector('[aria-label=\"Document body\"]')?.isContentEditable") == "true", ct, "Test item did not enter the real document editor.");
             await Program.Until(async () => await view.ExecuteScriptAsync($"(()=>{{const shared=document.querySelector('[data-collaboration-state=\"ready\"]');return shared?.dataset.collaborationItem === {expectedItem} && !!shared.querySelector('[aria-label=\"Document body\"]')?.isContentEditable}})()") == "true", ct, "Test editor did not join the shared document; a local-only editor cannot pass six-client readiness.");
             await view.ExecuteScriptAsync($"(()=>{{const initial=document.querySelector('[aria-label=\"Document body\"]');window.texttextStressSession={JsonSerializer.Serialize(sessionId)};window.texttextStressContinuity={{removed:false}};const observer=new MutationObserver(()=>{{if(!initial.isConnected){{window.texttextStressContinuity.removed=true;observer.disconnect()}}}});observer.observe(document.body,{{childList:true,subtree:true}})}})()");
