@@ -20,6 +20,7 @@ test('private startup verifies real account and authorization before publication
 });
 test('isolation waits for production readiness before identity validation and file activation',()=>{
  const start=stress.indexOf('await isolated.Ready.Task');const end=stress.indexOf('await runner.Loop',start);const bootstrap=stress.slice(start,end);let before=-1;for(const token of ['isolated.Ready.Task','bridge.InvokeAsync("files.ready"','isolated.VerifyFixture()','window.ActivateFiles']){const at=bootstrap.indexOf(token);assert.ok(at>before,token);before=at;}
+ const projectionGuard=bootstrap.indexOf('if(!File.Exists(config.File))return false');assert.ok(projectionGuard>=0&&projectionGuard<bootstrap.indexOf('bridge.InvokeAsync("files.ready"'));
  assert.match(scope,/FileMode.CreateNew/);assert.doesNotMatch(scope,/AccountRootOwnership.Publish|AdoptAfterExplicitReview|CredentialStore|WorkspaceSelection/);
 });
 test('isolated actor refuses root/workspace/sign-in changes before UI or persistent effects',()=>{

@@ -99,6 +99,7 @@ static class Stress
                         await isolated.Ready.Task.WaitAsync(TimeSpan.FromSeconds(90),timeout.Token);
                         var bridge=Program.Field(window,"bridge") as INativeWorkspaceBridge ?? throw new IOException("Private actor bridge is unavailable.");
                         await Program.Until(async()=>{
+                            if(!File.Exists(config.File))return false;
                             var ready=JsonSerializer.SerializeToElement(await bridge.InvokeAsync("files.ready",JsonSerializer.SerializeToElement(new{itemId=config.ItemId}),timeout.Token));
                             return ready.GetProperty("ready").GetBoolean()&&File.Exists(config.File);
                         },timeout.Token,"Private actor fixture did not materialize through native sync.");
