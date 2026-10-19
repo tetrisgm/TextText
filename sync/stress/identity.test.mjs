@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { normalizeIdentity, checkIdentity, checkRetainedWindowAttestation, checkMacWindowCloseProof, normalizeInitialPack, verifyReopenIdentity } from './identity.mjs';
 import { boundedFile, observeSealedSource, sha256, ownerBindingScope, captureOwnerBindingGuard, accountScopeHash, createWebAssetObserver } from './identity-observation.mjs';
@@ -79,6 +79,37 @@ test('workspace binding scope is separate from authenticated account scope and t
   assert.throws(()=>ownerBindingScope({...config,workspaceId:'different'}),/scope/);
   writeFileSync(ownerBindingPath,JSON.stringify({...owner,rootHash:H}));
   assert.throws(()=>ownerBindingScope(config),/scope/);
+});
+
+test('Windows production device-state binding uses the exact origin workspace and native root key', () => {
+  const dir=mkdtempSync(join(tmpdir(),'texttext-windows-owner-')),root=join(dir,'workspace'),file=join(root,'fixture.textpack');
+  mkdirSync(root);writeFileSync(file,'fixture');
+  const origin='https://texttext.app',workspaceId='workspace',nativeRoot=resolve(root),rootHash=sha256(nativeRoot);
+  const key=sha256(`${origin}/\n${workspaceId}\n${nativeRoot}`),parent=join(dir,'TextText','Sync',key),ownerBindingPath=join(parent,'account-owner.json');
+  mkdirSync(parent,{recursive:true});
+  const owner={Version:2,Origin:origin,WorkspaceId:workspaceId,AccountId:'canonical-account',RootHash:rootHash};
+  writeFileSync(ownerBindingPath,JSON.stringify(owner));
+  const config={role:'pc-cli',file,workspaceRoot:root,ownerBindingPath,workspaceId};
+  const scope=ownerBindingScope(config);assert.notEqual(scope,accountScopeHash(origin,owner.AccountId));
+  const guard=captureOwnerBindingGuard(config);assert.equal(guard(),scope);
+  for(const change of [{WorkspaceId:'foreign'},{Origin:'https://foreign.test'},{RootHash:H},{AccountId:null},{Origin:'https://user:password@texttext.app'}]) {
+    writeFileSync(ownerBindingPath,JSON.stringify({...owner,...change}));assert.throws(()=>ownerBindingScope(config));
+  }
+  writeFileSync(ownerBindingPath,JSON.stringify({...owner,AccountId:'changed-account'}));assert.throws(guard,/changed/);
+  writeFileSync(ownerBindingPath,JSON.stringify(owner));
+  for(const invalid of [join(dir,'TextText','Sync',H),join(dir,'Elsewhere','Sync',key),join(dir,'TextText','Other',key)]) {
+    mkdirSync(invalid,{recursive:true});const copied=join(invalid,'account-owner.json');writeFileSync(copied,JSON.stringify(owner));
+    assert.throws(()=>ownerBindingScope({...config,ownerBindingPath:copied}),/scope/);
+  }
+  assert.throws(()=>ownerBindingScope({...config,workspaceId:'different'}),/scope/);
+});
+
+test('Windows default TextPackStore state retains its exact root-only legacy binding', () => {
+  const dir=mkdtempSync(join(tmpdir(),'texttext-windows-default-owner-')),root=join(dir,'workspace'),file=join(root,'fixture.textpack');
+  mkdirSync(root);writeFileSync(file,'fixture');
+  const rootHash=sha256(resolve(root)),parent=join(dir,'TextText','Sync',rootHash),ownerBindingPath=join(parent,'account-owner.json');
+  mkdirSync(parent,{recursive:true});writeFileSync(ownerBindingPath,JSON.stringify({Version:1,Origin:'https://texttext.app',WorkspaceId:'workspace',AccountId:'canonical-account',RootHash:rootHash}));
+  assert.doesNotThrow(()=>ownerBindingScope({role:'pc-cli',file,workspaceRoot:root,ownerBindingPath,workspaceId:'workspace'}));
 });
 
 test('web asset observer hashes actual loaded response bytes and strips query strings', async () => {

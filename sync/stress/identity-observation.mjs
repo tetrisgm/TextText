@@ -61,13 +61,19 @@ export function ownerBindingScope(config) {
   // owns Path.GetFullPath spelling. Follow each existing native convention.
   const nativeRoot = config.role === 'pc-cli' ? root : actualRoot;
   const marker = resolve(config.ownerBindingPath), parent = dirname(marker);
-  const namedDeviceState = basename(parent) === rootHash
+  let account;
+  try { account = accountScopeHash(origin, accountId); }
+  catch { throw new Error('workspace owner binding does not match file actor scope'); }
+  // WindowsBridge.OpenStore scopes normal app state to Origin.AbsoluteUri,
+  // workspace and Path.GetFullPath(root). TextPackStore's default constructor
+  // retains the older root-only key. Neither accepts an arbitrary directory.
+  const windowsBinding = config.role === 'pc-cli' ? sha256(`${new URL(origin).href}\n${workspaceId}\n${nativeRoot}`) : null;
+  const namedDeviceState = (basename(parent) === rootHash || config.role === 'pc-cli' && basename(parent) === windowsBinding)
     && (config.role === 'pc-cli' ? basename(dirname(parent)) === 'Sync' && basename(dirname(dirname(parent))) === 'TextText'
       : basename(dirname(parent)) === 'VaultDeviceState');
   const legacyMacState = config.role !== 'pc-cli' && realpathSync(parent) === join(actualRoot, '.texttext');
   if (![1, 2].includes(version) || workspaceId !== config.workspaceId || rootHash !== sha256(nativeRoot)
     || (!namedDeviceState && !legacyMacState)) throw new Error('workspace owner binding does not match file actor scope');
-  const account = accountScopeHash(origin, accountId);
   return sha256(`texttext-workspace-owner-v1\0${workspaceId}\0${account}`);
 }
 // Modern runtimes deliberately do not request nomodule fallbacks. Unknown
