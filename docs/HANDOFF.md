@@ -41,7 +41,7 @@ Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master
 - T21–T22: current all-six readiness and separate durable reopen, then physical operation/crash/provider matrix. Browser lost-ACK, bounded external leaf move and immutable mixed-schedule drivers pass source gates; physical campaigns remain unrun. New finite quiet-dwell correlation642ce9f4 is source-tested/sealed in the latest Windows candidate; full T24/resource acceptance is not implied.
 - T23: historical real viewer/edit/revoke/regrant passed; current native account transitions and agent identity remain. Preserve existing second account's revoked pending work; create no accounts.
 - T24–T25: actual100 mixed rounds,60-minute soak, resource/idle bounds and release-hardware performance distributions remain. Null/unmeasured telemetry is not zero.
-- T26–T27: coherent final delivery/installed matrix, existing TextText changelog and evidence closure remain.
+- T26–T27: coherent delivery is complete; wider installed acceptance, existing TextText changelog and evidence closure remain.
 
 ## Work ownership and references
 
