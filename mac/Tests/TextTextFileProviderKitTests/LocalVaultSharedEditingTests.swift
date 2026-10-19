@@ -719,6 +719,184 @@ final class LocalVaultSharedEditingTests: XCTestCase {
         XCTAssertNil(retained?.retiredReason)
         try await engine.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
     }
+    func testCleanCloseBeforeRenameAnnouncementPreservesLocalNamingIntent() async throws {
+        try await closedRenameBeforeAnnouncement(pending: false)
+    }
+    func testPendingCloseBeforeRenameAnnouncementControlPreservesLocalNamingIntent() async throws {
+        try await closedRenameBeforeAnnouncement(pending: true)
+    }
+    func testUnknownGenerationCleanCloseRetainsUnannouncedLocalName() async throws {
+        try await closedRenameBeforeAnnouncement(pending: false, knownGeneration: false)
+    }
+    func testUnknownGenerationNamingDebtIsReadyAndReopensAtRetainedPath() async throws {
+        try await closedRenameBeforeAnnouncement(pending: false, knownGeneration: false, verifyReadiness: true)
+    }
+    func testCleanCheckpointStillFollowsGenuinePeerRemoteMove() async throws {
+        try prepareOwnedRenameFixture()
+        let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        var engine: LocalVaultSync? = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await engine!.sync(); await transport.attestGeneration(); _ = try await engine!.sync()
+        let session = try await engine!.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let cp = try checkpoint(original, pending: false)
+        _ = try await engine!.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: cp.journal, pending: false,
+            markdown: original.contents.markdown, documentJSON: XCTUnwrap(original.contents.documentJSON))
+        try await engine!.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let peer = "Archive/Genuine peer move.textpack", bytes = try Data(contentsOf: root.appendingPathComponent(path))
+        await transport.set(itemId: itemId, path: peer, data: bytes)
+        _ = try await engine!.sync()
+        XCTAssertEqual(try store.read(path: peer).hash, original.hash)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        engine = nil
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await restarted.sync()
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(peer)), bytes)
+        let outboundRenames = await transport.renames(); XCTAssertEqual(outboundRenames, [])
+    }
+    private func assertCleanNamingDebtReadinessRefusals(destination: String, current: LocalVaultDocumentStore.Document) throws {
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let stateBytes = try Data(contentsOf: stateURL)
+        let checkpointURL = sharedDirectory().appendingPathComponent("checkpoint.json")
+        let checkpointBytes = try Data(contentsOf: checkpointURL)
+        let ownerURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent(LocalVaultAccountRootOwnership.fileName)
+        let ownerBytes = try Data(contentsOf: ownerURL)
+        func refused(_ label: String, hash: String? = nil) {
+            do { let ready = try LocalVaultSync.collaborationReady(root: root, path: destination, itemId: itemId, localHash: hash ?? current.hash); XCTAssertFalse(ready, label) }
+            catch {
+                let allowed: Bool
+                switch (label, error) {
+                case ("wrong retained principal accountId", RetainedReplacementProfile.Failure.invalidProfile),
+                     ("wrong retained principal accountId", LocalVaultAccountRootOwnership.Failure.account),
+                     ("wrong retained principal rootHash", ReplacementRecoveryRegistry.Failure.invalidRegistry),
+                     ("wrong retained principal rootHash", LocalVaultAccountRootOwnership.Failure.account),
+                     ("foreign checkpoint account", LocalVaultSharedFailure.account): allowed = true
+                default: allowed = false
+                }
+                if !allowed { XCTFail("Unexpected readiness failure for \(label): \(error)") }
+            }
+        }
+        for field in ["accountId", "rootHash"] {
+            var owner = try XCTUnwrap(JSONSerialization.jsonObject(with: ownerBytes) as? [String: Any])
+            owner[field] = field == "accountId" ? "other-account" : String(repeating: "0", count: 64)
+            try JSONSerialization.data(withJSONObject: owner).write(to: ownerURL, options: .atomic)
+            refused("wrong retained principal \(field)")
+            try ownerBytes.write(to: ownerURL, options: .atomic)
+        }
+        var foreign = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: checkpointBytes)
+        var foreignJournal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(foreign.journal.utf8)) as? [String: Any])
+        foreignJournal["accountId"] = "other-account"
+        foreign.journal = String(decoding: try JSONSerialization.data(withJSONObject: foreignJournal), as: UTF8.self)
+        try JSONEncoder().encode(foreign).write(to: checkpointURL, options: .atomic)
+        refused("foreign checkpoint account")
+        try checkpointBytes.write(to: checkpointURL, options: .atomic)
+        let duplicate = root.appendingPathComponent("Notes/Duplicate same ID.textpack")
+        try FileManager.default.copyItem(at: root.appendingPathComponent(destination), to: duplicate)
+        refused("duplicate identity")
+        try FileManager.default.removeItem(at: duplicate)
+        refused("changed projected hash", hash: String(repeating: "f", count: 64))
+        var retired = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: checkpointBytes)
+        retired.retiredReason = "Retained for explicit recovery"
+        try JSONEncoder().encode(retired).write(to: checkpointURL, options: .atomic)
+        refused("retired clean checkpoint")
+        try checkpointBytes.write(to: checkpointURL, options: .atomic)
+        var next = try JSONDecoder().decode(LocalVaultSharedCheckpoint.self, from: checkpointBytes)
+        var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(next.journal.utf8)) as? [String: Any])
+        next.pending = true; next.journalGeneration += 1
+        journal["journalGeneration"] = next.journalGeneration; journal["pending"] = ["AQ=="]
+        next.journal = String(decoding: try JSONSerialization.data(withJSONObject: journal), as: UTF8.self)
+        XCTAssertThrowsError(try LocalVaultSharedEditingStore(root: root, accountId: "account-a").materialize(
+            checkpoint: next, expectedHash: current.hash, markdown: current.contents.markdown,
+            documentJSON: XCTUnwrap(current.contents.documentJSON), interruptAfterIntent: true))
+        let intentURL = sharedDirectory().appendingPathComponent("intent.json"), intentBytes = try Data(contentsOf: intentURL)
+        refused("pending native intent")
+        XCTAssertEqual(try Data(contentsOf: intentURL), intentBytes, "Readiness must not recover or clear retained intent")
+        try FileManager.default.removeItem(at: intentURL)
+        for field in ["outbox", "conflicts"] {
+            var state = try XCTUnwrap(JSONSerialization.jsonObject(with: stateBytes) as? [String: Any])
+            if field == "outbox" {
+                state[field] = [itemId: ["itemId": itemId, "path": destination, "hash": current.hash,
+                    "baseRevision": next.acknowledgedRevision, "operationId": UUID().uuidString.lowercased()]]
+            } else {
+                state[field] = [itemId: ["localHash": current.hash, "remoteRevision": next.acknowledgedRevision, "paths": [destination]]]
+            }
+            let bytes = try JSONSerialization.data(withJSONObject: state)
+            try bytes.write(to: stateURL, options: .atomic)
+            refused("durable \(field) fence")
+            XCTAssertEqual(try Data(contentsOf: stateURL), bytes)
+            try stateBytes.write(to: stateURL, options: .atomic)
+        }
+        XCTAssertEqual(try Data(contentsOf: checkpointURL), checkpointBytes)
+        XCTAssertEqual(try Data(contentsOf: ownerURL), ownerBytes)
+    }
+    private func closedRenameBeforeAnnouncement(pending: Bool, knownGeneration: Bool = true, verifyReadiness: Bool = false) async throws {
+        try prepareOwnedRenameFixture()
+        let original = try fixture(), transport = SharedTransport(), store = LocalVaultDocumentStore(root: root)
+        let binding = try LocalVaultSyncBinding(origin: URL(string: "https://texttext.test")!, workspaceId: "workspace")
+        var engine: LocalVaultSync? = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await engine!.sync()
+        if knownGeneration { await transport.attestGeneration() }
+        _ = try await engine!.sync()
+        let session = try await engine!.beginSharedEditing(itemId: itemId, path: path, expectedHash: original.hash)
+        let destination = "Notes/Six-client acceptance closed checkpoint.textpack"
+        _ = try store.rename(path: path, expectedHash: original.hash, newPath: destination)
+        let changed = try changes(original, body: "Original\nAccepted before normal close")
+        let initial = try checkpoint(original, pending: true)
+        let written = try await engine!.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+            expectedHash: original.hash, epoch: 1, seq: 0, acknowledgedRevision: original.hash,
+            journalGeneration: 1, journal: initial.journal, pending: true, markdown: changed.0, documentJSON: changed.1)
+        if !pending {
+            // The real title/body collaboration ACK changes bytes at the OLD server path.
+            // It does not acknowledge the independently moved local filename.
+            try await transport.set(itemId: itemId, path: path, data: Data(contentsOf: root.appendingPathComponent(destination)))
+            var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(initial.journal.utf8)) as? [String: Any])
+            journal["journalGeneration"] = 2; journal["revision"] = written.document.hash
+            journal["relativePath"] = destination; journal["pending"] = [String](); journal["seq"] = 1
+            _ = try await engine!.materializeSharedEditing(sessionToken: session.sessionToken, itemId: itemId,
+                expectedHash: written.document.hash, epoch: 1, seq: 1, acknowledgedRevision: written.document.hash,
+                journalGeneration: 2, journal: String(decoding: JSONSerialization.data(withJSONObject: journal), as: UTF8.self),
+                pending: false, markdown: changed.0, documentJSON: changed.1)
+        }
+        // No mirror sync runs between the local move/checkpoint and normal close.
+        try await engine!.endSharedEditing(sessionToken: session.sessionToken, itemId: itemId)
+        let before = try Data(contentsOf: root.appendingPathComponent(destination))
+        let first = try await engine!.sync()
+        XCTAssertTrue(first.errors.isEmpty, "\(first.errors)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(destination).path), "A content ACK must not reinterpret an unannounced local move as a peer move")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path), "The old server name must not replace the local naming intent")
+        if FileManager.default.fileExists(atPath: root.appendingPathComponent(destination).path) {
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(destination)), before)
+        }
+        let remoteAfter = await transport.remotePath(itemId)
+        XCTAssertEqual(remoteAfter, knownGeneration ? destination : path)
+        if !knownGeneration {
+            let dispatched = await transport.renames()
+            XCTAssertEqual(dispatched, [], "Unknown generation must remain held by shared policy")
+        }
+        engine = nil
+        let restarted = try makeTestSync(root: root, binding: binding, transport: transport, accountId: "account-a")
+        _ = try await restarted.sync()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(destination).path), "Restart must retain the chosen local name")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        if verifyReadiness {
+            let current = try store.read(path: destination)
+            try assertCleanNamingDebtReadinessRefusals(destination: destination, current: current)
+            XCTAssertTrue(try LocalVaultSync.collaborationReady(root: root, path: destination, itemId: itemId, localHash: current.hash),
+                "Exact clean naming debt must reopen without waiting for an impossible unknown-generation announcement")
+            let reopened = try await restarted.beginSharedEditing(itemId: itemId, path: destination, expectedHash: current.hash)
+            let retained = try XCTUnwrap(reopened.checkpoint)
+            XCTAssertEqual(retained.path, destination); XCTAssertFalse(retained.pending); XCTAssertNil(retained.retiredReason)
+            var journal = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(retained.journal.utf8)) as? [String: Any])
+            journal["journalGeneration"] = retained.journalGeneration + 1
+            let saved = try await restarted.materializeSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId,
+                expectedHash: current.hash, epoch: retained.epoch, seq: retained.seq, acknowledgedRevision: retained.acknowledgedRevision,
+                journalGeneration: retained.journalGeneration + 1, journal: String(decoding: JSONSerialization.data(withJSONObject: journal), as: UTF8.self),
+                pending: false, markdown: current.contents.markdown, documentJSON: XCTUnwrap(current.contents.documentJSON))
+            XCTAssertEqual(saved.document.path, destination)
+            try await restarted.endSharedEditing(sessionToken: reopened.sessionToken, itemId: itemId)
+        }
+    }
     func testLocalFileRenameWhileEditingFollowsPathAndKeepsCheckpointing() async throws {
         try prepareOwnedRenameFixture()
         // Finder, CLI or iCloud renames the open TextPack. The live session must

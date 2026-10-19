@@ -842,6 +842,18 @@ public actor LocalVaultSync {
         return decision
     }
 
+    // A clean content checkpoint is not a receipt for its local filename.
+    // Keep only an exact retained projection under the shared path owner until
+    // its separate naming decision is acknowledged or held for review.
+    private func cleanSharedNamingDebt(itemId: String, checkpoint: LocalVaultSharedCheckpoint) throws -> Bool {
+        guard !checkpoint.pending, checkpoint.retiredReason == nil,
+              sharedSessions[itemId]?.retired != true,
+              let baseline = state.baselines[itemId], baseline.path != checkpoint.path else { return false }
+        _ = try sharedStore.protectionSnapshot(itemId: itemId)
+        guard try uniqueSameIdentityPath(itemId: itemId, excluding: "") == checkpoint.path else { return false }
+        let current = try LocalVaultDocumentStore(root: root).readMetadata(path: checkpoint.path)
+        return current.hash == checkpoint.projectedHash && MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId
+    }
     private func followedSharedPath(itemId: String) throws -> (path: String, hash: String)? {
         let live = sharedSessions[itemId]
         if live?.retired == true { return nil }
@@ -851,7 +863,9 @@ public actor LocalVaultSync {
             guard saved == nil || saved?.path == live.path else { return nil }
             return (live.path, live.hash)
         }
-        guard let saved, saved.pending else { return nil }
+        guard let saved else { return nil }
+        let namingDebt = try cleanSharedNamingDebt(itemId: itemId, checkpoint: saved)
+        guard saved.pending || namingDebt else { return nil }
         return (saved.path, saved.projectedHash)
     }
     /// Rechecked immediately before local install/staging as actor reentrancy can activate editing during network awaits.
@@ -893,7 +907,7 @@ public actor LocalVaultSync {
                 // real common ancestor for a subsequent Finder or agent edit.
                 // The older sync baseline predates shared editing and would
                 // otherwise manufacture a conflict with the already advanced server.
-                state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+                state.baselines[itemId] = Baseline(path: state.baselines[itemId]?.path ?? checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
                 if state.sharedDownloads == nil { state.sharedDownloads = [:] }
                 state.sharedDownloads?[itemId] = true
                 try persist()
@@ -914,7 +928,7 @@ public actor LocalVaultSync {
             if checkpoint?.pending == true { return true }
             sharedSessions[itemId]?.retired = true
             if let checkpoint {
-                state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+                state.baselines[itemId] = Baseline(path: state.baselines[itemId]?.path ?? checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
                 if state.sharedDownloads == nil { state.sharedDownloads = [:] }
                 state.sharedDownloads?[itemId] = true
                 try persist()
@@ -924,9 +938,10 @@ public actor LocalVaultSync {
         }
         if live != nil || checkpoint?.pending == true { return true }
         if let checkpoint, state.baselines[itemId]?.path != checkpoint.path || state.baselines[itemId]?.revision != checkpoint.acknowledgedRevision || state.baselines[itemId]?.localHash != checkpoint.projectedHash {
-            state.baselines[itemId] = Baseline(path: checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
+            state.baselines[itemId] = Baseline(path: state.baselines[itemId]?.path ?? checkpoint.path, revision: checkpoint.acknowledgedRevision, localHash: checkpoint.projectedHash)
             try persist()
         }
+        if let checkpoint { return try cleanSharedNamingDebt(itemId: itemId, checkpoint: checkpoint) }
         return false
     }
 
@@ -998,6 +1013,26 @@ public actor LocalVaultSync {
             if checkpoint.path == path || !FileManager.default.fileExists(atPath: sourceURL.path) {
                 let current = try store.readMetadata(path: path)
                 if current.hash == localHash, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId { return true }
+            }
+        }
+        // Reopen exact retained clean content at a locally chosen name without
+        // treating that content checkpoint as a server naming receipt.
+        if state.outbox[itemId] == nil, state.conflicts[itemId] == nil,
+           let baseline = state.baselines[itemId], baseline.path != path,
+           let accountId = state.accountId {
+            try LocalVaultDeviceState.requireLocalHandoffPrincipal(root: canonicalRoot, binding: state.binding, accountId: accountId)
+            let shared = LocalVaultSharedEditingStore(root: canonicalRoot, accountId: accountId)
+            if let checkpoint = try shared.checkpoint(itemId: itemId, recoverIntents: false),
+               !checkpoint.pending, checkpoint.retiredReason == nil,
+               checkpoint.path == path, checkpoint.projectedHash == localHash,
+               !(try shared.protectionSnapshot(itemId: itemId)).protected {
+                let store = LocalVaultDocumentStore(root: canonicalRoot)
+                let current = try store.readMetadata(path: path)
+                let matches = try store.list().filter { candidate in
+                    (try? store.readMetadata(path: candidate)).flatMap { MarkdownIdentityCodec.extract(from: $0.contents.markdown)?.itemId } == itemId
+                }
+                if current.hash == localHash, MarkdownIdentityCodec.extract(from: current.contents.markdown)?.itemId == itemId,
+                   matches == [path] { return true }
             }
         }
         guard let baseline = state.baselines[itemId], baseline.path == path,
