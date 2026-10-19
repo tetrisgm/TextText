@@ -1,3 +1,4 @@
+import { mirrorSavedRename, validateMirrorSavedRenameObservation } from "../sync/engine/mirror-saved-rename";
 import { mirrorTombstone, validateMirrorTombstoneObservation } from "../sync/engine/mirror-tombstone";
 import { mirrorSharedPath, validateMirrorSharedPathObservation } from "../sync/engine/mirror-shared-path";
 import { mirrorQueue, validateMirrorQueueObservation } from "../sync/engine/mirror-queue";
@@ -62,6 +63,11 @@ export function createMirrorPolicyHost(digest: string, pageId: string) {
       const {v, envelope} = validateRequest(value);
       const observed = validateMirrorLifecycleObservation(v.observed);
       return { ...envelope, observed, decision: mirrorLifecycle(observed) };
+    },
+    savedRename(value: unknown) {
+      const {v, envelope} = validateRequest(value);
+      const observed = validateMirrorSavedRenameObservation(v.observed);
+      return { ...envelope, observed, decision: mirrorSavedRename(observed) };
     },
     tombstone(value: unknown) {
       const {v, envelope} = validateRequest(value);

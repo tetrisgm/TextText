@@ -16,6 +16,8 @@ public sealed record MirrorLifecycleDecision(string Baseline,string Pending);
 public sealed record MirrorSharedPathObservation(bool ProtectedProjection,string? BaselinePath,string? LocalPath,string? RemotePath,string? CheckpointPath,
     bool CheckpointReady,bool CheckpointRetired,bool LocalUnique,bool RemoteDeleted,string? LocalLifecycle,string? RemoteLifecycle,bool Blocked,bool OrganizePermitted,string PendingRename);
 public sealed record MirrorSharedPathDecision(string Action);
+public sealed record MirrorSavedRenameObservation(string Phase,string? SavedSource,string? SavedDestination,string? SavedLifecycle,string? StoppedLocalPath,string? StoppedRemotePath,string? StoppedLocalLifecycle,string? StoppedRemoteLifecycle,string? LocalPath,string? RemotePath,string? BaselinePath,string? CheckpointPath,string? LocalLifecycle,string? RemoteLifecycle,bool RemoteDeleted,bool LocalUnique,bool CheckpointReady,bool Retired,bool ScopeVerified,bool CanOrganize,bool RecoveryBlocked,bool TerminalProofValid,bool RemoteAuthoritative);
+public sealed record MirrorSavedRenameDecision(string Action);
 public sealed record MirrorTombstoneObservation(bool RemotePresent,bool RemoteDeleted,bool RemoteAuthoritative,bool EditorOwned,bool RecoveryBlocked,bool LocalPresent,bool LocalUnique,bool LocalIdentityVerified,string? LocalHash,string? BaselineHash,string? LocalPath,string? BaselinePath,string? RemotePath,string? BaselineRevision,string? RemoteRevision,string? LocalLifecycle,string? RemoteLifecycle);
 public sealed record MirrorTombstoneDecision(string Action);
 public sealed record MirrorQueueCandidate(string OperationId,bool Conflicted,bool EditorOwned,bool RecoveryBlocked,bool Permitted);
@@ -51,27 +53,30 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
     int retired;
     public void Retire() => Interlocked.Exchange(ref retired, 1);
 
-    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,null,null,null,null,null,ct);
+    public async Task ReadyAsync(CancellationToken ct = default) => await ExecuteAsync(null,null,null,null,null,null,null,ct);
     public async Task<MirrorDisposition> DecideAsync(MirrorObservation observed, CancellationToken ct = default) =>
-        (MirrorDisposition)(await ExecuteAsync(observed,null,null,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror disposition."));
+        (MirrorDisposition)(await ExecuteAsync(observed,null,null,null,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror disposition."));
     public async Task<MirrorScheduleDecision> ScheduleAsync(MirrorScheduleObservation observed,CancellationToken ct=default) =>
-        (MirrorScheduleDecision)(await ExecuteAsync(null,observed,null,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror schedule."));
+        (MirrorScheduleDecision)(await ExecuteAsync(null,observed,null,null,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror schedule."));
 
     public async Task<MirrorLifecycleDecision> LifecycleAsync(MirrorLifecycleObservation observed,CancellationToken ct=default) =>
-        (MirrorLifecycleDecision)(await ExecuteAsync(null,null,observed,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror lifecycle decision."));
+        (MirrorLifecycleDecision)(await ExecuteAsync(null,null,observed,null,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror lifecycle decision."));
 
     public async Task<MirrorQueueDecision> QueueAsync(MirrorQueueObservation observed,CancellationToken ct=default) {
         if(observed.Lane is not (null or "document" or "binary"))throw new MirrorPolicyUnavailableException("Unknown mirror queue lane.");
-        return (MirrorQueueDecision)(await ExecuteAsync(null,null,null,observed,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror queue selection."));
+        return (MirrorQueueDecision)(await ExecuteAsync(null,null,null,observed,null,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing mirror queue selection."));
     }
 
     public async Task<MirrorSharedPathDecision> SharedPathAsync(MirrorSharedPathObservation observed,CancellationToken ct=default) =>
-        (MirrorSharedPathDecision)(await ExecuteAsync(null,null,null,null,observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing protected path decision."));
+        (MirrorSharedPathDecision)(await ExecuteAsync(null,null,null,null,observed,null,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing protected path decision."));
 
     public async Task<MirrorTombstoneDecision> TombstoneAsync(MirrorTombstoneObservation observed,CancellationToken ct=default) =>
-        (MirrorTombstoneDecision)(await ExecuteAsync(null,null,null,null,null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing tombstone decision."));
+        (MirrorTombstoneDecision)(await ExecuteAsync(null,null,null,null,null,observed,null,ct) ?? throw new MirrorPolicyUnavailableException("Missing tombstone decision."));
 
-    private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, MirrorLifecycleObservation? lifecycle, MirrorQueueObservation? queue, MirrorSharedPathObservation? sharedPath, MirrorTombstoneObservation? tombstone, CancellationToken ct)
+    public async Task<MirrorSavedRenameDecision> SavedRenameAsync(MirrorSavedRenameObservation observed,CancellationToken ct=default) =>
+        (MirrorSavedRenameDecision)(await ExecuteAsync(null,null,null,null,null,null,observed,ct) ?? throw new MirrorPolicyUnavailableException("Missing saved rename decision."));
+
+    private async Task<object?> ExecuteAsync(MirrorObservation? observed, MirrorScheduleObservation? schedule, MirrorLifecycleObservation? lifecycle, MirrorQueueObservation? queue, MirrorSharedPathObservation? sharedPath, MirrorTombstoneObservation? tombstone, MirrorSavedRenameObservation? savedRename, CancellationToken ct)
     {
         await gate.WaitAsync(ct);
         try {
@@ -101,18 +106,24 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
                     generation=binding.RootElement.GetProperty("generation").GetInt64();
                 }
             }
-            if(observed is null && schedule is null && lifecycle is null && queue is null && sharedPath is null && tombstone is null) {
+            if(observed is null && schedule is null && lifecycle is null && queue is null && sharedPath is null && tombstone is null && savedRename is null) {
                 using var confirmed = await Call("handshake"); Identity(confirmed.RootElement);
                 return null;
             }
             var requestId = Guid.NewGuid().ToString();
-            using var result = await Call(tombstone is not null ? "tombstone" : sharedPath is not null ? "sharedPath" : queue is not null ? "queue" : lifecycle is not null ? "lifecycle" : schedule is null ? "evaluate" : "schedule", new { version = 1, digest, pageId, generation, scope, requestId, observed=(object?)tombstone??(object?)sharedPath??(object?)queue??(object?)lifecycle??(object?)schedule??observed });
+            using var result = await Call(savedRename is not null ? "savedRename" : tombstone is not null ? "tombstone" : sharedPath is not null ? "sharedPath" : queue is not null ? "queue" : lifecycle is not null ? "lifecycle" : schedule is null ? "evaluate" : "schedule", new { version = 1, digest, pageId, generation, scope, requestId, observed=(object?)savedRename??(object?)tombstone??(object?)sharedPath??(object?)queue??(object?)lifecycle??(object?)schedule??observed });
             var value = result.RootElement; Identity(value);
             if(sharedPath is not null) {
                 bool Keys(JsonElement objectValue,params string[] keys)=>objectValue.ValueKind==JsonValueKind.Object&&objectValue.EnumerateObject().Select(p=>p.Name).Order(StringComparer.Ordinal).SequenceEqual(keys.Order(StringComparer.Ordinal),StringComparer.Ordinal);
                 if(!Keys(value,"version","digest","pageId","generation","scope","requestId","observed","decision")||
                    !Keys(value.GetProperty("scope"),"accountId","workspaceId","lifecycle")||!Keys(value.GetProperty("decision"),"action")||
                    !Keys(value.GetProperty("observed"),"protectedProjection","baselinePath","localPath","remotePath","checkpointPath","checkpointReady","checkpointRetired","localUnique","remoteDeleted","localLifecycle","remoteLifecycle","blocked","organizePermitted","pendingRename"))throw new MirrorPolicyUnavailableException("Unknown protected path reply field.");
+            }
+            if(savedRename is not null) {
+                bool Keys(JsonElement objectValue,params string[] keys)=>objectValue.ValueKind==JsonValueKind.Object&&objectValue.EnumerateObject().Select(p=>p.Name).Order(StringComparer.Ordinal).SequenceEqual(keys.Order(StringComparer.Ordinal),StringComparer.Ordinal);
+                if(!Keys(value,"version","digest","pageId","generation","scope","requestId","observed","decision")||
+                   !Keys(value.GetProperty("scope"),"accountId","workspaceId","lifecycle")||!Keys(value.GetProperty("decision"),"action")||
+                   !Keys(value.GetProperty("observed"),"phase","savedSource","savedDestination","savedLifecycle","stoppedLocalPath","stoppedRemotePath","stoppedLocalLifecycle","stoppedRemoteLifecycle","localPath","remotePath","baselinePath","checkpointPath","localLifecycle","remoteLifecycle","remoteDeleted","localUnique","checkpointReady","retired","scopeVerified","canOrganize","recoveryBlocked","terminalProofValid","remoteAuthoritative"))throw new MirrorPolicyUnavailableException("Unknown saved rename reply field.");
             }
             if(tombstone is not null) {
                 bool Keys(JsonElement objectValue,params string[] keys)=>objectValue.ValueKind==JsonValueKind.Object&&objectValue.EnumerateObject().Select(p=>p.Name).Order(StringComparer.Ordinal).SequenceEqual(keys.Order(StringComparer.Ordinal),StringComparer.Ordinal);
@@ -121,9 +132,14 @@ public sealed class MirrorPolicy(string digest, MirrorScope scope, Func<string, 
                    !Keys(value.GetProperty("observed"),"remotePresent","remoteDeleted","remoteAuthoritative","editorOwned","recoveryBlocked","localPresent","localUnique","localIdentityVerified","localHash","baselineHash","localPath","baselinePath","remotePath","baselineRevision","remoteRevision","localLifecycle","remoteLifecycle"))throw new MirrorPolicyUnavailableException("Unknown tombstone reply field.");
             }
             if(value.GetProperty("scope").Deserialize<MirrorScope>(Json) != scope || value.GetProperty("requestId").GetString() != requestId ||
-               (tombstone is not null ? value.GetProperty("observed").Deserialize<MirrorTombstoneObservation>(Json) != tombstone : sharedPath is not null ? value.GetProperty("observed").Deserialize<MirrorSharedPathObservation>(Json) != sharedPath : queue is not null ? JsonSerializer.Serialize(value.GetProperty("observed").Deserialize<MirrorQueueObservation>(Json),Json) != JsonSerializer.Serialize(queue,Json) : lifecycle is not null ? value.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(Json) != lifecycle : schedule is null ? value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed : value.GetProperty("observed").Deserialize<MirrorScheduleObservation>(Json) != schedule)) throw new MirrorPolicyUnavailableException("Stale mirror policy reply.");
+               (savedRename is not null ? value.GetProperty("observed").Deserialize<MirrorSavedRenameObservation>(Json) != savedRename : tombstone is not null ? value.GetProperty("observed").Deserialize<MirrorTombstoneObservation>(Json) != tombstone : sharedPath is not null ? value.GetProperty("observed").Deserialize<MirrorSharedPathObservation>(Json) != sharedPath : queue is not null ? JsonSerializer.Serialize(value.GetProperty("observed").Deserialize<MirrorQueueObservation>(Json),Json) != JsonSerializer.Serialize(queue,Json) : lifecycle is not null ? value.GetProperty("observed").Deserialize<MirrorLifecycleObservation>(Json) != lifecycle : schedule is null ? value.GetProperty("observed").Deserialize<MirrorObservation>(Json) != observed : value.GetProperty("observed").Deserialize<MirrorScheduleObservation>(Json) != schedule)) throw new MirrorPolicyUnavailableException("Stale mirror policy reply.");
             // Recheck the current page after the decision RPC, before returning authority.
             using var current = await Call("handshake"); Identity(current.RootElement);
+            if(savedRename is not null) {
+                var decision=value.GetProperty("decision").Deserialize<MirrorSavedRenameDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing savedRename decision.");
+                if(decision.Action is not ("hold" or "replay-saved" or "review" or "suppress-stopped" or "stage-new"))throw new MirrorPolicyUnavailableException("Invalid savedRename decision.");
+                return decision;
+            }
             if(tombstone is not null) {
                 var decision=value.GetProperty("decision").Deserialize<MirrorTombstoneDecision>(Json)??throw new MirrorPolicyUnavailableException("Missing tombstone decision.");
                 if(decision.Action is not ("defer" or "no-local" or "remove-local" or "retain-conflict"))throw new MirrorPolicyUnavailableException("Invalid tombstone decision.");

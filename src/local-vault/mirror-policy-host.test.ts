@@ -1,3 +1,4 @@
+import savedRenameVectors from "../../sync/fixtures/mirror-saved-rename.json";
 import tombstoneVectors from "../../sync/fixtures/mirror-tombstone.json";
 import sharedPathVectors from "../../sync/fixtures/mirror-shared-path.json";
 import queueVectors from "../../sync/fixtures/mirror-queue.json";
@@ -26,7 +27,18 @@ describe("portable mirror policy host", () => {
     host.retire();
     expect(() => host.sharedPath({...request, observed: sharedPathVectors[0].observed})).toThrow("Stale");
   });
-  it("fences tombstone decisions with exact scope, observation and request echo", () => {
+  it("fences saved rename decisions with exact scope, observation and request echo", () => {
+    const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
+    for (const vector of savedRenameVectors) {
+      const input = {...request, observed: vector.observed};
+      expect(host.savedRename(input)).toEqual({...input, decision: vector.decision});
+      expect(() => host.savedRename({...input, generation: 0})).toThrow("Stale");
+      expect(() => host.savedRename({...input, scope: {...scope, accountId: "foreign"}})).toThrow("Stale");
+      expect(() => host.savedRename({...input, observed: {...vector.observed, payload: "forbidden"}})).toThrow();
+    }
+    host.retire();
+    expect(() => host.savedRename({...request, observed: savedRenameVectors[0].observed})).toThrow("Stale");
+  });  it("fences tombstone decisions with exact scope, observation and request echo", () => {
     const host = createMirrorPolicyHost(digest, pageId); host.bind({scope, generation: 0});
     for (const vector of tombstoneVectors) {
       const input = {...request, observed: vector.observed};

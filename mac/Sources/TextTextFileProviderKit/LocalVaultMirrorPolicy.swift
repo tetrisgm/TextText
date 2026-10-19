@@ -127,6 +127,85 @@ public struct LocalVaultMirrorSharedPathObservation: Codable, Equatable, Sendabl
 }
 public struct LocalVaultMirrorSharedPathDecision: Codable, Equatable, Sendable { public let action: String }
 
+public struct LocalVaultMirrorSavedRenameObservation: Codable, Equatable, Sendable {
+    public let phase: String
+    public let savedSource: String?
+    public let savedDestination: String?
+    public let savedLifecycle: String?
+    public let stoppedLocalPath: String?
+    public let stoppedRemotePath: String?
+    public let stoppedLocalLifecycle: String?
+    public let stoppedRemoteLifecycle: String?
+    public let localPath: String?
+    public let remotePath: String?
+    public let baselinePath: String?
+    public let checkpointPath: String?
+    public let localLifecycle: String?
+    public let remoteLifecycle: String?
+    public let remoteDeleted: Bool
+    public let localUnique: Bool
+    public let checkpointReady: Bool
+    public let retired: Bool
+    public let scopeVerified: Bool
+    public let canOrganize: Bool
+    public let recoveryBlocked: Bool
+    public let terminalProofValid: Bool
+    public let remoteAuthoritative: Bool
+    public init(phase: String, savedSource: String?, savedDestination: String?, savedLifecycle: String?, stoppedLocalPath: String?, stoppedRemotePath: String?, stoppedLocalLifecycle: String?, stoppedRemoteLifecycle: String?, localPath: String?, remotePath: String?, baselinePath: String?, checkpointPath: String?, localLifecycle: String?, remoteLifecycle: String?, remoteDeleted: Bool, localUnique: Bool, checkpointReady: Bool, retired: Bool, scopeVerified: Bool, canOrganize: Bool, recoveryBlocked: Bool, terminalProofValid: Bool, remoteAuthoritative: Bool) {
+        self.phase = phase
+        self.savedSource = savedSource
+        self.savedDestination = savedDestination
+        self.savedLifecycle = savedLifecycle
+        self.stoppedLocalPath = stoppedLocalPath
+        self.stoppedRemotePath = stoppedRemotePath
+        self.stoppedLocalLifecycle = stoppedLocalLifecycle
+        self.stoppedRemoteLifecycle = stoppedRemoteLifecycle
+        self.localPath = localPath
+        self.remotePath = remotePath
+        self.baselinePath = baselinePath
+        self.checkpointPath = checkpointPath
+        self.localLifecycle = localLifecycle
+        self.remoteLifecycle = remoteLifecycle
+        self.remoteDeleted = remoteDeleted
+        self.localUnique = localUnique
+        self.checkpointReady = checkpointReady
+        self.retired = retired
+        self.scopeVerified = scopeVerified
+        self.canOrganize = canOrganize
+        self.recoveryBlocked = recoveryBlocked
+        self.terminalProofValid = terminalProofValid
+        self.remoteAuthoritative = remoteAuthoritative
+    }
+    private enum CodingKeys: String, CodingKey { case phase, savedSource, savedDestination, savedLifecycle, stoppedLocalPath, stoppedRemotePath, stoppedLocalLifecycle, stoppedRemoteLifecycle, localPath, remotePath, baselinePath, checkpointPath, localLifecycle, remoteLifecycle, remoteDeleted, localUnique, checkpointReady, retired, scopeVerified, canOrganize, recoveryBlocked, terminalProofValid, remoteAuthoritative }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(phase, forKey: .phase)
+        try c.encode(savedSource, forKey: .savedSource)
+        try c.encode(savedDestination, forKey: .savedDestination)
+        try c.encode(savedLifecycle, forKey: .savedLifecycle)
+        try c.encode(stoppedLocalPath, forKey: .stoppedLocalPath)
+        try c.encode(stoppedRemotePath, forKey: .stoppedRemotePath)
+        try c.encode(stoppedLocalLifecycle, forKey: .stoppedLocalLifecycle)
+        try c.encode(stoppedRemoteLifecycle, forKey: .stoppedRemoteLifecycle)
+        try c.encode(localPath, forKey: .localPath)
+        try c.encode(remotePath, forKey: .remotePath)
+        try c.encode(baselinePath, forKey: .baselinePath)
+        try c.encode(checkpointPath, forKey: .checkpointPath)
+        try c.encode(localLifecycle, forKey: .localLifecycle)
+        try c.encode(remoteLifecycle, forKey: .remoteLifecycle)
+        try c.encode(remoteDeleted, forKey: .remoteDeleted)
+        try c.encode(localUnique, forKey: .localUnique)
+        try c.encode(checkpointReady, forKey: .checkpointReady)
+        try c.encode(retired, forKey: .retired)
+        try c.encode(scopeVerified, forKey: .scopeVerified)
+        try c.encode(canOrganize, forKey: .canOrganize)
+        try c.encode(recoveryBlocked, forKey: .recoveryBlocked)
+        try c.encode(terminalProofValid, forKey: .terminalProofValid)
+        try c.encode(remoteAuthoritative, forKey: .remoteAuthoritative)
+    }
+}
+public struct LocalVaultMirrorSavedRenameDecision: Codable, Equatable, Sendable { public let action: String }
+
 public struct LocalVaultMirrorTombstoneObservation: Codable, Equatable, Sendable {
     public let remotePresent: Bool
     public let remoteDeleted: Bool
@@ -250,6 +329,10 @@ public actor LocalVaultMirrorPolicy {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorSharedPathObservation, decision: LocalVaultMirrorSharedPathDecision
     }
+    private struct SavedRenameReply: Decodable {
+        let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
+        let observed: LocalVaultMirrorSavedRenameObservation, decision: LocalVaultMirrorSavedRenameDecision
+    }
     private struct TombstoneReply: Decodable {
         let version: Int, digest: String, pageId: String, generation: Int, scope: LocalVaultMirrorScope, requestId: String
         let observed: LocalVaultMirrorTombstoneObservation, decision: LocalVaultMirrorTombstoneDecision
@@ -294,6 +377,14 @@ public actor LocalVaultMirrorPolicy {
                   Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
                   let observation = object["observed"] as? [String: Any],
                   Set(observation.keys) == Set(["protectedProjection", "baselinePath", "localPath", "remotePath", "checkpointPath", "checkpointReady", "checkpointRetired", "localUnique", "remoteDeleted", "localLifecycle", "remoteLifecycle", "blocked", "organizePermitted", "pendingRename"]),
+                  let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
+                  let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
+        }
+        if method == "savedRename" {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                  Set(object.keys) == Set(["version", "digest", "pageId", "generation", "scope", "requestId", "observed", "decision"]),
+                  let observation = object["observed"] as? [String: Any],
+                  Set(observation.keys) == Set(["phase", "savedSource", "savedDestination", "savedLifecycle", "stoppedLocalPath", "stoppedRemotePath", "stoppedLocalLifecycle", "stoppedRemoteLifecycle", "localPath", "remotePath", "baselinePath", "checkpointPath", "localLifecycle", "remoteLifecycle", "remoteDeleted", "localUnique", "checkpointReady", "retired", "scopeVerified", "canOrganize", "recoveryBlocked", "terminalProofValid", "remoteAuthoritative"]),
                   let decision = object["decision"] as? [String: Any], Set(decision.keys) == Set(["action"]),
                   let owner = object["scope"] as? [String: Any], Set(owner.keys) == Set(["accountId", "workspaceId", "lifecycle"]) else { throw Failure.stale }
         }
@@ -383,6 +474,20 @@ public actor LocalVaultMirrorPolicy {
         try check(reply.version, reply.digest, reply.pageId, reply.generation)
         guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
               ["hold", "unchanged", "follow-remote", "announce-local", "adopt-path"].contains(reply.decision.action) else { throw Failure.stale }
+        let current = try await call("handshake", as: Identity.self)
+        try check(current.version, current.digest, current.pageId, current.generation)
+        return reply.decision
+    }
+
+    public func savedRename(_ observed: LocalVaultMirrorSavedRenameObservation) async throws -> LocalVaultMirrorSavedRenameDecision {
+        await acquire(); defer { release() }
+        try await prepare()
+        guard let generation, let pageId else { throw Failure.stale }
+        let request = Request(digest: digest, pageId: pageId, generation: generation, scope: scope, requestId: UUID().uuidString, observed: observed)
+        let reply = try await call("savedRename", String(decoding: JSONEncoder().encode(request), as: UTF8.self), as: SavedRenameReply.self)
+        try check(reply.version, reply.digest, reply.pageId, reply.generation)
+        guard reply.scope == scope, reply.requestId == request.requestId, reply.observed == observed,
+              ["hold", "replay-saved", "review", "suppress-stopped", "stage-new"].contains(reply.decision.action) else { throw Failure.stale }
         let current = try await call("handshake", as: Identity.self)
         try check(current.version, current.digest, current.pageId, current.generation)
         return reply.decision
