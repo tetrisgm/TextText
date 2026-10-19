@@ -1,7 +1,9 @@
 /** Pure protected-projection path disposition. Native adapters retain durable
  * intent IDs, scoped authority, leases, exact file/checkpoint verification and
  * every mutation. This module alone does not complete the native path lane. */
+import { legacyMirrorGeneration, sameMirrorGeneration, validateMirrorGenerationFacts, type MirrorGeneration } from "./mirror-generation";
 export interface MirrorSharedPathObservation {
+  generations?: Readonly<{ local: MirrorGeneration; remote: MirrorGeneration }>;
   protectedProjection: boolean;
   baselinePath: string | null;
   localPath: string | null;
@@ -39,17 +41,20 @@ export function validateMirrorSharedPathObservation(value: unknown): MirrorShare
   const invalid = () => { throw Error("Invalid mirror shared path observation"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const v = value as Record<string, unknown>;
-  if (Object.keys(v).length !== fields.length || fields.some(key => !Object.hasOwn(v, key)) ||
+  if (Object.hasOwn(v, "generations") && !("value" in Object.getOwnPropertyDescriptor(v, "generations")!)) return invalid();
+  if (Object.keys(v).length !== fields.length + (Object.hasOwn(v, "generations") ? 1 : 0) || fields.some(key => !Object.hasOwn(v, key)) ||
       paths.some(key => !relativePack(v[key])) || flags.some(key => typeof v[key] !== "boolean") ||
       generations.some(key => v[key] !== null && (typeof v[key] !== "string" || (v[key] as string).length === 0 || (v[key] as string).length > 512 || /[\x00-\x1f\x7f]/.test(v[key] as string))) ||
       !["none", "replay", "review"].includes(v.pendingRename as string)) return invalid();
-  return Object.fromEntries(fields.map(key => [key, v[key]])) as unknown as MirrorSharedPathObservation;
+  const result = Object.fromEntries(fields.map(key => [key, v[key]])) as unknown as MirrorSharedPathObservation;
+  if (Object.hasOwn(v, "generations")) result.generations = validateMirrorGenerationFacts(v.generations, { local: result.localLifecycle, remote: result.remoteLifecycle });
+  return result;
 }
 export function mirrorSharedPath(input: MirrorSharedPathObservation): MirrorSharedPathDecision {
   const v = validateMirrorSharedPathObservation(input);
   // Ready Yjs checkpoints do not attest file restore generations. Unknown
   // includes missing baseline with no independently retained generation.
-  const sameLifecycle = v.localLifecycle !== null && v.remoteLifecycle !== null && v.localLifecycle === v.remoteLifecycle;
+  const sameLifecycle = sameMirrorGeneration(v.generations?.local ?? legacyMirrorGeneration(v.localLifecycle), v.generations?.remote ?? legacyMirrorGeneration(v.remoteLifecycle));
   if (!sameLifecycle || !v.protectedProjection || !v.localUnique || !v.checkpointReady || v.checkpointRetired || v.blocked ||
       v.localPath === null || v.remotePath === null || v.remoteDeleted || v.checkpointPath !== v.localPath || v.pendingRename === "review") return { action: "hold" };
   if (v.pendingRename === "replay") {

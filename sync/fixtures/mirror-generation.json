@@ -1,0 +1,9 @@
+[
+  {"name":"unknown never authorizes itself","left":{"kind":"unknown"},"right":{"kind":"unknown"},"same":false},
+  {"name":"unknown is not certified absence","left":{"kind":"unknown"},"right":{"kind":"observed-absent"},"same":false},
+  {"name":"certified absence matches only certified absence","left":{"kind":"observed-absent"},"right":{"kind":"observed-absent"},"same":true},
+  {"name":"restore separates absent incarnation","left":{"kind":"observed-absent"},"right":{"kind":"present","generation":"restore-a"},"same":false},
+  {"name":"same restored generation","left":{"kind":"present","generation":"restore-a"},"right":{"kind":"present","generation":"restore-a"},"same":true},
+  {"name":"later restore generation","left":{"kind":"present","generation":"restore-a"},"right":{"kind":"present","generation":"restore-b"},"same":false},
+  {"name":"generation spelling preserved","left":{"kind":"present","generation":"Restore-A"},"right":{"kind":"present","generation":"restore-a"},"same":false}
+]

@@ -1,0 +1,581 @@
+[
+  {
+    "name": "new certified absent incarnation",
+    "observed": {
+      "phase": "none",
+      "savedSource": null,
+      "savedDestination": null,
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "unknown"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "stage-new"
+    }
+  },
+  {
+    "name": "new unknown local is not absence",
+    "observed": {
+      "phase": "none",
+      "savedSource": null,
+      "savedDestination": null,
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "unknown"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "unknown"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "new unknown remote is not absence",
+    "observed": {
+      "phase": "none",
+      "savedSource": null,
+      "savedDestination": null,
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "unknown"
+        },
+        "saved": {
+          "kind": "unknown"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "new later restore generation",
+    "observed": {
+      "phase": "none",
+      "savedSource": null,
+      "savedDestination": null,
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": "restored",
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "present",
+          "generation": "restored"
+        },
+        "saved": {
+          "kind": "unknown"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending certified absent incarnation",
+    "observed": {
+      "phase": "pending",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "replay-saved"
+    }
+  },
+  {
+    "name": "pending unknown local is not absence",
+    "observed": {
+      "phase": "pending",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "unknown"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending unknown remote is not absence",
+    "observed": {
+      "phase": "pending",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "unknown"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "hold"
+    }
+  },
+  {
+    "name": "pending later restore generation",
+    "observed": {
+      "phase": "pending",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": null,
+      "stoppedRemotePath": null,
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": "restored",
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": false,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "present",
+          "generation": "restored"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "unknown"
+        },
+        "stoppedRemote": {
+          "kind": "unknown"
+        }
+      }
+    },
+    "decision": {
+      "action": "review"
+    }
+  },
+  {
+    "name": "stopped certified absent incarnation",
+    "observed": {
+      "phase": "stopped",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": "New.textpack",
+      "stoppedRemotePath": "Old.textpack",
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": true,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "observed-absent"
+        },
+        "stoppedRemote": {
+          "kind": "observed-absent"
+        }
+      }
+    },
+    "decision": {
+      "action": "suppress-stopped"
+    }
+  },
+  {
+    "name": "stopped unknown local is not absence",
+    "observed": {
+      "phase": "stopped",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": "New.textpack",
+      "stoppedRemotePath": "Old.textpack",
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": true,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "unknown"
+        },
+        "remote": {
+          "kind": "observed-absent"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "observed-absent"
+        },
+        "stoppedRemote": {
+          "kind": "observed-absent"
+        }
+      }
+    },
+    "decision": {
+      "action": "review"
+    }
+  },
+  {
+    "name": "stopped unknown remote is not absence",
+    "observed": {
+      "phase": "stopped",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": "New.textpack",
+      "stoppedRemotePath": "Old.textpack",
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": null,
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": true,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "unknown"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "observed-absent"
+        },
+        "stoppedRemote": {
+          "kind": "observed-absent"
+        }
+      }
+    },
+    "decision": {
+      "action": "review"
+    }
+  },
+  {
+    "name": "stopped later restore generation",
+    "observed": {
+      "phase": "stopped",
+      "savedSource": "Old.textpack",
+      "savedDestination": "New.textpack",
+      "savedLifecycle": null,
+      "stoppedLocalPath": "New.textpack",
+      "stoppedRemotePath": "Old.textpack",
+      "stoppedLocalLifecycle": null,
+      "stoppedRemoteLifecycle": null,
+      "localPath": "New.textpack",
+      "remotePath": "Old.textpack",
+      "baselinePath": "Old.textpack",
+      "checkpointPath": "New.textpack",
+      "localLifecycle": null,
+      "remoteLifecycle": "restored",
+      "remoteDeleted": false,
+      "localUnique": true,
+      "checkpointReady": true,
+      "retired": false,
+      "scopeVerified": true,
+      "canOrganize": true,
+      "recoveryBlocked": false,
+      "terminalProofValid": true,
+      "remoteAuthoritative": true,
+      "generations": {
+        "local": {
+          "kind": "observed-absent"
+        },
+        "remote": {
+          "kind": "present",
+          "generation": "restored"
+        },
+        "saved": {
+          "kind": "observed-absent"
+        },
+        "stoppedLocal": {
+          "kind": "observed-absent"
+        },
+        "stoppedRemote": {
+          "kind": "observed-absent"
+        }
+      }
+    },
+    "decision": {
+      "action": "review"
+    }
+  }
+]

@@ -15,7 +15,10 @@ await copyFile('sync/fixtures/mirror-shared-path.json',path.join(output,'shared-
 await copyFile('sync/fixtures/mirror-tombstone.json',path.join(output,'tombstone-vectors.json'));
 await copyFile('sync/fixtures/mirror-queued-upload-path.json',path.join(output,'queued-upload-path-vectors.json'));
 await copyFile('sync/fixtures/mirror-folder.json',path.join(output,'folder-vectors.json'));
-await copyFile('sync/fixtures/mirror-saved-rename.json',path.join(output,'saved-rename-vectors.json'));
+const legacySavedRenames=JSON.parse(await readFile('sync/fixtures/mirror-saved-rename.json','utf8'));
+const typedSavedRenames=JSON.parse(await readFile('sync/fixtures/mirror-generation-rename.json','utf8'));
+assert.equal(legacySavedRenames.length,31); assert.equal(typedSavedRenames.length,12);
+await writeFile(path.join(output,'saved-rename-vectors.json'),JSON.stringify([...legacySavedRenames,...typedSavedRenames])+'\n');
 // Load the exact packaged script without an editor, transport or credentials.
 await writeFile(path.join(output,'policy-fixture.html'),'<meta charset="utf-8"><p>Isolated native policy host</p><script src="mirror-policy.js"></script>');
 const manifest=JSON.parse(await readFile(path.join(output,'mirror-policy.json'),'utf8'));

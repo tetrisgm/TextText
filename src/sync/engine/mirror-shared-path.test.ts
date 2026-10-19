@@ -3,6 +3,14 @@ import { mirrorSharedPath, validateMirrorSharedPathObservation } from "./mirror-
 import vectors from "../../../sync/fixtures/mirror-shared-path.json";
 const base = validateMirrorSharedPathObservation(vectors[0].observed);
 describe("protected projection path disposition", () => {
+  it("admits certified absent generations without treating legacy nil as evidence", () => {
+    const candidate = { ...base, localLifecycle: null, remoteLifecycle: null };
+    expect(mirrorSharedPath(candidate).action).toBe("hold");
+    expect(mirrorSharedPath({ ...candidate, generations: { local: { kind: "observed-absent" }, remote: { kind: "observed-absent" } } }))
+      .toEqual(mirrorSharedPath(base));
+    expect(mirrorSharedPath({ ...candidate, generations: { local: { kind: "unknown" }, remote: { kind: "observed-absent" } } }).action).toBe("hold");
+    expect(() => mirrorSharedPath({ ...base, generations: { local: { kind: "observed-absent" }, remote: { kind: "observed-absent" } } })).toThrow();
+  });
   it.each(vectors)("uses the serialized decision: $name", vector => {
     const before = JSON.stringify(vector.observed);
     expect(mirrorSharedPath(validateMirrorSharedPathObservation(vector.observed))).toEqual(vector.decision);

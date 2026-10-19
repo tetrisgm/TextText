@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import vectors from "../../../sync/fixtures/mirror-saved-rename.json";
+import generationVectors from "../../../sync/fixtures/mirror-generation-rename.json";
 import { mirrorSavedRename, validateMirrorSavedRenameObservation } from "./mirror-saved-rename";
 
 describe("saved rename eligibility", () => {
+  it.each(generationVectors)("typed generation: $name", ({ observed, decision }) => {
+    expect(mirrorSavedRename(validateMirrorSavedRenameObservation(observed))).toEqual(decision);
+  });
+  it("replays a certified absent saved generation but holds unknown and reviews restore", () => {
+    const pending = validateMirrorSavedRenameObservation(vectors.find(row => row.name === "saved request replays immutably")!.observed);
+    const absent = { kind: "observed-absent" } as const, unknown = { kind: "unknown" } as const;
+    const observed = { ...pending, localLifecycle: null, remoteLifecycle: null, savedLifecycle: null,
+      generations: { local: absent, remote: absent, saved: absent, stoppedLocal: unknown, stoppedRemote: unknown } };
+    expect(mirrorSavedRename(observed).action).toBe("replay-saved");
+    expect(mirrorSavedRename({ ...observed, generations: { ...observed.generations, local: unknown } }).action).toBe("hold");
+    expect(mirrorSavedRename({ ...observed, remoteLifecycle: "restored", generations: { ...observed.generations, remote: { kind: "present", generation: "restored" } } }).action).toBe("review");
+    expect(mirrorSavedRename({ ...observed, generations: { ...observed.generations, saved: unknown } }).action).toBe("review");
+  });
   it.each(vectors)("$name", ({ observed, decision }) => {
     expect(mirrorSavedRename(validateMirrorSavedRenameObservation(observed))).toEqual(decision);
   });
