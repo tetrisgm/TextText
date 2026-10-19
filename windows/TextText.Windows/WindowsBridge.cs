@@ -221,7 +221,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
-        or "collaboration.localHandoffConfig" or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+        or "collaboration.localHandoffConfig" or "files.savedFileMoveList" or "files.savedFileMoveRead" or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
 
     static object FolderRenameRow(TextPackStore.FolderRenameRecoveryEntry entry) => new {
         id=entry.Id,fromPath=entry.FromPath,toPath=entry.ToPath,expectedIdentity=entry.ExpectedIdentity,
@@ -265,6 +265,28 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 return Result(restored);
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.savedFileMoveList": {
+                RequireReplacementScope(p,ct);
+                var page=await sync.SavedFileMoveRecoveryListAsync(ct,Optional(p,"path"));
+                RequireReplacementScope(p,ct);
+                return new {entries=page.Entries.Select(row=>FolderSyncWire(row)).ToArray(),truncated=page.Truncated};
+            }
+            case "files.savedFileMoveRead": {
+                RequireReplacementScope(p,ct);
+                var row=await sync.SavedFileMoveRecoveryReadAsync(Required(p,"id"),ct);
+                RequireReplacementScope(p,ct);return FolderSyncWire(row);
+            }
+            case "files.retrySavedFileMove":
+            case "files.keepSavedFileMoveNames": {
+                RequireReplacementScope(p,ct);
+                if(!p.TryGetProperty("consent",out var consent)||consent.ValueKind!=JsonValueKind.True)
+                    throw new InvalidDataException("Inspect the saved move and confirm this action before continuing.");
+                var operationId=Required(p,"id");var requestHash=Required(p,"requestHash");var inspection=Required(p,"inspection");
+                if(method=="files.retrySavedFileMove")
+                    await sync.RetrySavedFileMoveAsync(operationId,requestHash,inspection,true,()=>RequireReplacementScope(p,ct),ct);
+                else await sync.KeepSavedFileMoveNamesAsync(operationId,requestHash,inspection,true,()=>RequireReplacementScope(p,ct),ct);
+                RequireReplacementScope(p,ct);Changed();return new {resolved=true};
+            }
             case "files.folderSyncMoveList": {
                 RequireReplacementScope(p,ct);var row=await sync.FolderMoveRecoveryReadAsync(ct);RequireReplacementScope(p,ct);return row is null?Array.Empty<object>():new[]{FolderSyncMoveRow(row)};
             }

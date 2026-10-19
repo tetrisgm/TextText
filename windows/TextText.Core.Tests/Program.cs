@@ -8,6 +8,16 @@ static class Test
  // production lifecycle policy before an editor protects the item.
  public static async Task AttestPathGeneration(SyncEngine sync,Fake remote) {remote.Item=remote.Item! with{Lifecycle="path-fixture-generation"};await sync.SyncAsync();}
  public static SyncEngine NewSync(TextPackStore store,ISyncTransport transport,string? accountId=null) => new(store,transport,accountId,NativePolicyTestHost.Create(accountId));
+ public const string PathAccount="owned-path-fixture";
+ public static readonly ProtectedRenameScope PathScope=new("https://owned-path.test","owned-path",PathAccount);
+ public static TextPackStore OwnedPathStore(string root,string state) {
+     var store=new TextPackStore(root,state);AccountRootOwnership.Open(store,new(PathScope.Origin),PathScope.WorkspaceId,PathAccount);return store;
+ }
+ public static SyncEngine NewOwnedPathSync(TextPackStore store,ISyncTransport transport) {
+     AccountRootOwnership.Open(store,new(PathScope.Origin),PathScope.WorkspaceId,PathAccount);
+     if(transport is Fake fake){fake.ProtectedRenameBinding=PathScope;fake.Capabilities??=new(true,true,[],store.Scan().GroupBy(file=>file.ItemId).ToDictionary(group=>group.Key,_=>true));}
+     return NewSync(store,transport,PathAccount);
+ }
  static void Assert(bool condition,string label){if(!condition)throw new Exception(label);Console.WriteLine("PASS "+label);}
  static void Throws<T>(Action action,string label) where T:Exception {try{action();}catch(T){Console.WriteLine("PASS "+label);return;}throw new Exception(label);}
  static byte[] Pack(string body="hello",string id="test-1") {using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true)){using(var w=new StreamWriter(zip.CreateEntry("text.md").Open()))w.Write("---\ntextTextId: \""+id+"\"\n---\n"+body);using(var w=new StreamWriter(zip.CreateEntry("unknown.bin").Open()))w.Write("opaque-original");}return output.ToArray();}
@@ -44,7 +54,7 @@ static class Test
  await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(temp,Assert);
  await MirrorLifecycleTests.Run(temp,Assert);await MirrorTombstoneIntegrationTests.Run(temp,Assert);await ProtectedRenameTransportTests.Run(Assert);SharedRenameProfileTests.Run(temp,Assert);
  await ConflictRecoveryTests.Run(temp,Assert);
- LocalHandoffProfileTests.Run(temp,Assert);await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
+ ProtectedSavedRenameTests.Run(Assert);await ProtectedSavedRenameIntegrationTests.Run(temp,Assert);await MissingManifestVisibilityTests.Run(temp,Assert);LocalHandoffProfileTests.Run(temp,Assert);await FolderCaseRecoveryTests.Run(temp,Assert);await FolderCasePropagationTests.Run(temp,Assert);await FolderCaseTests.Run(temp,Assert);await MirrorQueueIntegrationTests.Run(temp,Assert);AliasMutationTests.Run(temp,Assert);await SharedCaseMoveTests.Run(temp,Assert);RetainedMoveTests.Run(temp,Assert);RetainedProfileConcurrencyTests.Run(temp,Assert);RetainedRemovalCausalityTests.Run(temp,Assert);RetainedRemovalTests.Run(temp,Assert);RetainedReplacementTests.Run(temp,Assert);
  RetainedReplacementAdoptionTests.Run(temp,Assert);
  RecoveryAssetTests.Run(temp,Assert);
  await RetainedReplacementSyncFenceTests.Run(temp,Assert);
@@ -433,9 +443,14 @@ static class Test
      BinaryEntryPacks.Assets(remote.Data)["assets/data.bin"].Bytes.SequenceEqual(new byte[]{5,5}),
      "competing open-file asset adopts the server winner");
    var conflictState=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(Path.Combine(conflictStore.StateDirectory,"sync.json")))!;
-   Assert(!conflictState.BinaryOutbox.Any(x=>x.ItemId=="test-1")&&await conflictEngine.IsReadyAsync("test-1")&&
+   var adoptedPack=conflictStore.Read(file.Path);var adoptedHash=TextPackStore.Hash(adoptedPack);
+   Assert(!conflictState.BinaryOutbox.Any(x=>x.ItemId=="test-1")&&await conflictEngine.IsReadyAsync("test-1")== (adoptedHash==remote.Item!.Revision)&&
      File.ReadAllBytes(Path.Combine(conflictStore.GetRecoveryDirectory(),"binary-conflict-local-"+TextPackStore.Hash(localPack)+".textpack")).SequenceEqual(localPack),
-     "competing asset retains the local pack and releases the editor after adopting server bytes");
+     "competing asset retains local pack and readiness requires incorporated text proof");
+   var acknowledgedRevision=remote.Item!.Revision;
+   var acknowledgedJournal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=acknowledgedRevision,relativePath=file.Path,update="AAA=",pending=Array.Empty<string>()});
+   await editing.CheckpointAsync(session.SessionToken,adoptedHash,adoptedPack,new("test-1",file.Path,adoptedHash,acknowledgedRevision,1,0,1,acknowledgedJournal,false));
+   Assert(await conflictEngine.IsReadyAsync("test-1"),"competing asset editor becomes ready after supported native content acknowledgement");
  }
  await MirroredRetirementTests.Run(temp,Assert);
  await LocalRenameTests.Run(temp,Assert);
@@ -686,6 +701,19 @@ static class Test
   public Task DeleteAsync(string itemId,string path,string baseRevision,string operationId,CancellationToken cancellation=default)=>Get(itemId).DeleteAsync(itemId,path,baseRevision,operationId,cancellation);
  }
  internal sealed class Fake:ISyncTransport{
+  public ProtectedRenameScope? ProtectedRenameBinding {get;set;}
+  readonly Dictionary<string,ProtectedRenameReceipt> protectedReceipts=[];
+  public Task<ProtectedRenameReceipt> ProtectedRenameAsync(ProtectedRenameRequest request,CancellationToken cancellation=default) {
+    var scope=ProtectedRenameBinding??throw new NotSupportedException();
+    if(protectedReceipts.TryGetValue(request.OperationId,out var prior)) {
+      if(prior.Request!=request||prior.Scope!=scope)throw new InvalidDataException("Fixture operation reused");return Task.FromResult(prior);
+    }
+    ProtectedRenameReceipt receipt;
+    if(Item is null||Item.Deleted||Item.ItemId!=request.ItemId||Item.RelativePath!=request.Source||Item.Revision!=request.BaseRevision)
+      receipt=new(request,scope,"conflict",Item?.RelativePath??request.Source,Item?.Revision,Item?.Deleted??false);
+    else {Item=Item with{RelativePath=request.Destination};receipt=new(request,scope,"moved",Item.RelativePath,Item.Revision,false);}
+    protectedReceipts[request.OperationId]=receipt;return Task.FromResult(receipt);
+  }
   public WorkspaceCapabilities? Capabilities {get;set;}
   public string? ManifestRevision {get;set;}
   public bool SupportsFolderCaseMoves {get;set;}

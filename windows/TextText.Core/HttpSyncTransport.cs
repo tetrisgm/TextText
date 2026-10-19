@@ -65,6 +65,7 @@ public sealed class HttpSyncTransport : ISyncTransport
     public WorkspaceCapabilities? Capabilities {get;private set;}
     public string? ManifestRevision {get;private set;}
     public bool SupportsFolderCaseMoves {get;private set;}
+    public ProtectedRenameScope? ProtectedRenameBinding=>accountId is null?null:new(endpoint.GetLeftPart(UriPartial.Authority),endpoint.Segments[^2].TrimEnd('/'),accountId);
     sealed record Manifest(RemoteItem[] Items,RemoteItem[]? Tombstones,string[]? Folders,bool? FullAccess,bool? CanCreateContent,string[]? WritableFolders,string? ManifestRevision,string[]? SyncCapabilities);
     public async Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken cancellation=default) {
         using var response=await Send(()=>{var r=new HttpRequestMessage(HttpMethod.Get,endpoint);if(etag!=null)r.Headers.TryAddWithoutValidation("If-None-Match",etag);return r;},cancellation);

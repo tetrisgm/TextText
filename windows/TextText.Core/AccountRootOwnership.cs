@@ -33,7 +33,9 @@ public static class AccountRootOwnership
         if(RetainedReplacementProfile.Exists(store.StateDirectory))throw new InvalidDataException("Retained replacement ownership is missing. Restore its preserved ownership before opening this folder.");
         var state=Path.Combine(store.StateDirectory,"sync.json");
         if(File.Exists(state)) {
-            var saved=JsonSerializer.Deserialize<SyncEngine.State>(Read(state,90*1024*1024))??throw new InvalidDataException("Invalid sync state.");
+            var raw=Read(state,90*1024*1024);ProtectedSavedRename.ValidateStateBytes(raw);
+            var saved=JsonSerializer.Deserialize<SyncEngine.State>(raw)??throw new InvalidDataException("Invalid sync state.");
+            if(saved.ProtectedRenames is null||saved.ProtectedRenames.Count>0)throw new LegacyAccountStateException();
             if(saved.Version!=1)throw new InvalidDataException("Update TextText to open this workspace.");
             if(saved.AccountId is null)throw new LegacyAccountStateException();
             if(saved.AccountId!=accountId)throw new SharedAccountMismatchException();

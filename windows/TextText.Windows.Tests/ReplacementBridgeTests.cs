@@ -94,6 +94,14 @@ static class ReplacementBridgeTests
             foreach(var invalid in new[]{Scope(root+"-other"),Scope(root,"other-workspace"),Scope(root,account:"account-b")}) {
                 refused=false;try{await bridge.InvokeAsync("files.replacementList",Json(invalid),CancellationToken.None);}catch(Exception error)when(error is IOException or SharedAccountMismatchException){refused=true;}
                 check(refused,"native recovery refuses a changed root, workspace or account scope");
+                refused=false;try{await bridge.InvokeAsync("files.savedFileMoveList",Json(invalid),CancellationToken.None);}catch(Exception error)when(error is IOException or SharedAccountMismatchException){refused=true;}
+                check(refused,"saved file move recovery refuses a changed root, workspace or account scope");
+            }
+            foreach(var method in new[]{"files.retrySavedFileMove","files.keepSavedFileMoveNames"}) {
+                refused=false;
+                try{await bridge.InvokeAsync(method,Json(new{workspaceRoot=root,workspaceId=workspace,accountId="account-a",id=Guid.NewGuid().ToString("D"),requestHash=new string('a',64),inspection=new string('b',64)}),CancellationToken.None);}
+                catch(InvalidDataException){refused=true;}
+                check(refused,"saved file move actions require explicit consent before inspecting or sending a request");
             }
             var clock=Stopwatch.StartNew();
             var list=Json((await bridge.InvokeAsync("files.replacementList",Json(Scope(root)),CancellationToken.None))!);

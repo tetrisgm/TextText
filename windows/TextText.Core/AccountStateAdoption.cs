@@ -49,6 +49,7 @@ public static class AccountStateAdoption
     static (byte[] Bytes,bool NeedsAdoption) Bind(TextPackStore store,string path,byte[] original,AccountRootOwnership.Owner owner) {
         if(path.StartsWith("replacement-index/",StringComparison.Ordinal))return new ReplacementRecoveryRegistry(store.Root,store.StateDirectory).BindForAdoption(original,Path.GetFileName(path),owner);
         var account=owner.AccountId;
+        if(path=="sync.json")ProtectedSavedRename.ValidateStateBytes(original);
         var value=JsonNode.Parse(original) as JsonObject??throw new InvalidDataException("Invalid adoption record.");
         bool changed;
         if(path=="sync.json") {
@@ -57,6 +58,16 @@ public static class AccountStateAdoption
                 if(Key(value,key)!=key)throw new InvalidDataException("Unsupported sync state field casing.");
             var state=JsonSerializer.Deserialize<SyncEngine.State>(original)??throw new InvalidDataException("Invalid sync state.");
             if(state.Version!=1)throw new InvalidDataException("Unsupported sync state.");
+            if(state.ProtectedRenames is null)throw new InvalidDataException("Invalid saved file move map.");
+            if(state.ProtectedRenames.Count>0) {
+                var marker=Safe(store.StateDirectory,AccountRootOwnership.FileName);
+                if(!File.Exists(marker)||state.AccountId!=owner.AccountId)throw new LegacyAccountStateException();
+                AccountRootOwnership.Verify(marker,owner);
+                var profile=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(Read(Safe(store.StateDirectory,"retained-replacement-profile/profile.json"),8192))??throw new InvalidDataException("Invalid saved file move profile.");
+                if(profile.Version!=5)throw new InvalidDataException("Saved file moves need their original supported profile.");
+                ProtectedSavedRename.ValidateMap(state.ProtectedRenames,owner.RootHash,new(owner.Origin,owner.WorkspaceId,owner.AccountId));
+                return(original,false);
+            }
             changed=Owner(value,"AccountId",account);value["AccountId"]=account;
             // A verified fresh manifest must replace old cached write grants.
             value["Capabilities"]=JsonSerializer.SerializeToNode(new WorkspaceCapabilities(false,false,[],[]));

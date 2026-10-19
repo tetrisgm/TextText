@@ -7,6 +7,8 @@ public sealed record RemoteBinaryEntry(string Path,string Sha256,int Size);
 public sealed record RemoteBinaryManifest(string Revision,RemoteBinaryEntry[] Entries);
 public interface ISyncTransport
 {
+    ProtectedRenameScope? ProtectedRenameBinding => null;
+    Task<ProtectedRenameReceipt> ProtectedRenameAsync(ProtectedRenameRequest request,CancellationToken cancellation=default)=>throw new NotSupportedException("Protected file move receipts are unavailable.");
     IReadOnlyList<string> Folders => [];
     IReadOnlyList<string>? AuthoritativeFolders => null;
     WorkspaceCapabilities? Capabilities => null;
@@ -31,7 +33,7 @@ public sealed partial class SyncEngine
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null,string? SourcePath=null);
-    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public FolderSyncBaseline? FolderBaseline {get;set;} public FolderSyncCommand? FolderCommand {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
+    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public FolderSyncBaseline? FolderBaseline {get;set;} public FolderSyncCommand? FolderCommand {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; [System.Text.Json.Serialization.JsonConverter(typeof(ProtectedSavedRename.MapConverter))] public Dictionary<string,ProtectedSavedRename.Record> ProtectedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly WorkspaceWriterOwnership workspaceOwnership;
     readonly MirrorPolicy? mirrorPolicy;
@@ -115,14 +117,38 @@ public sealed partial class SyncEngine
         }finally{gate.Release();}
     }
     public async Task<bool> IsReadyAsync(string itemId,CancellationToken ct=default) {
-        await gate.WaitAsync(ct);try {var state=Load();if(FolderSpellingChanged(state))return false;if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)return false;if(SharedEditingStore.HasReadyCheckpoint(store,itemId))return true;if(SharedEditingStore.HasProtectedState(store.StateDirectory,itemId))return false;
+        await gate.WaitAsync(ct);try {var state=Load();if(FolderSpellingChanged(state))return false;if(state.Outbox.Any(x=>x.ItemId==itemId)||state.PendingPull?.ItemId==itemId)return false;if(SharedEditingStore.HasReadyCheckpoint(store,itemId))return true;if(SharedEditingStore.HasProtectedState(store.StateDirectory,itemId)||SavedRenameOwnsPath(state,itemId))return false;
             if(!state.Items.TryGetValue(itemId,out var baseline))return false;try{var file=store.Describe(baseline.Path);return file.ItemId==itemId&&file.Hash==baseline.Hash&&!baseline.Refresh;}catch(IOException){return false;}
         }finally{gate.Release();}
     }
     public async Task<string?> BaselineRevisionAsync(string itemId,CancellationToken ct=default) {await gate.WaitAsync(ct);try{return Load().Items.GetValueOrDefault(itemId)?.Revision;}finally{gate.Release();}}
     static bool Blocked(State state,string id)=>state.Outbox.Any(x=>x.ItemId==id);
-    State Load() { store.ValidateReplacementRegistry(); AccountRootOwnership.RequireNoAdoption(store.StateDirectory); if(!File.Exists(statePath)) return new(){AccountId=accountId}; var result=JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath)) ?? throw new InvalidDataException("Invalid sync state."); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); if(result.AccountId!=accountId)throw new SharedAccountMismatchException();
-        if(result.SharedRenames is null||result.SharedRenames.Count>1000)throw new InvalidDataException("Too many saved file moves.");
+    static bool SavedRenameOwnsPath(State state,string id)=>state.SharedRenames.ContainsKey(id)||state.ProtectedRenames.ContainsKey(id);
+    State ReadState() {
+        var bytes=RetainedFileReplacement.Read(statePath,90*1024*1024);
+        ProtectedSavedRename.ValidateStateBytes(bytes);
+        return JsonSerializer.Deserialize<State>(bytes)??throw new InvalidDataException("Invalid sync state.");
+    }
+    ProtectedSavedRename.Context? SavedRenameContext(bool requireFloor=false) {
+        if(accountId is null)return null;
+        var path=Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);
+        if(!File.Exists(path))return null;
+        var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(path,4096))??throw new InvalidDataException("Invalid account ownership.");
+        var expected=AccountRootOwnership.Expected(store,new Uri(owner.Origin),owner.WorkspaceId,accountId);
+        AccountRootOwnership.Verify(path,expected);
+        if(requireFloor) {
+            var marker=JsonSerializer.Deserialize<RetainedReplacementProfile.Marker>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json"),8192))??throw new InvalidDataException("Invalid saved file move profile.");
+            if(marker.Version!=5)throw new InvalidDataException("Saved file moves require their supported account profile.");
+        }
+        return new(expected.RootHash,new(expected.Origin,expected.WorkspaceId,expected.AccountId));
+    }
+    State Load() { store.ValidateReplacementRegistry(); AccountRootOwnership.RequireNoAdoption(store.StateDirectory); if(!File.Exists(statePath)) return new(){AccountId=accountId}; var result=ReadState(); if(result.Version!=1) throw new InvalidDataException("This workspace was used by a newer app. Update TextText."); if(result.AccountId!=accountId)throw new SharedAccountMismatchException();
+        if(result.SharedRenames is null||result.ProtectedRenames is null||result.SharedRenames.Count+result.ProtectedRenames.Count>1000)throw new InvalidDataException("Too many saved file moves.");
+        if(result.ProtectedRenames.Count>0) {
+            var context=SavedRenameContext(requireFloor:true)??throw new LegacyAccountStateException();
+            ProtectedSavedRename.ValidateMap(result.ProtectedRenames,context.RootHash,context.Scope);
+            if(result.ProtectedRenames.Keys.Any(result.SharedRenames.ContainsKey))throw new InvalidDataException("A saved file move has two owners.");
+        }
         foreach(var pair in result.SharedRenames) {
             var op=pair.Value;
             if(op is null||op.ItemId!=pair.Key||op.Kind!="rename"||op.Payload!=null||!Guid.TryParse(op.Id,out _)||op.Destination is null||op.Revision is null||
@@ -132,15 +158,22 @@ public sealed partial class SyncEngine
         ValidateFolderState(result);
         return result; }
     void Save(State state) {
+        if(state.AccountId!=accountId)throw new SharedAccountMismatchException();
+        if(state.SharedRenames.Count+state.ProtectedRenames.Count>1000)throw new InvalidDataException("Too many saved file moves.");
+        if(state.ProtectedRenames.Count>0) {
+            var context=SavedRenameContext(requireFloor:true)??throw new LegacyAccountStateException();
+            ProtectedSavedRename.ValidateMap(state.ProtectedRenames,context.RootHash,context.Scope);
+            if(state.ProtectedRenames.Keys.Any(state.SharedRenames.ContainsKey))throw new InvalidDataException("A saved file move has two owners.");
+        }
         // A late replacement conflict may arise while an RPC is in flight.
         // Unrelated items may advance, but every fenced item's durable work must
         // remain byte-for-byte equivalent to the previously saved substate.
         var blocked=store.ReplacementBlockedItems();
         if(blocked.Count>0) {
-            var before=File.Exists(statePath)?JsonSerializer.Deserialize<State>(File.ReadAllBytes(statePath))??throw new InvalidDataException("Invalid sync state."):new State{AccountId=accountId};
+            var before=File.Exists(statePath)?ReadState():new State{AccountId=accountId};
             string Snapshot(State value,string id)=>JsonSerializer.Serialize(new {
                 Item=value.Items.GetValueOrDefault(id),Outbox=value.Outbox.Where(op=>op.ItemId==id).ToArray(),
-                Rename=value.SharedRenames.GetValueOrDefault(id),Binary=value.BinaryOutbox.Where(op=>op.ItemId==id).ToArray(),
+                Rename=value.SharedRenames.GetValueOrDefault(id),ProtectedRename=value.ProtectedRenames.TryGetValue(id,out var protectedRename)?Convert.ToBase64String(ProtectedSavedRename.ArchiveBytes(protectedRename)):null,Binary=value.BinaryOutbox.Where(op=>op.ItemId==id).ToArray(),
                 Assets=value.BinaryBaselines.GetValueOrDefault(id),BinaryRevision=value.BinaryRevisions.GetValueOrDefault(id),
                 Pull=value.PendingPull?.ItemId==id?value.PendingPull:null
             });
@@ -153,14 +186,14 @@ public sealed partial class SyncEngine
     async Task<MirrorSharedPathDecision> ProtectedPathDecision(State state,string id,Baseline baseline,PackFile? projection,RemoteItem? remote,CancellationToken ct) {
         if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("Protected path policy unavailable.");
         var ready=SharedEditingStore.HasReadyCheckpoint(store,id);var checkpoint=ready?SharedEditingStore.FollowLocalProjection(store,id):null;var editing=IsEditing(id);
-        var announcement=state.SharedRenames.GetValueOrDefault(id);var pending=state.Outbox.ToArray();var pull=state.PendingPull;
+        var announcement=state.SharedRenames.GetValueOrDefault(id);var protectedAnnouncement=state.ProtectedRenames.GetValueOrDefault(id);var pending=state.Outbox.ToArray();var pull=state.PendingPull;
         var capabilities=JsonSerializer.Serialize(state.Capabilities);var transportCapabilities=JsonSerializer.Serialize(transport.Capabilities);
         var matches=store.Scan().Where(file=>file.ItemId==id).ToArray();
         var permitted=state.Capabilities is not {} caps || caps.FullAccess&&caps.CanCreateContent&&caps.CanWrite(id,baseline.Path,true)&&projection is not null&&caps.CanCreate(projection.Path);
         void Current() {
             ct.ThrowIfCancellationRequested();var current=Load();
             var files=store.Scan().Where(file=>file.ItemId==id).ToArray();
-            if(current.Items.GetValueOrDefault(id)!=baseline||current.SharedRenames.GetValueOrDefault(id)!=announcement||!current.Outbox.SequenceEqual(pending)||current.PendingPull!=pull||
+            if(current.Items.GetValueOrDefault(id)!=baseline||current.SharedRenames.GetValueOrDefault(id)!=announcement||current.ProtectedRenames.GetValueOrDefault(id)!=protectedAnnouncement||!current.Outbox.SequenceEqual(pending)||current.PendingPull!=pull||
                JsonSerializer.Serialize(current.Capabilities)!=capabilities||JsonSerializer.Serialize(transport.Capabilities)!=transportCapabilities||IsEditing(id)!=editing||
                SharedEditingStore.HasReadyCheckpoint(store,id)!=ready||(ready&&SharedEditingStore.FollowLocalProjection(store,id)!=checkpoint)||files.Length!=matches.Length||
                files.Length==1&&(projection is null||files[0].Path!=projection.Path||files[0].Hash!=projection.Hash))throw new FileChangedException();
@@ -191,7 +224,7 @@ public sealed partial class SyncEngine
                files.Length==1&&(projection is null||files[0].Path!=projection.Path||files[0].Hash!=projection.Hash))throw new FileChangedException();
             store.AssertReplacementReadable(id);
         }
-        var observed=new MirrorTombstoneObservation(true,remote.Deleted,true,editing||protection.Protected,intent is not null||state.SharedRenames.ContainsKey(id)||Blocked(state,id)||state.Outbox.Any(op=>op.ItemId==id)||state.BinaryOutbox.Any(op=>op.ItemId==id)||state.PendingPull?.ItemId==id,
+        var observed=new MirrorTombstoneObservation(true,remote.Deleted,true,editing||protection.Protected,intent is not null||SavedRenameOwnsPath(state,id)||Blocked(state,id)||state.Outbox.Any(op=>op.ItemId==id)||state.BinaryOutbox.Any(op=>op.ItemId==id)||state.PendingPull?.ItemId==id,
             projection is not null,matches.Length==1,projection?.ItemId==id,projection?.Hash,baseline.Hash,projection?.Path,baseline.Path,remote.RelativePath,
             baseline.Revision,remote.Revision,baseline.Lifecycle,remote.Lifecycle);
         var decision=await mirrorPolicy.TombstoneAsync(observed,ct);Current();
@@ -201,45 +234,138 @@ public sealed partial class SyncEngine
         }
         return decision;
     }
-    async Task AnnounceSharedRename(State state,string id,Baseline baseline,PackFile projection,RemoteItem remote,CancellationToken ct) {
-        if(state.SharedRenames.TryGetValue(id,out var retained)&&(remote.Deleted||retained.Lifecycle!=remote.Lifecycle)) {
-            if(!retained.Conflicted){state.SharedRenames[id]=retained with{Conflicted=true};Save(state);}
-            return;
+    bool SavedRenamePermitted(State state,string id,string source,string destination) {
+        var caps=transport.Capabilities??state.Capabilities;
+        return caps is not null&&caps.FullAccess&&caps.CanCreateContent&&caps.CanWrite(id,source,true)&&caps.CanCreate(destination);
+    }
+    void SaveProtectedRenameMap(State state,Dictionary<string,ProtectedSavedRename.Record> next,string? removeLegacy=null) {
+        var prior=state.ProtectedRenames;var legacy=state.SharedRenames;
+        state.ProtectedRenames=next;
+        if(removeLegacy is not null){state.SharedRenames=new(legacy,StringComparer.Ordinal);state.SharedRenames.Remove(removeLegacy);}
+        try{Save(state);}catch{state.ProtectedRenames=prior;state.SharedRenames=legacy;throw;}
+    }
+    ProtectedSavedRename.ArchiveProof ArchiveSavedRename(ProtectedSavedRename.Record record) {
+        var bytes=ProtectedSavedRename.ArchiveBytes(record);
+        var path=Path.Combine(store.GetRecoveryDirectory(),"saved-rename-"+record.Request.OperationId+".json");
+        RetainedFileReplacement.CheckPath(path);
+        if(File.Exists(path)) {
+            if(!RetainedFileReplacement.Read(path,32768).SequenceEqual(bytes))throw new InvalidDataException("The preserved file move receipt changed. Review saved work.");
+        } else RetainedFileReplacement.Create(path,bytes);
+        return new(record.Request.OperationId,record.RootHash,record.Scope,TextPackStore.Hash(bytes),true);
+    }
+    sealed record SavedProtection(string Fingerprint,bool Available);
+    SavedProtection ReadSavedProtection(string itemId) {
+        var directory=Path.Combine(store.StateDirectory,"shared-editing",itemId);
+        RetainedFileReplacement.CheckPath(directory);
+        var path=Path.Combine(directory,"checkpoint.json");
+        // A known outer checkpoint with missing journal fields is unavailable,
+        // not permission to recover it. All other retained records still use
+        // their strict validator, including account and filesystem failures.
+        if(File.Exists(path)&&!new[]{"intent.json","move-intent.json","binary-intent.json","acknowledge.json"}.Any(name=>File.Exists(Path.Combine(directory,name)))) {
+            var raw=RetainedFileReplacement.Read(path,90*1024*1024);
+            RetainedFileReplacement.JsonFields(raw,["Version","ItemId","Path","ProjectedHash","AcknowledgedRevision","Epoch","Seq","JournalGeneration","Journal","Pending","RetiredReason"],["ItemId","Path","ProjectedHash","AcknowledgedRevision","Epoch","Seq","JournalGeneration","Journal","Pending"]);
+            var checkpoint=JsonSerializer.Deserialize<SharedCheckpoint>(raw)??throw new InvalidDataException("Invalid checkpoint.");
+            if(checkpoint.ItemId!=itemId)throw new SharedAccountMismatchException();
+            _=store.Resolve(checkpoint.Path);
+            using var journal=JsonDocument.Parse(checkpoint.Journal);
+            if(journal.RootElement.ValueKind!=JsonValueKind.Object)throw new InvalidDataException("Invalid checkpoint journal.");
+            var savedAccount=journal.RootElement.TryGetProperty("accountId",out var account)&&account.ValueKind!=JsonValueKind.Null?account.GetString():null;
+            if(savedAccount!=accountId)throw new SharedAccountMismatchException();
+            try{SharedEditingStore.Validate(store,checkpoint);}
+            catch(KeyNotFoundException){return new(TextPackStore.Hash(raw),false);}
         }
-        if(remote.Lifecycle!=baseline.Lifecycle)return;
-        if(!state.SharedRenames.TryGetValue(id,out var announcement)) {
-            if(state.SharedRenames.Count>=1000)throw new IOException("Too many saved file moves need review.");
-            announcement=new(Guid.NewGuid().ToString(),"rename",id,baseline.Path,projection.Path,remote.Revision,baseline.Hash,null,Lifecycle:remote.Lifecycle);
-            state.SharedRenames[id]=announcement;Save(state);
+        return new(SharedEditingStore.ReadProtectionSnapshot(store,itemId,accountId).Fingerprint,true);
+    }
+    // Returns true when a saved move owns this item's path disposition. The
+    // packaged policy is the only admission owner; these checks attest its facts.
+    async Task<bool> ReconcileSavedRename(State state,string id,Baseline? baseline,RemoteItem? remote,CancellationToken ct,Action? authorityCheck=null) {
+        authorityCheck?.Invoke();
+        if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("Saved file move policy unavailable.");
+        var context=SavedRenameContext();
+        if(state.SharedRenames.TryGetValue(id,out var old)&&!old.Conflicted&&old.Lifecycle is not null&&baseline?.Lifecycle==old.Lifecycle&&context is not null&&transport.ProtectedRenameBinding==context.Scope&&
+           SavedRenamePermitted(state,id,old.Path,old.Destination??old.Path)) {
+            RetainedReplacementProfile.PrepareSharedRename(store);
+            if(SavedRenameContext(requireFloor:true)!=context)throw new SharedAccountMismatchException();
+            var normalized=ProtectedSavedRename.NormalizeLegacy(old,baseline,context.RootHash,context.Scope,floor5Verified:true);
+            if(normalized.Record is {} record) {
+                var next=ProtectedSavedRename.Replace(context,state.ProtectedRenames,id,null,record);
+                SaveProtectedRenameMap(state,next,id);
+            }
         }
-        if(announcement.Kind!="rename"||announcement.ItemId!=id||announcement.Destination is null||announcement.Revision is null)throw new InvalidDataException("Invalid shared rename intent.");
-        if(announcement.Conflicted||announcement.Lifecycle!=remote.Lifecycle||announcement.Path!=baseline.Path||!Permitted(state,announcement))return;
-        if(!SharedEditingStore.HasReadyCheckpoint(store,id))return;
-        try {
+        var saved=state.ProtectedRenames.GetValueOrDefault(id);var legacy=state.SharedRenames.GetValueOrDefault(id);
+        var owned=saved is not null||legacy is not null;
+        var initialProtection=ReadSavedProtection(id);
+        var ready=initialProtection.Available&&SharedEditingStore.HasReadyCheckpoint(store,id);
+        var checkpoint=ready?SharedEditingStore.FollowLocalProjection(store,id):null;
+        var protection=ReadSavedProtection(id);
+        var editing=IsEditing(id);var intent=store.Intent(id);
+        var files=store.Scan().Where(file=>file.ItemId==id).ToArray();var unique=files.Length==1&&store.LastScanErrors.Count==0;
+        var projection=unique?files[0]:null;
+        var stateBytes=JsonSerializer.Serialize(state);var binding=transport.ProtectedRenameBinding;
+        var caps=JsonSerializer.Serialize(transport.Capabilities);
+        var permitted=remote is not null&&projection is not null&&SavedRenamePermitted(state,id,remote.RelativePath,projection.Path);
+        var phase=saved?.Phase switch{ProtectedSavedRename.Phase.Pending=>"pending",ProtectedSavedRename.Phase.TerminalRejected=>"terminal-rejected",ProtectedSavedRename.Phase.Stopped=>"stopped",_=>legacy is null?"none":"pending"};
+        var resolution=saved?.Resolution;
+        var blocked=!protection.Available||Blocked(state,id)||state.PendingPull?.ItemId==id||state.FolderCommand?.Request.Items.Any(item=>item.ItemId==id)==true||store.ReplacementBlocked(id)||legacy?.Conflicted==true||
+            intent is not null&&(intent.Kind!="rename"||intent.Destination!=projection?.Path);
+        var observation=new MirrorSavedRenameObservation(phase,saved?.Request.Source??legacy?.Path,saved?.Request.Destination??legacy?.Destination,saved?.Lifecycle??legacy?.Lifecycle,
+            resolution?.LocalPath,resolution?.RemotePath,resolution?.LocalLifecycle,resolution?.RemoteLifecycle,projection?.Path,remote?.RelativePath,baseline?.Path,checkpoint?.Path,
+            baseline?.Lifecycle,remote?.Lifecycle,remote?.Deleted??false,unique,ready,checkpoint?.RetiredReason is not null,
+            context is not null&&binding==context.Scope,permitted,blocked,saved?.Receipt is not null,remote is not null);
+        void Current(bool requireProjection=true) {
+            ct.ThrowIfCancellationRequested();authorityCheck?.Invoke();var current=Load();
+            if(JsonSerializer.Serialize(current)!=stateBytes||SavedRenameContext(saved is not null)!=context||transport.ProtectedRenameBinding!=binding||
+               JsonSerializer.Serialize(transport.Capabilities)!=caps||store.Intent(id)!=intent||IsEditing(id)!=editing)throw new FileChangedException();
+            if(requireProjection) {
+                var fresh=store.Scan().Where(file=>file.ItemId==id).ToArray();
+                if(fresh.Length!=files.Length||store.LastScanErrors.Count!=0||fresh.Length==1&&(projection is null||fresh[0].Path!=projection.Path||fresh[0].Hash!=projection.Hash)||
+                   ReadSavedProtection(id)!=protection)throw new FileChangedException();
+            }
             store.AssertReplacementReadable(id);
-            await transport.RenameAsync(id,announcement.Path,announcement.Destination,announcement.Revision,announcement.Id,ct);
-            store.AssertReplacementReadable(id);
-        } catch(SyncConflictException) {
-            // A confirmed conflict has not committed this operation. Preserve
-            // the journal; fresh manifest state may prepare a new path attempt.
-            if(state.SharedRenames.GetValueOrDefault(id)==announcement){state.SharedRenames.Remove(id);Save(state);}
-            return;
         }
-        ct.ThrowIfCancellationRequested();
-        var fresh=(await transport.ManifestAsync(ct)).SingleOrDefault(item=>item.ItemId==id);
-        if(fresh is null)return;
-        if(fresh.Deleted||fresh.Lifecycle!=announcement.Lifecycle) {
-            if(state.SharedRenames.GetValueOrDefault(id)==announcement){state.SharedRenames[id]=announcement with{Conflicted=true};Save(state);}
-            return;
+        var decision=await mirrorPolicy.SavedRenameAsync(observation,ct);Current();
+        if(decision.Action is not("stage-new" or "replay-saved"))return owned||blocked;
+        var latest=(await transport.ManifestAsync(ct)).Where(item=>item.ItemId==id).ToArray();Current();
+        if(latest.Length!=1||latest[0]!=remote||context is null||binding!=context.Scope||projection is null||checkpoint is null)throw new FileChangedException();
+        if(decision.Action=="stage-new") {
+            RetainedReplacementProfile.PrepareSharedRename(store);Current();
+            var request=new ProtectedRenameRequest(Guid.NewGuid().ToString("D"),id,remote!.RelativePath,projection.Path,remote.Revision);
+            var staged=ProtectedSavedRename.Pending(context.RootHash,request,context.Scope,baseline!.Hash,baseline.Lifecycle!);
+            var freshFacts=new ProtectedSavedRename.Observation(context.RootHash,context.Scope,projection.Path,remote.RelativePath,baseline!.Lifecycle,remote.Lifecycle,remote.Revision,checkpoint.Path,ready,unique,permitted);
+            var archive=saved is null?null:ArchiveSavedRename(saved);Current();
+            var next=ProtectedSavedRename.Replace(context,state.ProtectedRenames,id,saved,staged,archive:archive,observed:freshFacts);
+            SaveProtectedRenameMap(state,next);saved=staged;
         }
-        if(fresh.RelativePath!=announcement.Destination)return;
-        var current=Load();
-        if(current.Items.GetValueOrDefault(id)!=baseline||current.SharedRenames.GetValueOrDefault(id)!=announcement||
-           !SharedEditingStore.HasReadyCheckpoint(store,id))return;
-        // Checkpoints remain writable during the RPC. Keep their current bytes
-        // and only advance the attested remote path/revision, never their hash.
-        state.Items[id]=baseline with{Path=announcement.Destination,Revision=fresh.Revision};
-        state.SharedRenames.Remove(id);Save(state);
+        if(saved is null||saved.Phase!=ProtectedSavedRename.Phase.Pending||transport.ProtectedRenameBinding!=context.Scope)throw new FileChangedException();
+        // The request object is never rewritten after a transport failure. A
+        // generic HTTP409/412 does not produce a terminal state transition.
+        var beforeSend=JsonSerializer.Serialize(state);
+        authorityCheck?.Invoke();
+        var receipt=await transport.ProtectedRenameAsync(saved.Request,ct);
+        ct.ThrowIfCancellationRequested();authorityCheck?.Invoke();
+        var returned=Load();
+        if(JsonSerializer.Serialize(returned)!=beforeSend||SavedRenameContext(requireFloor:true)!=context||transport.ProtectedRenameBinding!=context.Scope||
+           receipt.Request!=saved.Request||receipt.Scope!=context.Scope||store.Intent(id)!=intent||
+           !SavedRenamePermitted(state,id,saved.Request.Source,saved.Request.Destination))throw new FileChangedException();
+        store.AssertReplacementReadable(id);
+        var outcome=ProtectedSavedRename.Consume(saved,receipt);
+        if(outcome.Rejected is {} rejected) {
+            var next=ProtectedSavedRename.Replace(context,state.ProtectedRenames,id,saved,rejected);
+            SaveProtectedRenameMap(state,next);return true;
+        }
+        var server=(await transport.ManifestAsync(ct)).Where(item=>item.ItemId==id).ToArray();
+        ct.ThrowIfCancellationRequested();authorityCheck?.Invoke();
+        var currentState=Load();
+        if(JsonSerializer.Serialize(currentState)!=beforeSend||SavedRenameContext(requireFloor:true)!=context||transport.ProtectedRenameBinding!=context.Scope||
+           server.Length!=1||server[0].Deleted||server[0].Lifecycle!=saved.Lifecycle||
+           !SharedEditingStore.HasReadyCheckpoint(store,id)||store.Intent(id)!=intent||
+           !SavedRenamePermitted(state,id,saved.Request.Source,saved.Request.Destination))return true;
+        store.AssertReplacementReadable(id);
+        var completed=ProtectedSavedRename.Replace(context,state.ProtectedRenames,id,saved,null,completion:receipt);
+        var prior=state.Items[id];state.Items[id]=prior with{Path=saved.Request.Destination};
+        try{SaveProtectedRenameMap(state,completed);}catch{state.Items[id]=prior;throw;}
+        if(intent is not null&&intent.Kind=="rename"&&intent.Destination==saved.Request.Destination&&store.Intent(id)==intent)store.ClearIntent(id,intent);
+        return true;
     }
     string BinaryPayloadPath(string operationId) {
         if(!Guid.TryParse(operationId,out _))throw new InvalidDataException("Invalid binary operation.");
@@ -308,8 +434,10 @@ public sealed partial class SyncEngine
             var folderError=false;
             foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             local=store.Scan().ToDictionary(x=>x.ItemId);
-            foreach(var pair in state.Items.ToArray()) {
-                cancellation.ThrowIfCancellationRequested();var id=pair.Key;if(store.ReplacementBlocked(id))continue;
+            foreach(var id in state.Items.Keys.Union(state.ProtectedRenames.Keys,StringComparer.Ordinal).Union(state.SharedRenames.Keys,StringComparer.Ordinal).ToArray()) {
+                cancellation.ThrowIfCancellationRequested();if(store.ReplacementBlocked(id))continue;
+                if(!state.Items.TryGetValue(id,out var itemBaseline)) {await ReconcileSavedRename(state,id,null,remote.GetValueOrDefault(id),cancellation);continue;}
+                var pair=new KeyValuePair<string,Baseline>(id,itemBaseline);
                 if(remote.TryGetValue(id,out var tombstoneRemote)&&tombstoneRemote.Deleted) {
                     var tombstoneBaseline=pair.Value;var tombstoneFile=local.GetValueOrDefault(id);
                     var disposition=await TombstoneDecision(state,id,tombstoneBaseline,tombstoneFile,tombstoneRemote,cancellation);
@@ -318,30 +446,25 @@ public sealed partial class SyncEngine
                     if(disposition.Action=="retain-conflict") {store.Preserve(store.Read(tombstoneFile.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",id,tombstoneFile.Path,null,tombstoneBaseline.Revision,tombstoneFile.Hash,null,true));continue;}
                     store.RemoveRetaining(tombstoneFile.Path,tombstoneFile.Hash);state.Items.Remove(id);Save(state);store.ClearIntent(id);local.Remove(id);continue;
                 }
-                if(!IsEditing(id) && state.BinaryOutbox.Any(x=>x.ItemId==id)) {
+                if(!IsEditing(id) && !SavedRenameOwnsPath(state,id) && state.BinaryOutbox.Any(x=>x.ItemId==id)) {
                     if(remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted)
                         await SyncOpenBinary(state,local.GetValueOrDefault(id),pair.Value,binaryRemote,cancellation);
                     continue;
                 }
-                if(state.SharedRenames.TryGetValue(id,out var retainedRename)&&!retainedRename.Conflicted&&remote.TryGetValue(id,out var currentRemote)&&
-                   (currentRemote.Deleted||currentRemote.Lifecycle!=retainedRename.Lifecycle)) {
-                    state.SharedRenames[id]=retainedRename with{Conflicted=true};Save(state);
-                }
-                if(IsEditing(id)||state.SharedRenames.TryGetValue(id,out var pendingRename)&&!pendingRename.Conflicted) {
-                    var pathDecision=await ProtectedPathDecision(state,id,pair.Value,local.GetValueOrDefault(id),remote.GetValueOrDefault(id),cancellation);
-                    if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id&&remote.TryGetValue(id,out var relocated)&&!relocated.Deleted&&
-                       local.TryGetValue(id,out var projection)&&SharedEditingStore.HasReadyCheckpoint(store,id)) {
-                        if(pathDecision.Action=="announce-local") {
-                            await AnnounceSharedRename(state,id,pair.Value,projection,relocated,cancellation);
-                            // The request may span another local rename or editor save.
-                            // Never reuse the projection snapshot captured before it.
-                            local=store.Scan().ToDictionary(x=>x.ItemId);
-                        } else if(pathDecision.Action=="follow-remote") {
-                            var moved=SharedEditingStore.RebaseProjection(store,id,relocated.RelativePath);
-                            state.Items[id]=pair.Value with{Path=moved.Path};Save(state);store.ClearIntent(id);
-                            local[id]=store.Describe(moved.Path);
-                        } else if(pathDecision.Action=="adopt-path") {
-                            state.Items[id]=pair.Value with{Path=projection.Path,Revision=relocated.Revision};Save(state);
+                if(IsEditing(id)||SavedRenameOwnsPath(state,id)) {
+                    var pathOwned=await ReconcileSavedRename(state,id,pair.Value,remote.GetValueOrDefault(id),cancellation);
+                    local=store.Scan().ToDictionary(x=>x.ItemId);
+                    if(!pathOwned) {
+                        var pathDecision=await ProtectedPathDecision(state,id,pair.Value,local.GetValueOrDefault(id),remote.GetValueOrDefault(id),cancellation);
+                        if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id&&remote.TryGetValue(id,out var relocated)&&!relocated.Deleted&&
+                           local.TryGetValue(id,out var projection)&&SharedEditingStore.HasReadyCheckpoint(store,id)) {
+                            if(pathDecision.Action=="follow-remote") {
+                                var moved=SharedEditingStore.RebaseProjection(store,id,relocated.RelativePath);
+                                state.Items[id]=pair.Value with{Path=moved.Path};Save(state);store.ClearIntent(id);
+                                local[id]=store.Describe(moved.Path);
+                            } else if(pathDecision.Action=="adopt-path") {
+                                state.Items[id]=pair.Value with{Path=projection.Path};Save(state);
+                            }
                         }
                     }
                     if(!Blocked(state,id)&&state.PendingPull?.ItemId!=id && remote.TryGetValue(id,out var binaryRemote) && !binaryRemote.Deleted &&
@@ -399,7 +522,7 @@ public sealed partial class SyncEngine
                 else if(action==MirrorDisposition.Pull)await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);
             }
             foreach(var file in local.Values.Where(x=>!state.Items.ContainsKey(x.ItemId))) {
-                if(IsEditing(file.ItemId)||Blocked(state,file.ItemId))continue;
+                if(IsEditing(file.ItemId)||SavedRenameOwnsPath(state,file.ItemId)||Blocked(state,file.ItemId))continue;
                 if(remote.TryGetValue(file.ItemId,out var server)) {
                     if(server.Deleted) { store.Preserve(store.Read(file.Path),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",file.ItemId,file.Path,null,server.Revision,file.Hash,null,true));continue; }
                     var pack=await transport.DownloadAsync(file.ItemId,cancellation);
@@ -417,8 +540,8 @@ public sealed partial class SyncEngine
                     state.Items[file.ItemId]=new(file.Path,file.Hash,pack.Revision,Lifecycle:ReadLifecycle(pack.Data)??(pack.Revision==server.Revision?server.Lifecycle:throw new FileChangedException()));Save(state);
                 } else { QueueUpload(state,file,null);await Drain(state,cancellation); }
             }
-            foreach(var item in remote.Values.Where(x=>!store.ReplacementBlocked(x.ItemId)&&!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation,item.Lifecycle,item.Revision);
-            foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||Blocked(state,pending.Key)||store.ReplacementBlocked(pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation,remote.GetValueOrDefault(pending.Key)?.Lifecycle,remote.GetValueOrDefault(pending.Key)?.Revision); }
+            foreach(var item in remote.Values.Where(x=>!store.ReplacementBlocked(x.ItemId)&&!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !SavedRenameOwnsPath(state,x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation,item.Lifecycle,item.Revision);
+            foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||SavedRenameOwnsPath(state,pending.Key)||Blocked(state,pending.Key)||store.ReplacementBlocked(pending.Key))continue;var current=store.Describe(pending.Value.Path); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation,remote.GetValueOrDefault(pending.Key)?.Lifecycle,remote.GetValueOrDefault(pending.Key)?.Revision); }
             if(transport.AuthoritativeFolders is {} currentCatalog) {
                 var retained=new HashSet<string>(currentCatalog,StringComparer.Ordinal);
                 foreach(var folder in (state.ManagedFolders??[]).Where(x=>!retained.Contains(x)).OrderByDescending(x=>x.Length).ToArray()) {
@@ -435,7 +558,7 @@ public sealed partial class SyncEngine
         foreach(var op in state.Outbox.ToArray()) {
             // A path-only remote move cannot invalidate queued content. Never
             // change a receipt identity: the replacement is a new command.
-            if(op.Kind!="upload"||op.Conflicted||op.Revision==null||IsEditing(op.ItemId)
+            if(op.Kind!="upload"||op.Conflicted||op.Revision==null||IsEditing(op.ItemId)||SavedRenameOwnsPath(state,op.ItemId)
                 ||state.Outbox.Count(x=>x.ItemId==op.ItemId)!=1
                 ||!remote.TryGetValue(op.ItemId,out var server)||server.Deleted
                 ||server.RelativePath==op.Path||server.Revision!=op.Revision
@@ -482,7 +605,7 @@ public sealed partial class SyncEngine
         var plans=new List<LifecyclePlan>();
         var capturedOutbox=state.Outbox.ToArray();
         foreach(var item in remote.Values.Where(x=>!x.Deleted&&x.Lifecycle!=null&&!store.ReplacementBlocked(x.ItemId))) {
-            if(IsEditing(item.ItemId))continue;
+            if(IsEditing(item.ItemId)||SavedRenameOwnsPath(state,item.ItemId))continue;
             var baseline=state.Items.GetValueOrDefault(item.ItemId);var intent=store.Intent(item.ItemId);
             // Preserve FIFO order and classify each durable operation independently.
             var operations=capturedOutbox.Where(x=>x.ItemId==item.ItemId).Cast<Operation?>().ToArray();
@@ -565,6 +688,17 @@ public sealed partial class SyncEngine
             state.Outbox.Remove(op);Save(state);
         }
     }
+    static Baseline MaterializedBinaryBaseline(Baseline baseline,string beforeHash,string afterHash,string authoritativeRevision) =>
+        afterHash==authoritativeRevision?baseline with{Hash=afterHash,Revision=authoritativeRevision}:
+        beforeHash==baseline.Hash?baseline with{Hash=afterHash}:baseline;
+    SharedCheckpoint? CleanBinaryCheckpoint(string itemId,PackFile? file,Baseline baseline) {
+        if(file is null||!ReadSavedProtection(itemId).Available)return null;
+        var path=Path.Combine(store.StateDirectory,"shared-editing",itemId,"checkpoint.json");
+        if(!File.Exists(path))return null;
+        var checkpoint=JsonSerializer.Deserialize<SharedCheckpoint>(RetainedFileReplacement.Read(path,90*1024*1024));
+        return checkpoint is {Pending:false,RetiredReason:null}&&checkpoint.Path==file.Path&&checkpoint.ProjectedHash==file.Hash&&
+            checkpoint.AcknowledgedRevision==baseline.Revision?checkpoint:null;
+    }
     async Task SyncOpenBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
         var pending=state.BinaryOutbox.FirstOrDefault(x=>x.ItemId==remote.ItemId);
         if(pending is {Conflicted:true})return;
@@ -614,6 +748,7 @@ public sealed partial class SyncEngine
         if(!selection.OperationIds.SequenceEqual(new[]{pending.Id}) || !state.BinaryOutbox.Contains(pending) ||
            state.Items.GetValueOrDefault(pending.ItemId)!=baseline || baseline.Lifecycle!=remote.Lifecycle ||
            state.Capabilities?.CanWrite(pending.ItemId,baseline.Path,true)==false)return;
+        var textProof=CleanBinaryCheckpoint(pending.ItemId,local,baseline);
         try {
             var bytes=BinaryPayload(pending);
             store.AssertReplacementReadable(pending.ItemId);
@@ -629,8 +764,14 @@ public sealed partial class SyncEngine
             var latestAssets=latest?.ItemId==pending.ItemId?BinaryEntryPacks.Assets(store.Read(latest.Path)):null;
             var locallyCurrent=latestAssets is not null && latestAssets.Count==hashes.Count &&
                 latestAssets.All(x=>hashes.GetValueOrDefault(x.Key)==x.Value.Sha256);
-            state.Items[pending.ItemId]=baseline with{Revision=revision,Hash=locallyCurrent?latest!.Hash:baseline.Hash};
-            state.BinaryRevisions[pending.ItemId]=revision;
+            // One asset receipt does not attest text or unrelated assets.
+            // Exact whole-pack equality is the sole full revision proof here.
+            var complete=latest?.Hash==revision;
+            var cleanText=textProof is not null&&latest is not null&&CleanBinaryCheckpoint(pending.ItemId,latest,baseline)==textProof;
+            state.Items[pending.ItemId]=complete?baseline with{Revision=revision,Hash=latest!.Hash}:
+                baseline with{Hash=locallyCurrent&&cleanText?latest!.Hash:baseline.Hash};
+            if(complete)state.BinaryRevisions[pending.ItemId]=revision;
+            else state.BinaryRevisions.Remove(pending.ItemId);
             state.BinaryOutbox.Remove(pending);Save(state);
             if(pending.PayloadHash is not null)try{File.Delete(BinaryPayloadPath(pending.Id));}catch(IOException){}
         } catch(SyncConflictException) {
@@ -660,7 +801,7 @@ public sealed partial class SyncEngine
         // Other entries may have changed in the same remote pack. Recheck
         // their hashes next cycle rather than claiming the whole pack is read.
         state.BinaryRevisions.Remove(remote.ItemId);
-        state.Items[remote.ItemId]=baseline with{Hash=updated.Hash,Revision=remotePack.Revision};
+        state.Items[remote.ItemId]=MaterializedBinaryBaseline(baseline,TextPackStore.Hash(localPack),updated.Hash,remotePack.Revision);
         Save(state);
     }
     async Task SyncRemoteBinary(State state,PackFile? local,Baseline baseline,RemoteItem remote,CancellationToken ct) {
@@ -686,22 +827,31 @@ public sealed partial class SyncEngine
                 ResolveBinaryConflict(state,local,baseline,entryPath,remote,remotePack);
                 return;
             }
+            var beforeHash=local.Hash;var materialized=false;
             if(localHash!=target) {
                 var bytes=target is null?null:await transport.BinaryReadAsync(remote.ItemId,entryPath,ct);
                 if(bytes is not null&&(bytes.Length>16*1024*1024||TextPackStore.Hash(bytes)!=target))throw new InvalidDataException("Remote binary entry changed during download.");
-                local=SharedEditingStore.ApplyRemoteBinary(store,remote.ItemId,local.Path,local.Hash,entryPath,prior,bytes);
+                local=SharedEditingStore.ApplyRemoteBinary(store,remote.ItemId,local.Path,local.Hash,entryPath,prior,bytes);materialized=true;
             }
             if(target is null)known.Remove(entryPath);else known[entryPath]=target;
-            state.Items[remote.ItemId]=baseline with{Hash=local.Hash,Revision=remote.Revision};Save(state);
+            var incorporated=state.Items[remote.ItemId];
+            if(materialized)state.Items[remote.ItemId]=MaterializedBinaryBaseline(incorporated,beforeHash,local.Hash,remote.Revision);
+            Save(state);
         }
         state.BinaryRevisions[remote.ItemId]=remote.Revision;Save(state);
     }
-    string? StateError(State state)=>state.SharedRenames.Values.Any(op=>op.Conflicted)?"A saved file move belongs to a retired document. Its local work is retained.":state.BinaryOutbox.Any(x=>x.Conflicted)?"An attachment changed on another device. The local file is kept for resolution.":state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
+    string? StateError(State state)=>state.ProtectedRenames.Values.Any(op=>op.Phase==ProtectedSavedRename.Phase.TerminalRejected)?"A saved file move needs review. Its local file and server result are retained.":state.ProtectedRenames.Values.Any(op=>op.Phase==ProtectedSavedRename.Phase.Pending)?"A saved file move is waiting for its server receipt. Your file is kept on this device.":state.SharedRenames.Count>0?"A saved file move needs review. Its original command and local file are retained.":state.BinaryOutbox.Any(x=>x.Conflicted)?"An attachment changed on another device. The local file is kept for resolution.":state.Outbox.Any(x=>x.Conflicted)?"Some documents have conflicting changes. Both copies are retained.":store.LastScanErrors.Count>0?"Some files are temporarily unavailable or invalid. Other files continue syncing.":null;
     bool HasLocalWork(State state,Dictionary<string,PackFile> local) {
+        if(state.ProtectedRenames.Values.Any(op=>op.Phase==ProtectedSavedRename.Phase.Pending))return true;
         if(state.SharedRenames.Values.Any(op=>!op.Conflicted&&Permitted(state,op)))return true;
         if(state.BinaryOutbox.Any(x=>!x.Conflicted && state.Capabilities?.CanWrite(x.ItemId,state.Items.GetValueOrDefault(x.ItemId)?.Path??"",true)!=false))return true;
         if(state.Outbox.Any(op=>!op.Conflicted&&!IsEditing(op.ItemId)))return true;
         foreach(var file in local.Values) {
+            if(state.ProtectedRenames.TryGetValue(file.ItemId,out var retained)&&retained.Phase!=ProtectedSavedRename.Phase.Pending) {
+                if(retained.Phase==ProtectedSavedRename.Phase.Stopped&&retained.Resolution?.LocalPath!=file.Path)return true;
+                continue;
+            }
+            if(state.SharedRenames.ContainsKey(file.ItemId))continue;
             if(IsEditing(file.ItemId)) {
                 if(state.Items.TryGetValue(file.ItemId,out var pathBase)&&file.Path!=pathBase.Path&&
                    !(state.SharedRenames.TryGetValue(file.ItemId,out var fencedRename)&&fencedRename.Conflicted))return true;
@@ -738,7 +888,7 @@ public sealed partial class SyncEngine
     void Queue(State state,Operation operation) {state.Outbox.Add(operation with {Lifecycle=state.Items.GetValueOrDefault(operation.ItemId)?.Lifecycle});Save(state);}
     async Task Drain(State state,CancellationToken ct) {
         var captured=state.Outbox.ToArray();
-        var candidates=captured.Select(op=>new MirrorQueueCandidate(op.Id,op.Conflicted,IsEditing(op.ItemId),store.ReplacementBlocked(op.ItemId),Permitted(state,op))).ToArray();
+        var candidates=captured.Select(op=>new MirrorQueueCandidate(op.Id,op.Conflicted,IsEditing(op.ItemId),store.ReplacementBlocked(op.ItemId)||SavedRenameOwnsPath(state,op.ItemId),Permitted(state,op))).ToArray();
         var selection=await mirrorPolicy!.QueueAsync(new(candidates,remainingQueueBudget),ct);
         // Capabilities can change while the page evaluates the captured queue.
         // Publish the current snapshot before any selected operation is sent.
@@ -749,7 +899,7 @@ public sealed partial class SyncEngine
             // Keep the captured durable operation unchanged. A reply cannot
             // authorize a replaced journal, editor lease or permission grant.
             ct.ThrowIfCancellationRequested();
-            if(!state.Outbox.Contains(op)||op.Conflicted||IsEditing(op.ItemId)||store.ReplacementBlocked(op.ItemId)||!Permitted(state,op))continue;
+            if(!state.Outbox.Contains(op)||op.Conflicted||IsEditing(op.ItemId)||SavedRenameOwnsPath(state,op.ItemId)||store.ReplacementBlocked(op.ItemId)||!Permitted(state,op))continue;
             remainingQueueBudget--;string? revision=null;
             try {
                 store.AssertReplacementReadable(op.ItemId);

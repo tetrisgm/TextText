@@ -15,7 +15,7 @@ static class LocalRenameTests
     }
     static SharedCheckpoint Checkpoint(string path, string revision, byte[] bytes, long generation)
     {
-        var journal = JsonSerializer.Serialize(new { version = 1, epoch = 3, seq = 4,
+        var journal = JsonSerializer.Serialize(new { version = 1, accountId=Test.PathAccount, epoch = 3, seq = 4,
             journalGeneration = generation, revision, relativePath = path, update = "AAA=",
             pending = new[] { "AAA=" }, batch = new { operationId = "same-pending-batch", updates = new[] { "AAA=" } } });
         return new(Identity, path, TextPackStore.Hash(bytes), revision, 3, 4, generation, journal, true);
@@ -25,16 +25,16 @@ static class LocalRenameTests
 
     public static async Task Run(string temp, Action<bool, string> assert)
     {
-        var files = new TextPackStore(Path.Combine(temp, "local-rename"), Path.Combine(temp, "local-rename-state"));
+        var files = Test.OwnedPathStore(Path.Combine(temp, "local-rename"), Path.Combine(temp, "local-rename-state"));
         var initial = files.Write("Notes/Original.textpack", Pack("baseline"));
         var remote = new Test.Fake();
-        var sync = Test.NewSync(files, remote);
+        var sync = Test.NewOwnedPathSync(files, remote);
         await sync.SyncAsync();
         await Test.AttestPathGeneration(sync, remote);
         var target = "Archive/Moved.textpack";
         var pending = Pack("pending human edit");
         var next = Pack("pending human edit and more");
-        using (var editing = new SharedEditingStore(files, sync))
+        using (var editing = new SharedEditingStore(files, sync,Test.PathAccount))
         {
             var session = await editing.OpenAsync(Identity, initial.Path, initial.Hash);
             var saved = await editing.CheckpointAsync(session.SessionToken, initial.Hash, pending,
@@ -56,7 +56,7 @@ static class LocalRenameTests
             assert(remote.Item?.RelativePath == target && remote.UploadCount == 1 && files.Read(target).SequenceEqual(next),
                 "active raw rename announces path without uploading pending editor bytes");
         }
-        using var reopened = new SharedEditingStore(files, Test.NewSync(files, remote));
+        using var reopened = new SharedEditingStore(files, Test.NewOwnedPathSync(files, remote),Test.PathAccount);
         var recovered = await reopened.OpenAsync(Identity, target, TextPackStore.Hash(next));
         assert(recovered.Checkpoint?.Pending == true && recovered.Checkpoint.Path == target && recovered.Checkpoint.JournalGeneration == 2,
             "raw external rename pending journal survives restart");
@@ -74,11 +74,11 @@ static class LocalRenameTests
     }
     static async Task VerifyOrdering(string temp, string ordering, Action<bool,string> assert)
     {
-        var files=new TextPackStore(Path.Combine(temp,"rename-"+ordering),Path.Combine(temp,"rename-state-"+ordering));
+        var files=Test.OwnedPathStore(Path.Combine(temp,"rename-"+ordering),Path.Combine(temp,"rename-state-"+ordering));
         var initial=files.Write("Notes/Before.textpack",Pack("baseline"));
-        var remote=new Test.Fake();var sync=Test.NewSync(files,remote);await sync.SyncAsync();
+        var remote=new Test.Fake();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();
         var pending=Pack("human pending");var cp=Checkpoint(initial.Path,initial.Hash,pending,1);
-        var editing=new SharedEditingStore(files,sync);
+        var editing=new SharedEditingStore(files,sync,Test.PathAccount);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
         await editing.CheckpointAsync(session.SessionToken,initial.Hash,pending,cp);
         if(ordering=="closed")editing.Dispose();
@@ -92,7 +92,7 @@ static class LocalRenameTests
                 "pending raw rename never reorganizes a restored remote lifecycle");
         }
         if(ordering=="closed") {
-            editing=new SharedEditingStore(files,Test.NewSync(files,remote));
+            editing=new SharedEditingStore(files,Test.NewOwnedPathSync(files,remote),Test.PathAccount);
             session=await editing.OpenAsync(Identity,target,TextPackStore.Hash(pending));
             assert(session.Checkpoint?.Path==target&&session.Checkpoint.Pending,
                 "closed external rename reopens retained pending journal at new path");
@@ -115,10 +115,10 @@ static class LocalRenameTests
     }
     static async Task VerifyRefusal(string temp,string scenario,Action<bool,string> assert)
     {
-        var files=new TextPackStore(Path.Combine(temp,"rename-refuse-"+scenario),Path.Combine(temp,"rename-refuse-state-"+scenario));
+        var files=Test.OwnedPathStore(Path.Combine(temp,"rename-refuse-"+scenario),Path.Combine(temp,"rename-refuse-state-"+scenario));
         var initial=files.Write("Original.textpack",Pack("baseline"));
-        var sync=Test.NewSync(files,new Test.Fake());await sync.SyncAsync();
-        using var editing=new SharedEditingStore(files,sync);
+        var sync=Test.NewOwnedPathSync(files,new Test.Fake());await sync.SyncAsync();
+        using var editing=new SharedEditingStore(files,sync,Test.PathAccount);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
         var pending=Pack("human pending");var cp=Checkpoint(initial.Path,initial.Hash,pending,1);
         await editing.CheckpointAsync(session.SessionToken,initial.Hash,pending,cp);
@@ -137,10 +137,10 @@ static class LocalRenameTests
 
     static async Task VerifyAnnouncement(string temp,string scenario,Action<bool,string> assert)
     {
-        var files=new TextPackStore(Path.Combine(temp,"announcement-"+scenario),Path.Combine(temp,"announcement-state-"+scenario));
+        var files=Test.OwnedPathStore(Path.Combine(temp,"announcement-"+scenario),Path.Combine(temp,"announcement-state-"+scenario));
         var initial=files.Write("Original.textpack",Pack("baseline"));
-        var remote=new RenameTransport();var sync=Test.NewSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote.Inner);
-        var editing=new SharedEditingStore(files,sync);
+        var remote=new RenameTransport();var sync=Test.NewOwnedPathSync(files,remote);await sync.SyncAsync();await Test.AttestPathGeneration(sync,remote.Inner);
+        var editing=new SharedEditingStore(files,sync,Test.PathAccount);
         var session=await editing.OpenAsync(Identity,initial.Path,initial.Hash);
         var pending=Pack("retained pending writing");
         await editing.CheckpointAsync(session.SessionToken,initial.Hash,pending,Checkpoint(initial.Path,initial.Hash,pending,1));
@@ -162,8 +162,8 @@ static class LocalRenameTests
         var statePath=Path.Combine(files.StateDirectory,"sync.json");
         SyncEngine.State State()=>JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!;
         if(scenario is "lost-reply" or "closed-reply") {
-            var operation=State().SharedRenames[Identity];
-            assert(operation.Id==remote.Ids.Single()&&operation.Destination=="Moved.textpack"&&operation.Path==initial.Path,
+            var operation=State().ProtectedRenames[Identity];
+            assert(operation.Request.OperationId==remote.Ids.Single()&&operation.Request.Destination=="Moved.textpack"&&operation.Request.Source==initial.Path,
                 "lost path reply retains exact durable rename operation before restart");
             // Checkpointing remains available despite the retained announcement.
             var closed=scenario=="closed-reply";
@@ -174,19 +174,20 @@ static class LocalRenameTests
                 // still has an ambiguous reply and must survive editor closure.
                 remote.Inner.Data=next;remote.Inner.Item=remote.Inner.Item! with{Revision=TextPackStore.Hash(next)};
                 var journal=System.Text.Json.Nodes.JsonNode.Parse(checkpoint.Journal)!;
-                journal["pending"]=new System.Text.Json.Nodes.JsonArray();journal["batch"]=null;
-                checkpoint=checkpoint with{Pending=false,Journal=journal.ToJsonString()};
+                journal["pending"]=new System.Text.Json.Nodes.JsonArray();journal["batch"]=null;journal["revision"]=remote.Inner.Item.Revision;
+                checkpoint=checkpoint with{AcknowledgedRevision=remote.Inner.Item.Revision,Pending=false,Journal=journal.ToJsonString()};
             }
             await editing.CheckpointAsync(session.SessionToken,TextPackStore.Hash(pending),next,checkpoint);
-            editing.Dispose();sync=Test.NewSync(files,remote);
+            editing.Dispose();sync=Test.NewOwnedPathSync(files,remote);
             if(closed)await sync.SyncAsync();
-            editing=new SharedEditingStore(files,sync);
+            editing=new SharedEditingStore(files,sync,Test.PathAccount);
             session=await editing.OpenAsync(Identity,"Moved.textpack",TextPackStore.Hash(next));
             if(!closed)await sync.SyncAsync();
-            assert(remote.Ids.Count==2&&remote.Ids[0]==remote.Ids[1]&&State().SharedRenames.Count==0&&State().Items[Identity].Path=="Moved.textpack",
+            assert(remote.Ids.Count==2&&remote.Ids[0]==remote.Ids[1]&&State().ProtectedRenames.Count==0&&State().Items[Identity].Path=="Moved.textpack",
                 "restart replays identical path operation and clears only its confirmed receipt");
             assert(files.Read("Moved.textpack").SequenceEqual(next)&&session.Checkpoint?.Pending==!closed&&remote.Inner.UploadCount==1,
                 "lost path response retains correct journal across "+scenario);
+            if(closed)assert(State().Items[Identity].Revision==TextPackStore.Hash(next)&&State().Items[Identity].Hash==TextPackStore.Hash(next),"old move receipt preserves separately ACKed current text hash/revision pair");
         } else if(scenario is "moved-during-reply" or "ack-moved-during-reply") {
             assert(files.Read("MovedAgain.textpack").SequenceEqual(pending)&&Retained(files).Path=="MovedAgain.textpack"&&State().Items[Identity].Path=="Moved.textpack",
                 "post-reply recheck follows newer local move while recording only attested remote path");
@@ -196,25 +197,26 @@ static class LocalRenameTests
             if(scenario=="ack-moved-during-reply") {
                 assert(!File.Exists(Path.Combine(files.StateDirectory,"shared-editing",Identity,"acknowledge.json"))&&State().Items[Identity].Hash==TextPackStore.Hash(pending),
                     "deferred acknowledgement follows current attested journal path before advancing baseline");
-                editing.Dispose();editing=new SharedEditingStore(files,Test.NewSync(files,remote));
+                editing.Dispose();editing=new SharedEditingStore(files,Test.NewOwnedPathSync(files,remote),Test.PathAccount);
                 var reopened=await editing.OpenAsync(Identity,"MovedAgain.textpack",TextPackStore.Hash(pending));
                 assert(reopened.Checkpoint?.Pending==false&&reopened.Checkpoint.Path=="MovedAgain.textpack"&&reopened.Checkpoint.JournalGeneration==2,
                     "clean acknowledged projection reopens after second move during rename reply");
             }
         } else {
-            assert(State().Items[Identity].Path==initial.Path&&State().SharedRenames.Count==1&&State().SharedRenames[Identity].Conflicted&&Retained(files).Pending&&files.Read("Moved.textpack").SequenceEqual(pending),
+            assert(State().Items[Identity].Path==initial.Path&&State().ProtectedRenames.Count==1&&State().ProtectedRenames[Identity].Phase==ProtectedSavedRename.Phase.Pending&&State().ProtectedRenames[Identity].Receipt is null&&Retained(files).Pending&&files.Read("Moved.textpack").SequenceEqual(pending),
                 "post-reply restored lifecycle cannot advance stale baseline or discard announcement intent");
             await sync.SyncAsync();
             assert(remote.Ids.Count==1,"retained path announcement is not replayed into a restored lifecycle");
-            var manifests=remote.Inner.ManifestCount;
             await sync.SyncAsync(localChangesOnly:true);
-            assert(remote.Inner.ManifestCount==manifests,"fenced path metadata does not keep scheduling local sync work");
+            assert(remote.Ids.Count==1&&State().ProtectedRenames[Identity].Phase==ProtectedSavedRename.Phase.Pending,"shared policy rechecks a retired-generation pending receipt without dispatching or fabricating terminal proof");
         }
         editing.Dispose();
     }
     sealed class RenameTransport : ISyncTransport
     {
-        public readonly Test.Fake Inner=new();
+        public readonly Test.Fake Inner=new(){ProtectedRenameBinding=Test.PathScope,Capabilities=new(true,true,[],new(){{Identity,true}})};
+        public ProtectedRenameScope? ProtectedRenameBinding=>Inner.ProtectedRenameBinding;
+        public WorkspaceCapabilities? Capabilities=>Inner.Capabilities;
         public readonly List<string> Ids=[];
         public bool LoseReply;
         public Action? AfterRename;
@@ -223,6 +225,12 @@ static class LocalRenameTests
         public Task<string> UploadAsync(string id,string path,byte[] bytes,string? revision,string operation,CancellationToken ct=default)=>Inner.UploadAsync(id,path,bytes,revision,operation,ct);
         public async Task<string> RenameAsync(string id,string from,string to,string revision,string operation,CancellationToken ct=default) {
             Ids.Add(operation);var result=await Inner.RenameAsync(id,from,to,revision,operation,ct);
+            var after=AfterRename;AfterRename=null;after?.Invoke();
+            if(LoseReply){LoseReply=false;throw new HttpRequestException("Rename response lost");}
+            return result;
+        }
+        public async Task<ProtectedRenameReceipt> ProtectedRenameAsync(ProtectedRenameRequest request,CancellationToken ct=default) {
+            Ids.Add(request.OperationId);var result=await Inner.ProtectedRenameAsync(request,ct);
             var after=AfterRename;AfterRename=null;after?.Invoke();
             if(LoseReply){LoseReply=false;throw new HttpRequestException("Rename response lost");}
             return result;

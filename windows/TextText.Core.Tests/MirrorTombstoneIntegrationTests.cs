@@ -91,17 +91,17 @@ static class MirrorTombstoneIntegrationTests
     }
     static async Task PendingRename(string temp,List<(bool Passed,string Message)> results) {
         const string id="b3333333-3333-4333-8333-333333333333",path="Original.textpack",destination="Moved.textpack";
-        var suffix=Guid.NewGuid().ToString("N");var store=new TextPackStore(Path.Combine(temp,"tombstone-rename-"+suffix),Path.Combine(temp,"tombstone-rename-state-"+suffix));
+        var suffix=Guid.NewGuid().ToString("N");var store=Test.OwnedPathStore(Path.Combine(temp,"tombstone-rename-"+suffix),Path.Combine(temp,"tombstone-rename-state-"+suffix));
         var bytes=Pack(id,"generation-a");var hash=TextPackStore.Hash(bytes);
-        var remote=new Test.Fake{Data=bytes,Item=new(id,path,hash,Lifecycle:"generation-a")};
-        var transport=new LostRename(remote);var sync=Test.NewSync(store,transport);await sync.SyncAsync();
-        using var editing=new SharedEditingStore(store,sync);var session=await editing.OpenAsync(id,path,hash);
-        var journal=JsonSerializer.Serialize(new{version=1,epoch=1,seq=0,journalGeneration=1,revision=hash,relativePath=path,update="AAA=",pending=new[]{"AAA="}});
+        var remote=new Test.Fake{Data=bytes,Item=new(id,path,hash,Lifecycle:"generation-a"),ProtectedRenameBinding=Test.PathScope,Capabilities=new(true,true,[],new(){{id,true}})};
+        var transport=new LostRename(remote);var sync=Test.NewOwnedPathSync(store,transport);await sync.SyncAsync();
+        using var editing=new SharedEditingStore(store,sync,Test.PathAccount);var session=await editing.OpenAsync(id,path,hash);
+        var journal=JsonSerializer.Serialize(new{version=1,accountId=Test.PathAccount,epoch=1,seq=0,journalGeneration=1,revision=hash,relativePath=path,update="AAA=",pending=new[]{"AAA="}});
         await editing.CheckpointAsync(session.SessionToken,hash,bytes,new(id,path,hash,hash,1,0,1,journal,true));
         File.Move(store.Resolve(path),store.Resolve(destination));
         try{await sync.SyncAsync();}catch(HttpRequestException) { }
         var statePath=Path.Combine(store.StateDirectory,"sync.json");var retained=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllBytes(statePath))!;
-        results.Add((retained.SharedRenames.Count==1&&transport.Attempts==1,"pending rename: actual protected path persists immutable command before lost reply"));
+        results.Add((retained.ProtectedRenames.Count==1&&transport.Attempts==1,"pending rename: actual protected path persists immutable command before lost reply"));
         editing.Close(session.SessionToken);File.Delete(store.Resolve(destination));remote.Item=remote.Item! with{Deleted=true};
         var stateBefore=File.ReadAllBytes(statePath);var intentBefore=store.Intent(id);var directory=Path.Combine(store.StateDirectory,"shared-editing",id);
         var journals=Directory.GetFiles(directory).ToDictionary(x=>Path.GetFileName(x),x=>TextPackStore.Hash(File.ReadAllBytes(x)));
@@ -112,6 +112,9 @@ static class MirrorTombstoneIntegrationTests
     }
     sealed class LostRename(Test.Fake inner):ISyncTransport {
         public int Attempts;
+        public ProtectedRenameScope? ProtectedRenameBinding=>inner.ProtectedRenameBinding;
+        public WorkspaceCapabilities? Capabilities=>inner.Capabilities;
+        public Task<ProtectedRenameReceipt> ProtectedRenameAsync(ProtectedRenameRequest request,CancellationToken ct=default){Attempts++;throw new HttpRequestException("Controlled lost typed rename reply");}
         public Task<IReadOnlyList<RemoteItem>> ManifestAsync(CancellationToken ct=default)=>inner.ManifestAsync(ct);
         public Task<RemotePack> DownloadAsync(string id,CancellationToken ct=default)=>inner.DownloadAsync(id,ct);
         public Task<string> UploadAsync(string id,string path,byte[] bytes,string? revision,string operation,CancellationToken ct=default)=>inner.UploadAsync(id,path,bytes,revision,operation,ct);
