@@ -310,7 +310,8 @@ async function requirePortableCreationParents(layout: Layout, relativePath: stri
     if (actual === undefined) return;
     const next = path.join(parent, actual);
     const info = await fs.lstat(next);
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Vault parent is not a regular directory");
+    if (info.isSymbolicLink()) throw new Error("Vault parent cannot be a symlink");
+    if (!info.isDirectory()) throw new Error("Vault parent is not a regular directory");
     parent = next;
   }
 }

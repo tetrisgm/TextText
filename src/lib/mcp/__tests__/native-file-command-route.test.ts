@@ -74,7 +74,11 @@ describe("native file command response and human attribution", () => {
     // Compile the actual shipped Decodable definitions, not a TS approximation.
     if (process.platform === "darwin") {
       const source = await fs.readFile("mac/Sources/TextTextFileProviderKit/LiveTextTextSyncAPI.swift", "utf8");
-      const definitions = source.slice(source.indexOf("public struct TextTextAgentCommandItem"), source.indexOf("/// The production `TextTextSyncAPI`"));
+      const start = source.indexOf("public struct TextTextAgentCommandItem");
+      const end = source.indexOf("public struct TextTextCLIInventory");
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const definitions = source.slice(start, end);
       const fixture = path.join(root, "responses.json");
       await fs.writeFile(fixture, JSON.stringify([created, captured, read, appended, search].map(structuredContent => ({ structuredContent, content: [] }))));
       const script = path.join(root, "decode.swift");
