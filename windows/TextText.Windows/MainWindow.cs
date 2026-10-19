@@ -268,6 +268,7 @@ public sealed partial class MainWindow : Window
         catch(OperationCanceledException) { ReplyForSource(sender, new { id,error = new { message = "Request cancelled",code = "CANCELLED" } }); }
         catch(SharedAccountMismatchException) { ReplyForSource(sender, new { id,error = new { message = "Return to the original account to continue these saved edits.",code = "account_changed" } }); }
         catch(FileChangedException) { ReplyForSource(sender, new { id,error = new { message = "This file changed. Its current contents have been preserved.",code = method?.StartsWith("collaboration.") == true ? "local_changed" : "conflict" } }); }
+        catch(HandoffNotOpenException) { ReplyForSource(sender, new { id,error = new { message = "Shared editing has not opened. Try connecting again.",code = "handoff_not_open" } }); }
         catch(SharedSessionClosedException) { ReplyForSource(sender, new { id,error = new { message = "This editing session has closed.",code = "session_closed" } }); }
         catch(FileNotFoundException) { ReplyForSource(sender, new { id,error = new { message = "This file is not available on this device yet.",code = "not_found" } }); }
         catch(NotSupportedException error) { ReplyForSource(sender, new { id,error = new { message = error.Message,code = "unsupported" } }); }

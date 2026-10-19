@@ -17,6 +17,16 @@ static class LocalHandoffProfileTests {
   check(File.ReadAllBytes(Path.Combine(a.StateDirectory,AccountRootOwnership.FileName)).SequenceEqual(owner)&&File.ReadAllText(pending)=="exact pending bytes","handoff floor preserves owner and pending data");
   Prior(a,"PrepareFolderCase");Prior(a,"PrepareFolderSync");AccountRootOwnership.Open(a,origin,"workspace","account-a");
   check(File.ReadAllBytes(Profile(b)).SequenceEqual(other)&&!Directory.Exists(Path.Combine(root,".texttext","retained-replacement-profile")),"handoff floor remains private to one device state");
+  if(OperatingSystem.IsWindows()) {
+   byte[] Pack(string body){using var output=new MemoryStream();using(var zip=new System.IO.Compression.ZipArchive(output,System.IO.Compression.ZipArchiveMode.Create,true))using(var writer=new StreamWriter(zip.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: \"stable-lease\"\n---\n"+body);return output.ToArray();}
+   var initial=a.Write("Stable.textpack",Pack("before"));var stableProfile=File.ReadAllBytes(Profile(a));
+   using(var reader=new FileStream(Path.Combine(a.StateDirectory,"retained-replacement-profile.lock"),FileMode.Open,FileAccess.Read,FileShare.Read)) {
+    RetainedReplacementProfile.PrepareLocalHandoff(a);
+    var next=Pack("after");var saved=a.Write(initial.Path,next,initial.Hash);
+    check(saved.Hash!=initial.Hash&&a.Read(saved.Path).SequenceEqual(next),"stable shared reader permits exact actual store write");
+    check(File.ReadAllBytes(Profile(a)).SequenceEqual(stableProfile),"stable reader saves do not republish profile");
+   }
+  }
   var inside=new TextPackStore(Path.Combine(temp,"handoff-inside"),Path.Combine(temp,"handoff-inside","private"));check(!RetainedReplacementProfile.SupportsLocalHandoff(inside),"portable in-root state cannot advertise handoff");Refuse(()=>RetainedReplacementProfile.PrepareLocalHandoff(inside),"portable state cannot publish handoff floor");
   foreach(var boundary in new[]{"localHandoffProfilePreserved","localHandoffProfileStaged","beforeLocalHandoffProfilePublication","localHandoffProfilePublished"}) {
    var suffix=Guid.NewGuid().ToString("N");var s=new TextPackStore(Path.Combine(temp,"handoff-crash-root-"+suffix),Path.Combine(temp,"handoff-crash-state-"+suffix));AccountRootOwnership.Open(s,origin,"workspace","account-a");Prior(s,"PrepareFolderSync");var original=File.ReadAllBytes(Profile(s));

@@ -477,6 +477,12 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [retryable, setRetryable] = useState(false);
+  const [handoffRetry, setHandoffRetry] = useState(0);
+  const [canRetryHandoff, setCanRetryHandoff] = useState(false);
+  const [retryingHandoff, setRetryingHandoff] = useState(false);
+  const retryingHandoffRef = useRef(false);
+  const handoffScope = JSON.stringify([root, path, packIdentity(markdown)]);
+  const handoffScopeRef = useRef(handoffScope); handoffScopeRef.current = handoffScope;
   const [promoting, setPromoting] = useState(false);
   const [sharedInitial, setSharedInitial] = useState<VaultFile | null>(null);
   const [resumeEditor, setResumeEditor] = useState<{ target: "body" | "title"; selection: { anchor: number; head: number; direction?: "forward" | "backward" | "none" } | null; focused: boolean } | null>(null);
@@ -485,7 +491,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const localOwner = useRef<LocalEditorHandoff | null>(null);
   const registerLocalOwner = useCallback((owner: LocalEditorHandoff | null) => { localOwner.current = owner; }, []);
   const [surfaceHost] = useState(() => new VaultEditorSurfaceHost());
-  const [nativeHandoff, setNativeHandoff] = useState<{ config: VaultCollaborationConfig; file: VaultFile; committed: boolean } | null>(null);
+  const [nativeHandoff, setNativeHandoff] = useState<{ config: VaultCollaborationConfig; file: VaultFile; committed: boolean; sharedReady: boolean } | null>(null);
   const nativeHandoffRef = useRef(nativeHandoff); nativeHandoffRef.current = nativeHandoff;
   const retainedHandle = useRef<VaultDocumentHandle | null>(null);
   const startupHandle = useRef<VaultDocumentHandle | null>(null);
@@ -531,6 +537,50 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     localFlush.current = flush;
     if (!nativeHandoffRef.current?.committed) registerFlush(flush, currentFile, publishFlush, saveStoryDetails, durabilityResult, "local-file");
   }, [registerFlush]);
+  const retryCertifiedHandoff = async () => {
+    if (retryingHandoffRef.current) return;
+    const startup = !retainedHandle.current && Boolean(startupHandle.current);
+    const handle = startup ? startupHandle.current : retainedHandle.current, local = localOwner.current;
+    const expected = handle?.session.identity;
+    const scope = handoffScopeRef.current;
+    const key = `texttext:vault-item-draft:${JSON.stringify([root, packIdentity(markdown)])}`;
+    const retainedDraft = startup ? localStorage.getItem(key) : null;
+    const assertCurrent = () => {
+      if ((startup ? startupHandle.current !== handle || localStorage.getItem(key) !== retainedDraft : !local || localOwner.current !== local || retainedHandle.current !== handle) || handoffScopeRef.current !== scope)
+        throw Error("This retained editor is no longer current. Its recovery copy is kept.");
+      if (!startup) local!.assertCurrent();
+    };
+    if (!handle || !expected || !handle.session.canRetryUnpublishedOpen) return;
+    retryingHandoffRef.current = true; setRetryingHandoff(true); setCanRetryHandoff(false);
+    try {
+      assertCurrent();
+      const fresh = await vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path });
+      assertCurrent();
+      if (!fresh || !isLocalHandoffCapability(fresh.localHandoff) || fresh.localFiles !== true ||
+          fresh.namespace !== expected.namespace || fresh.accountId !== expected.accountId || fresh.workspaceId !== expected.workspaceId || fresh.itemId !== expected.itemId)
+        throw Error("Return to the original account and workspace before retrying this retained note.");
+      if (!handle.session.canRetryUnpublishedOpen) throw Error("The native owner could not confirm that this note never opened. Its recovery copy is kept.");
+      const closed = await handle.closeExclusive(() => {
+        assertCurrent();
+        if (!handle.session.canRetryUnpublishedOpen) throw Error("The retained owner changed before retrying.");
+      });
+      assertCurrent();
+      if (!closed) throw Error("The retained owner could not close safely. Keep this note open.");
+      setError("");
+      if (startup) { startupHandle.current = null; setRetry(value => value + 1); }
+      else {
+        retainedHandle.current = null; sharedFlush.current = null;
+        nativeHandoffRef.current = null; setNativeHandoff(null); setHandoffRetry(value => value + 1);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The retained note could not retry safely.");
+      // A failed account/config check does not consume the original no-open proof.
+      // Every click must revalidate fresh authority before disposing this owner.
+      try { assertCurrent(); setCanRetryHandoff(handle.session.canRetryUnpublishedOpen); }
+      catch { setCanRetryHandoff(false); }
+    }
+    finally { retryingHandoffRef.current = false; setRetryingHandoff(false); }
+  };
   useEffect(() => {
     if (nativeHandoffRef.current) return;
     let stopped = false;
@@ -552,7 +602,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
         const config = await retryBootstrap(signal => vaultRequest<VaultCollaborationConfig | null>("collaborationConfig", { path }, signal), controller.signal);
         assertStartup();
         if (!config?.localFiles || !config.accountId || !isLocalHandoffCapability(config.localHandoff)) throw Error("Open this retained draft with its supported native account session.");
-        const handle = acquireVaultDocument({ ...config, requireLocalHandoff: true }, initial, root);
+        const handle = acquireVaultDocument({ ...config, requireLocalHandoff: true, assertHandoffCurrent: assertStartup }, initial, root);
         startupHandle.current = handle;
         await handle.ready; assertStartup();
         const native = handle.session.native, client = handle.session.client;
@@ -583,7 +633,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
         draft.assertCurrent(); draft.acknowledge(saved.generation);
         if (stopped) return;
         setSharedInitial(handle.session.file); setMode(config); onSharedModeRef.current?.();
-      })().catch(reason => { if (!stopped) { setRetryable(false); setError(reason instanceof Error ? reason.message : "The retained handoff needs recovery."); } });
+      })().catch(reason => { if (!stopped) { setRetryable(false); setCanRetryHandoff(Boolean(startupHandle.current?.session.canRetryUnpublishedOpen)); setError(reason instanceof Error ? reason.message : "The retained handoff needs recovery."); } });
       return () => { stopped = true; controller.abort(); };
     }
     // Finish an ordinary recoverable file draft through its existing owner.
@@ -662,13 +712,15 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
               assertCurrent, capture: () => local.capture(), pauseAndDrain: () => local.pauseAndDrain(),
               beginOpen: saved => {
                 assertCurrent();
-                const handle = acquireVaultDocument({ ...candidate, requireLocalHandoff: true }, saved.file, root);
+                let handle!: VaultDocumentHandle;
+                handle = acquireVaultDocument({ ...candidate, requireLocalHandoff: true, assertHandoffCurrent: () => assertCurrent(handle) }, saved.file, root);
                 retainedHandle.current = handle;
-                setNativeHandoff({ config: candidate, file: saved.file, committed: false });
+                setNativeHandoff({ config: candidate, file: saved.file, committed: false, sharedReady: false });
                 const ready = (async () => {
                   await handle.ready; assertCurrent(handle);
                   if (!isLocalHandoffCapability(handle.session.native?.localHandoff)) throw Error("The native recovery format was not verified.");
                   if (!handle.session.client.hasBaseline || !handle.session.client.canEdit) throw Error("The shared document is not ready for editing. The local draft is kept.");
+                  setNativeHandoff(value => value ? { ...value, sharedReady: true } : value);
                   await surfaceHost.waitForSharedSurface(controller.signal); assertCurrent(handle);
                 })();
                 return { handle, ready };
@@ -711,6 +763,7 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
               retain: reason => { setError(reason instanceof Error ? reason.message : "The connecting editor retained its recovery copy."); },
             });
             if (result.state === "shared") { retainedHandle.current = null; void result.handle.release(); }
+            else setCanRetryHandoff(Boolean(result.handle?.session.canRetryUnpublishedOpen));
             // Unknown lease/durability outcomes keep the old view, paused file
             // owner and exact retained handle. Never fall through to legacy.
             return;
@@ -754,19 +807,19 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
     });
     check();
     return () => { stopped = true; unsubscribeSurface(); handoffAbort?.abort(); window.removeEventListener("texttext:vault-sync-status", sync); window.removeEventListener("texttext:vault-changed", check); };
-  }, [mode, path, root]);
+  }, [mode, path, root, handoffRetry]);
   if (mode === "local") return <><div ref={localRoot} inert={promoting} onCompositionStartCapture={() => surfaceHost.setComposing(true)} onCompositionEndCapture={() => surfaceHost.setComposing(false)}>
     <div hidden={nativeHandoff?.committed}><VaultEditorSurfaceController host={surfaceHost} owner="local"><VaultEditor {...props} registerFlush={registerLocalFlush} registerHandoff={registerLocalOwner} /></VaultEditorSurfaceController></div>
-    {nativeHandoff && <div hidden={!nativeHandoff.committed}><VaultEditorSurfaceController host={surfaceHost} owner="shared"><CollaborativeVaultEditor {...props} initial={nativeHandoff.file} config={nativeHandoff.config} inactiveHandoff={!nativeHandoff.committed} registerFlush={registerBackgroundFlush} onTitleChange={(path, title) => { if (nativeHandoffRef.current?.committed) props.onTitleChange?.(path, title); }} startEditing /></VaultEditorSurfaceController></div>}
+    {nativeHandoff?.sharedReady && <div hidden={!nativeHandoff.committed}><VaultEditorSurfaceController host={surfaceHost} owner="shared"><CollaborativeVaultEditor {...props} initial={nativeHandoff.file} config={nativeHandoff.config} inactiveHandoff={!nativeHandoff.committed} registerFlush={registerBackgroundFlush} onTitleChange={(path, title) => { if (nativeHandoffRef.current?.committed) props.onTitleChange?.(path, title); }} startEditing /></VaultEditorSurfaceController></div>}
     <section className="vault-document"><VaultEditorSurface host={surfaceHost} /></section>
-    </div>{(error || promoting || nativeHandoff && !nativeHandoff.committed) && <p className="vault-notice" role="status">{error || "Connecting this note…"}{error && <button onClick={downloadHandoffRecovery}>Download recovery</button>}</p>}</>;
+    </div>{(error || promoting || nativeHandoff && !nativeHandoff.committed) && <p className="vault-notice" role="status">{error || "Connecting this note…"}{error && <>{canRetryHandoff && <button disabled={retryingHandoff} onClick={() => void retryCertifiedHandoff()}>{retryingHandoff ? "Retrying…" : "Retry connecting"}</button>}<button onClick={downloadHandoffRecovery}>Download recovery</button></>}</p>}</>;
   if (mode) return <CollaborativeVaultEditor {...props} onSessionAcquired={releaseStartupHandle} initial={sharedInitial ? { ...sharedInitial, path: props.initial.path } : props.initial} config={mode}
     startEditing={Boolean(resumeEditor) || props.startEditing}
     focusNewNote={Boolean(resumeEditor?.focused) || props.focusNewNote} focusNewNoteOrigin={resumeEditor ? null : props.focusNewNoteOrigin}
     focusNewNoteTitle={resumeEditor ? resumeEditor.target === "title" : props.focusNewNoteTitle}
     focusNewNoteSelection={resumeEditor?.selection} onNewNoteFocusHandled={() => { setResumeEditor(null); props.onNewNoteFocusHandled?.(); }}
     onLocalFallback={() => setMode("local")} />;
-  return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <><button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button><button onClick={downloadHandoffRecovery}>Download recovery</button></>}</div>;
+  return <div className="vault-notice" role="status">{error || "Opening document…"}{error && <>{startupHandle.current ? canRetryHandoff && <button disabled={retryingHandoff} onClick={() => void retryCertifiedHandoff()}>Retry connecting</button> : <button onClick={() => { setError(""); setRetry(value => value + 1); }}>Retry</button>}<button onClick={downloadHandoffRecovery}>Download recovery</button></>}</div>;
 }
 
 function selectedIdentity(file: VaultFile): string | null {

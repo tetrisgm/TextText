@@ -10,7 +10,7 @@ try {
   # Match the Mac lockfile resolver and replace stale dependencies before tests.
   & npx --yes npm@11.10.0 ci --ignore-scripts
   if ($LASTEXITCODE -ne 0) { throw 'Locked dependency installation failed.' }
-  & node --test windows/TextText.Windows/runtime-archive.test.mjs windows/scripts/live-browser-ready.test.mjs
+  & node --test windows/TextText.Windows/runtime-archive.test.mjs windows/scripts/live-browser-ready.test.mjs windows/scripts/handoff-publication-proof.test.mjs
   if ($LASTEXITCODE -ne 0) { throw 'Runtime archive or browser readiness regression tests failed.' }
   $source = (& node windows/scripts/receipt.mjs source)
   if ($LASTEXITCODE -ne 0) { throw 'Source fingerprint failed.' }

@@ -16,7 +16,8 @@ import { documentText } from "@/lib/collab/document";
 import { seedVaultCollaboration, applyVaultCollaboration, type VaultCollaborationState } from "@/sync/engine/collaboration";
 import { openPack } from "../pack";
 
-if (process.argv.length !== 2) throw Error("This fixture accepts no live configuration.");
+const certifiedStartup = process.argv.slice(2).join(" ") === "--certified-startup";
+if (process.argv.length !== 2 && !certifiedStartup) throw Error("This fixture accepts only --certified-startup; no live configuration.");
 const itemId = "native-handoff-restart-owned", notePath = "Notes/Untitled.textpack", root = "/test/NativeHandoffRestart";
 const config = { namespace: "https://texttext.test/", workspaceId: "11111111-1111-4111-8111-111111111111", itemId,
   localFiles: true, accountId: "fixture-account", localHandoff: { version: 1, profileVersion: 4 } };
@@ -28,6 +29,7 @@ const pack = (markdown: string, documentJSON: string) => {
 let current = pack(`---\ntextTextId: ${JSON.stringify(itemId)}\ntitle: "Untitled"\n---\n\nHello`, JSON.stringify(initial));
 let exists = false, ready = false, opens = 0, pushes = 0, localWrites = 0, creates = 0;
 let nativeJournal: string | null = null, nativeProjectedHash: string | null = null;
+let restarted = false, startupRefusals = 0;
 let state: VaultCollaborationState | null = null, remoteBytes = current.bytes;
 let releaseOpen!: () => void;
 const openGate = new Promise<void>(resolve => { releaseOpen = resolve; });
@@ -59,6 +61,7 @@ async function bind(page: Page) {
         case "collaborationConfig": result = ready ? config : null; break;
         case "collaborationOpen": {
           assert.equal(p.hash, current.file.hash); assert.equal(p.localHandoffVersion, 1); opens++;
+          if (certifiedStartup && restarted && startupRefusals++ < 4) { error = { code: "handoff_not_open", message: "Controlled unpublished startup open" }; break; }
           state ??= seedVaultCollaboration(current.bytes, itemId, 1); remoteBytes = opens === 1 ? current.bytes : remoteBytes;
           if (opens === 1) await openGate;
           result = { sessionToken: "owned-session-" + opens, path: notePath, hash: current.file.hash,
@@ -137,21 +140,29 @@ try {
   documentText(peer, "body").insert(documentText(peer, "body").length, " R");
   const peerUpdate = Buffer.from(Y.encodeStateAsUpdate(peer, vector)).toString("base64"); peer.destroy();
   const next = applyVaultCollaboration(state, remoteBytes, [peerUpdate]); state = next.state; remoteBytes = next.bytes;
+  restarted = true;
   const restartContext = await browser.newContext(), reopened = await restartContext.newPage(); await bind(reopened);
   await reopened.addInitScript(values => { for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value); }, storage);
   await reopened.goto(pathToFileURL(path.join(output, "index.html")).href);
   await reopened.waitForFunction(() => typeof (window as any).texttextOpenFile === "function");
   assert.equal(await reopened.evaluate(path => (window as any).texttextOpenFile(path), notePath), "opened");
+  if (certifiedStartup) {
+    await reopened.getByRole("button", { name: "Retry connecting", exact: true }).waitFor();
+    assert.equal(opens, 5); assert.equal(operations.length, operationsBefore); assert.equal(localWrites, writesBefore);
+    assert.equal(await reopened.evaluate(key => localStorage.getItem(key), draftKey), storage[draftKey], "Failed startup must preserve the exact recorded Yjs bytes");
+    assert.equal((await reopened.evaluate(() => (window as any).texttextFlushForNativeClose())).ok, false);
+    await reopened.getByRole("button", { name: "Retry connecting", exact: true }).click();
+  }
   const reopenedBody = reopened.getByRole("textbox", { name: "Document body", exact: true });
   await until(() => nativeJournal !== null && JSON.parse(current.file.documentJSON!).content.body === "Hello L R", "peer append reconciled on restart");
   if (!await reopenedBody.isVisible()) await reopened.getByRole("button", { name: "Edit card", exact: true }).click();
   await reopenedBody.waitFor(); assert.equal(await reopenedBody.innerText(), "Hello L R");
   await reopened.waitForFunction(key => localStorage.getItem(key) === null, draftKey);
-  assert.equal(opens, 2); assert.equal(operations.length, operationsBefore, "Exact replay must not mint a new push operation");
+  assert.equal(opens, certifiedStartup ? 6 : 2); assert.equal(operations.length, operationsBefore, "Exact replay must not mint a new push operation");
   assert.equal(localWrites, writesBefore, "Restart must not use a direct file writer"); assert.equal(state.epoch, 1);
   assert.deepEqual(errors, []); assert.deepEqual(fixtureErrors, []);
   await writeFile(path.join(dir, "observation.json"), JSON.stringify({ scope: "owned Chromium production VaultApp/provider; controlled page restart, native bridge fixture, not installed-native/OS-crash acceptance",
-    itemId, notePath, closeWhileRetained, epoch: state.epoch, opens, localWrites, operationsBefore, operationsAfter: operations.length, intentHashes, updateSha256: draft.handoff.intents.map((intent: { updateSha256: string }) => intent.updateSha256), legacyDraftSha256: draft.handoff.legacyDraftSha256,
+    itemId, notePath, certifiedStartup, closeWhileRetained, epoch: state.epoch, opens, localWrites, operationsBefore, operationsAfter: operations.length, intentHashes, updateSha256: draft.handoff.intents.map((intent: { updateSha256: string }) => intent.updateSha256), legacyDraftSha256: draft.handoff.legacyDraftSha256,
     retainedNativeGeneration: JSON.parse(retainedNative!).journalGeneration, finalNativeGeneration: JSON.parse(nativeJournal!).journalGeneration,
     finalBody: JSON.parse(current.file.documentJSON!).content.body, checkpoints, errors, fixtureErrors }, null, 2), { flag: "wx" });
   console.log("PASS acknowledged exact handoff survives controlled restart + peer append without duplicate text/new operation. Evidence: " + dir);

@@ -6,6 +6,7 @@ namespace TextText.Core;
 /// folders have no principal to migrate; old raw readers remain external writers.
 public static class RetainedReplacementProfile
 {
+    public sealed class PreparationBusyException(Exception inner) : IOException("This workspace's account setup is finishing. Try again.",inner);
     public sealed record Marker(int Version, int OwnerVersion, string PrincipalHash, string OriginalOwnerHash);
     static string DirectoryFor(string state) => Path.Combine(state, "retained-replacement-profile");
     public static bool Exists(string state) => Directory.Exists(DirectoryFor(state));
@@ -24,7 +25,7 @@ public static class RetainedReplacementProfile
     {
         if(!Directory.Exists(state))throw new InvalidDataException("Workspace account state is missing.");
         try{return RetainedFileReplacement.AcquireLease(Path.Combine(state,"retained-replacement-profile.lock"),shared);}
-        catch(IOException error){throw new IOException("This workspace's account setup could not be locked. Try again.",error);}
+        catch(RetainedFileReplacement.LeaseBusyException error){throw new PreparationBusyException(error);}
     }
     public static void Verify(string state, AccountRootOwnership.Owner owner, string rootHash)
     {
@@ -78,6 +79,12 @@ public static class RetainedReplacementProfile
     }
     public static void Prepare(TextPackStore store, Action<string>? observe = null)
     {
+        AccountRootOwnership.RequireNoAdoption(store.StateDirectory);
+        var path=Path.Combine(store.StateDirectory,AccountRootOwnership.FileName);
+        if(File.Exists(path)) {
+            var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(path,8192))??throw new InvalidDataException("Invalid replacement owner.");
+            if(owner.Version==2) {Verify(store.StateDirectory,owner,TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root)));return;}
+        }
         using var migration=MigrationLease(store.StateDirectory);
         PrepareUnlocked(store,observe);
     }
@@ -157,9 +164,25 @@ public static class RetainedReplacementProfile
         AccountRootOwnership.Open(store,new Uri(owner.Origin),owner.WorkspaceId,owner.AccountId);
         return true;
     }
+    /// Recheck the existing private principal without claiming profile migration completed.
+    public static void RequireLocalHandoffPrincipal(TextPackStore store,Uri origin,string workspaceId,string accountId)
+    {
+        var root=Path.GetFullPath(store.Root).TrimEnd(Path.DirectorySeparatorChar);var state=Path.GetFullPath(store.StateDirectory);
+        if(state.Equals(root,StringComparison.OrdinalIgnoreCase)||state.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Local handoff requires private device state.");
+        AccountRootOwnership.RequireNoAdoption(state);
+        var actual=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(Path.Combine(state,AccountRootOwnership.FileName),8192))??throw new InvalidDataException("Invalid local handoff principal.");
+        if(actual.Version is not(1 or 2))throw new InvalidDataException("Unsupported local handoff principal.");
+        if((actual with{Version=1})!=AccountRootOwnership.Expected(store,origin,workspaceId,accountId))throw new SharedAccountMismatchException();
+    }
     public static void PrepareLocalHandoff(TextPackStore store,Action<string>? observe=null)
     {
         if(!SupportsLocalHandoff(store))throw new InvalidDataException("Local handoff requires owned private device state.");
+        var ready=false;
+        var current=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,AccountRootOwnership.FileName),8192))!;
+        if(current.Version==2)VerifyObserved(store.StateDirectory,current,TextPackStore.Hash(System.Text.Encoding.UTF8.GetBytes(store.Root)),()=> {
+            ready=JsonSerializer.Deserialize<Marker>(RetainedFileReplacement.Read(Path.Combine(DirectoryFor(store.StateDirectory),"profile.json"),8192))!.Version==4;
+        });
+        if(ready)return;
         PrepareFolderSync(store);
         using var migration=MigrationLease(store.StateDirectory);
         var owner=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(RetainedFileReplacement.Read(Path.Combine(store.StateDirectory,AccountRootOwnership.FileName),8192))!;

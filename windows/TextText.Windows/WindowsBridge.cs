@@ -10,6 +10,7 @@ using TextText.Core;
 namespace TextText.Windows;
 
 /// <summary>Native file/account boundary. Document rendering and commands remain in the shared editor.</summary>
+public sealed class HandoffNotOpenException() : InvalidOperationException("Shared editing has not opened. Try connecting again.");
 public sealed class WindowsBridge : INativeWorkspaceBridge
 {
     readonly WorkspaceContext context;
@@ -17,6 +18,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     readonly SyncEngine sync;
     readonly MirrorPolicy? mirrorPolicy;
     readonly SharedEditingStore editing;
+    readonly Dictionary<string,string> editingItems=[];
     readonly WindowsAgent agent;
     readonly ConcurrentDictionary<string, TaskCompletionSource<string>> agentTools = new();
     readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(45) };
@@ -399,15 +401,23 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             case "collaboration.open": {
                 var handoff=p.TryGetProperty("localHandoffVersion",out var requested);
                 if(p.EnumerateObject().Any(field=>field.Name is not("itemId" or "path" or "hash" or "localHandoffVersion")))throw new InvalidDataException("Invalid collaboration open fields.");
+                var itemId=Required(p,"itemId");var path=Required(p,"path");var hash=Required(p,"hash");
                 if(handoff) {
                     if(requested.ValueKind!=JsonValueKind.Number||!requested.TryGetInt32(out var version)||version!=1)throw new InvalidDataException("Unsupported local handoff version.");
                     ct.ThrowIfCancellationRequested();
                     if(string.IsNullOrWhiteSpace(context.AccountId))throw new SharedAccountMismatchException();
-                    AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,context.AccountId);RetainedReplacementProfile.PrepareLocalHandoff(files);
+                    try {AccountRootOwnership.Open(files,context.Origin,context.WorkspaceId,context.AccountId);RetainedReplacementProfile.PrepareLocalHandoff(files);}
+                    catch(RetainedReplacementProfile.PreparationBusyException) {
+                        ct.ThrowIfCancellationRequested();
+                        RetainedReplacementProfile.RequireLocalHandoffPrincipal(files,context.Origin,context.WorkspaceId,context.AccountId);
+                        if(editingItems.Values.Contains(itemId))throw;
+                        throw new HandoffNotOpenException();
+                    }
                 }
-                var session = await editing.OpenAsync(Required(p, "itemId"), Required(p, "path"), Required(p, "hash"), ct);
+                var session = await editing.OpenAsync(itemId,path,hash,ct);
+                editingItems[session.SessionToken]=itemId;
                 return new { sessionToken = session.SessionToken, path = session.Document.Path, hash = session.Document.Hash,
-                    acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(Required(p, "itemId"), ct) ?? session.Document.Hash,
+                    acknowledgedRevision = session.Checkpoint?.AcknowledgedRevision ?? await sync.BaselineRevisionAsync(itemId, ct) ?? session.Document.Hash,
                     projectedHash = session.Checkpoint?.ProjectedHash,
                     journal = session.Checkpoint?.Journal, retiredReason = session.Checkpoint?.RetiredReason,
                     // The shared client consumes this exact name; only stores that verify and archive authorized epoch adoption may announce it.
@@ -422,8 +432,8 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 var result = await editing.CheckpointAsync(Required(p, "sessionToken"), Required(p, "hash"), bytes, checkpoint, ct);
                 return Result(result);
             }
-            case "collaboration.close": editing.Close(Required(p, "sessionToken")); return null;
-            case "collaboration.recover": await editing.RecoverAsync(Required(p, "sessionToken"), Required(p, "recoveryPath"), Required(p, "recoveryHash"), ct); Changed(); return null;
+            case "collaboration.close": {var token=Required(p,"sessionToken");editing.Close(token);editingItems.Remove(token);return null;}
+            case "collaboration.recover": {var token=Required(p,"sessionToken");await editing.RecoverAsync(token,Required(p,"recoveryPath"),Required(p,"recoveryHash"),ct);editingItems.Remove(token);Changed();return null;}
             default: throw new NotSupportedException("This desktop operation is not available: " + method);
         }
     }

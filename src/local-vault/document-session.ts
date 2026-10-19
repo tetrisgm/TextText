@@ -9,10 +9,10 @@ import { externalFileReconciliationBase, readDocument, writePayload } from "./mo
 import { refreshBinaryOnlyFile } from "./binary-refresh";
 import { packIdentity } from "./pack";
 import { currentVaultWindowActive } from "./window-activity";
-import { openLocalSharedSession, type NativeSharedSession } from "./shared-open";
+import { HandoffNotOpenedError, openLocalSharedSession, type NativeSharedSession } from "./shared-open";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 
-export type VaultSessionIdentity = { requireLocalHandoff?: boolean; namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
+export type VaultSessionIdentity = { requireLocalHandoff?: boolean; assertHandoffCurrent?: () => void; namespace: string; workspaceId: string; itemId: string; accountId?: string; localFiles?: boolean };
 export type VaultSessionView = {
   changed(session: VaultDocumentSession): void;
   replaced(next: Y.Doc, previous: Y.Doc, awareness: Awareness): Promise<void>;
@@ -20,6 +20,11 @@ export type VaultSessionView = {
 /** Owns persistence, transport and projection refresh independently of React. */
 export class VaultDocumentSession {
   private shared: FileCollaborationClient | null = null;
+  private unpublishedOpen: HandoffNotOpenedError | null = null;
+  get canRetryUnpublishedOpen() {
+    if (!this.identity.requireLocalHandoff || this.closed || this.native || this.shared || !this.unpublishedOpen?.matches(this.identity.itemId, this.file)) return false;
+    try { this.identity.assertHandoffCurrent?.(); return true; } catch { return false; }
+  }
   native: NativeSharedSession | null = null;
   awareness: Awareness | null = null;
   peers: PresencePeer[] = [];
@@ -133,13 +138,15 @@ export class VaultDocumentSession {
     if (this.identity.localFiles) window.addEventListener("texttext:vault-changed", this.changed);
     try {
       if (this.identity.localFiles) {
-        const opened = await openLocalSharedSession(this.identity.itemId, this.file, this.request, 20_000, this.identity.requireLocalHandoff ? { version: 1, profileVersion: 4 } : undefined);
+        const opened = await openLocalSharedSession(this.identity.itemId, this.file, this.request, 20_000, this.identity.requireLocalHandoff ? { version: 1, profileVersion: 4 } : undefined,
+          1_000, this.identity.assertHandoffCurrent);
         this.native = opened.native; this.replaceFile(opened.file);
         if (this.native.hash !== this.file.hash || this.native.path !== this.file.path)
           this.replaceFile(await this.request<VaultFile>("read", { path: this.native.path }));
       }
       this.createClient(); this.visibility(); this.emit(); await this.client.start();
     } catch (error) {
+      if (error instanceof HandoffNotOpenedError && this.identity.requireLocalHandoff && error.matches(this.identity.itemId, this.file)) this.unpublishedOpen = error;
       this.status = "error"; this.detail = error instanceof Error ? error.message : "Could not open the shared file."; this.emit(); throw error;
     }
   }

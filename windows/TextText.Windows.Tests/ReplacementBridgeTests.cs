@@ -14,6 +14,59 @@ static class ReplacementBridgeTests
     }
     public static async Task Run(string temporary,Action<bool,string> check)
     {
+        if(OperatingSystem.IsWindows()) {
+            var stableRoot=Path.Combine(temporary,"stable-handoff-bridge-root");var stableState=Path.Combine(temporary,"stable-handoff-bridge-state");
+            var stableStore=new TextPackStore(stableRoot,stableState);var stableOrigin=new Uri("https://fixture.test");
+            AccountRootOwnership.Open(stableStore,stableOrigin,"workspace","account-a");
+            var stableFile=stableStore.Write("Note.textpack",Pack("stable body","stable-handoff-item"));
+            var recoveryFile=stableStore.Write("Recovery.textpack",Pack("retained recovery","stable-recovery-item"));
+            typeof(RetainedReplacementProfile).GetMethod("PrepareFolderSync",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static)!.Invoke(null,[stableStore,null]);
+            var stableContext=new WorkspaceContext(stableRoot,"workspace",stableOrigin,()=>Task.FromResult("fixture"),(_,_)=>Task.CompletedTask,AccountId:"account-a",MirrorPolicyFactory:()=>NativePolicyTestHost.Create("account-a"));
+            var stableTransport=new StalledTransport();stableTransport.Release.TrySetResult();
+            using var stableBridge=new WindowsBridge(stableContext,stableTransport,stableState);
+            var priorProfile=File.ReadAllBytes(Path.Combine(stableState,"retained-replacement-profile","profile.json"));
+            foreach(var malformed in new object[]{new {itemId=stableFile.ItemId,path=stableFile.Path,localHandoffVersion=1},new {itemId=stableFile.ItemId,path=stableFile.Path,hash=42,localHandoffVersion=1}}) {
+                var invalid=false;try{await stableBridge.InvokeAsync("collaboration.open",Json(malformed),CancellationToken.None);}catch(Exception error)when(error is InvalidDataException or InvalidOperationException or KeyNotFoundException){invalid=true;}
+                check(invalid&&File.ReadAllBytes(Path.Combine(stableState,"retained-replacement-profile","profile.json")).SequenceEqual(priorProfile),"malformed opening refuses before profile publication");
+            }
+            using(var migrationReader=new FileStream(Path.Combine(stableState,"retained-replacement-profile.lock"),FileMode.Open,FileAccess.Read,FileShare.Read)) {
+                var notOpened=false;
+                try{await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None);}catch(HandoffNotOpenException){notOpened=true;}
+                check(notOpened&&File.ReadAllBytes(Path.Combine(stableState,"retained-replacement-profile","profile.json")).SequenceEqual(priorProfile),"actual floor3 migration busy proves handoff was not opened and preserves profile");
+                using var cancelled=new CancellationTokenSource();cancelled.Cancel();var cancellation=false;
+                try{await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),cancelled.Token);}catch(OperationCanceledException){cancellation=true;}
+                check(cancellation,"cancelled opening is never certified as handoff not opened");
+            }
+            async Task<object?> RetryCertifiedOpen() {
+                for(var attempt=0;;attempt++) {
+                    try{return await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None);}
+                    catch(HandoffNotOpenException)when(attempt<49){await Task.Delay(20);}
+                }
+            }
+            var firstOpen=JsonSerializer.SerializeToElement(await RetryCertifiedOpen());
+            await stableBridge.InvokeAsync("collaboration.recover",Json(new {sessionToken=firstOpen.GetProperty("sessionToken").GetString(),recoveryPath=recoveryFile.Path,recoveryHash=recoveryFile.Hash}),CancellationToken.None);
+            using(var writer=new FileStream(Path.Combine(stableState,"retained-replacement-profile.lock"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
+                var recoveredOwnerReleased=false;
+                try{await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None);}catch(HandoffNotOpenException){recoveredOwnerReleased=true;}
+                check(recoveredOwnerReleased,"successful recovery releases tracked owner before certified preparation retry");
+                var ownerPath=Path.Combine(stableState,AccountRootOwnership.FileName);var ownerBytes=File.ReadAllBytes(ownerPath);
+                try {
+                    var foreign=JsonSerializer.Deserialize<AccountRootOwnership.Owner>(ownerBytes)! with{AccountId="account-b"};
+                    File.WriteAllBytes(ownerPath,JsonSerializer.SerializeToUtf8Bytes(foreign));var accountRefused=false;
+                    try{await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None);}catch(SharedAccountMismatchException){accountRefused=true;}
+                    check(accountRefused,"held profile lock cannot certify a changed retained principal");
+                }finally{File.WriteAllBytes(ownerPath,ownerBytes);}
+
+            }
+            using(var reader=new FileStream(Path.Combine(stableState,"retained-replacement-profile.lock"),FileMode.Open,FileAccess.Read,FileShare.Read)) {
+                var opened=JsonSerializer.SerializeToElement(await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None));
+                check(opened.GetProperty("localHandoff").GetProperty("profileVersion").GetInt32()==4,"stable bridge handoff opens under shared verifier lease");
+                var duplicateRefused=false;
+                try{await stableBridge.InvokeAsync("collaboration.open",Json(new {itemId=stableFile.ItemId,path=stableFile.Path,hash=stableFile.Hash,localHandoffVersion=1}),CancellationToken.None);}catch(IOException){duplicateRefused=true;}
+                check(duplicateRefused,"an already-published editor refusal is not certified as handoff not opened");
+                await stableBridge.InvokeAsync("collaboration.close",Json(new {sessionToken=opened.GetProperty("sessionToken").GetString()}),CancellationToken.None);
+            }
+        }
         string root=Path.Combine(temporary,"replacement-bridge-root"),state=Path.Combine(temporary,"replacement-bridge-state");
         var store=new TextPackStore(root,state);var origin=new Uri("https://texttext.test");const string workspace="workspace";
         AccountRootOwnership.Open(store,origin,workspace,"account-a");

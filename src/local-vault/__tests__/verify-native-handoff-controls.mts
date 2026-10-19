@@ -15,7 +15,10 @@ import { openPack } from "../pack";
 
 const flag = process.argv.slice(2).join(" ");
 const captureScenario = flag === "--capture", readerScenario = flag === "--reader", drainScenario = flag === "--drain";
-if (process.argv.length !== 2 && !["--capture", "--reader", "--drain"].includes(flag)) throw Error("Only one owned controls scenario is accepted; no live configuration.");
+const accountScenario = flag === "--retry-account-change", unverifiedScenario = flag === "--unverified-open";
+const retryScenario = flag === "--certified-retry" || accountScenario, onceScenario = flag === "--certified-once", unknownScenario = flag === "--unknown-open";
+const recoveryScenario = retryScenario || onceScenario || unknownScenario || unverifiedScenario;
+if (process.argv.length !== 2 && !["--capture", "--reader", "--drain", "--certified-retry", "--certified-once", "--unknown-open", "--retry-account-change", "--unverified-open"].includes(flag)) throw Error("Only one owned controls scenario is accepted; no live configuration.");
 const itemId = "native-handoff-controls-owned", notePath = "Notes/Untitled.textpack", root = "/test/NativeHandoffControls";
 const config = { namespace: "https://texttext.test/", workspaceId: "11111111-1111-4111-8111-111111111111", itemId,
   localFiles: true, accountId: "fixture-account", localHandoff: { version: 1, profileVersion: 4 } };
@@ -28,6 +31,8 @@ const pack = (markdown: string, documentJSON: string) => {
 let current = pack(`---\ntextTextId: ${JSON.stringify(itemId)}\ntitle: "Untitled"\n---\n\n${initial.content.body}`, JSON.stringify(initial));
 let exists = false, ready = false, opens = 0, pushes = 0, localWrites = 0, creates = 0;
 let nativeJournal: string | null = null, nativeProjectedHash: string | null = null;
+let publishedOpens = 0, nativeCloses = 0;
+let changedAccount = false;
 let state: VaultCollaborationState | null = null, remoteBytes = current.bytes;
 let releaseOpen!: () => void;
 const openGate = new Promise<void>(resolve => { releaseOpen = resolve; });
@@ -61,14 +66,17 @@ async function bind(page: Page) {
         case "read": result = current.file; break;
         case "extractArticle": captureRequests++; await captureGate; result = { sourceURL: p.sourceURL, markdown: "# Captured source\n\nOwned article content", capturedAt: "2026-10-18T12:00:00Z" }; break;
         case "write": if (p.addedAssets) addedAssetRequests++; assert.equal(p.hash, current.file.hash); localWrites++; if (drainScenario && heldWrites++ === 0) await writeGate; current = pack(String(p.markdown), String(p.documentJSON)); result = current.file; break;
-        case "collaborationConfig": result = ready ? config : null; break;
+        case "collaborationConfig": result = ready ? { ...config, ...(changedAccount ? { accountId: "different-account" } : {}) } : null; break;
         case "collaborationOpen": {
           assert.equal(p.hash, current.file.hash); assert.equal(p.localHandoffVersion, 1); opens++;
-          state ??= seedVaultCollaboration(current.bytes, itemId, 1); remoteBytes = opens === 1 ? current.bytes : remoteBytes;
-          if (opens === 1) await openGate;
+          if (unknownScenario || onceScenario && opens === 1 || retryScenario && opens <= 4) {
+            error = { code: unknownScenario ? "503" : "handoff_not_open", message: "Controlled native open rejection" }; break;
+          }
+          state ??= seedVaultCollaboration(current.bytes, itemId, 1); remoteBytes = publishedOpens++ === 0 ? current.bytes : remoteBytes;
+          if (publishedOpens === 1) await openGate;
           result = { sessionToken: "owned-session-" + opens, path: notePath, hash: current.file.hash,
             acknowledgedRevision: nativeJournal ? JSON.parse(nativeJournal).revision : state.revision,
-            projectedHash: nativeProjectedHash, journal: nativeJournal, retiredReason: null, localHandoff: config.localHandoff };
+            projectedHash: nativeProjectedHash, journal: nativeJournal, retiredReason: null, localHandoff: unverifiedScenario ? undefined : config.localHandoff };
           break;
         }
         case "collaborationRead": assert.ok(state); result = p.waitMs && p.seq === state.seq
@@ -90,7 +98,8 @@ async function bind(page: Page) {
         }
         case "presenceJoin": result = { epoch: 1, presence: [], session: { clientId: "p-11111111-1111-4111-8111-111111111111", sessionCredential: "v1:test", expiresAt: Date.now() + 60_000 } }; break;
         case "presenceRead": case "presenceUpdate": result = { epoch: 1, presence: [] }; break;
-        case "presenceLeave": case "collaborationClose": case "collaborationCancel": result = {}; break;
+        case "collaborationClose": nativeCloses++; result = {}; break;
+        case "presenceLeave": case "collaborationCancel": result = {}; break;
         case "publicationRead": result = { canPublish: true, revision: current.file.hash, publicURL: null }; break;
         default: throw Error("Unexpected fixture method " + request.method);
       }
@@ -120,6 +129,45 @@ try {
   }
   ready = true;
   await page.evaluate(workspaceId => window.dispatchEvent(new CustomEvent("texttext:vault-sync-status", { detail: { connected: true, available: true, workspaceId } })), config.workspaceId);
+  if (recoveryScenario) {
+    const original = await title.elementHandle(), writesBefore = localWrites;
+    if (unverifiedScenario) releaseOpen();
+    await until(() => opens >= 1, "first controlled native open");
+    if (retryScenario) await page.getByRole("button", { name: "Retry connecting", exact: true }).waitFor();
+    if (unknownScenario) await page.getByRole("status").filter({ hasText: "Controlled native open rejection" }).waitFor();
+    if (unverifiedScenario) await page.getByRole("status").filter({ hasText: "could not verify its recovery format" }).waitFor();
+    if (onceScenario) await until(() => publishedOpens === 1, "certified automatic retry reaches held actual open");
+    await title.click(); await page.keyboard.press("End"); await page.keyboard.type(" retry text");
+    await body.click(); await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End"); await page.keyboard.type(" retained input");
+    const finalTitle = await title.inputValue(), finalBody = await body.innerText();
+    assert.equal((await page.evaluate(async () => (window as any).texttextFlushForNativeClose())).ok, false);
+    assert.equal(localWrites, writesBefore); assert.equal(nativeCloses, 0);
+    if (unknownScenario || unverifiedScenario || accountScenario) {
+      if (accountScenario) {
+        changedAccount = true;
+        await page.getByRole("button", { name: "Retry connecting", exact: true }).click();
+        await page.getByRole("status").filter({ hasText: "Return to the original account and workspace" }).waitFor();
+      }
+      await wait(500); assert.equal(opens, accountScenario ? 4 : 1); assert.equal(publishedOpens, unverifiedScenario ? 1 : 0);
+      assert.equal(await page.getByRole("button", { name: "Retry connecting", exact: true }).count(), accountScenario ? 1 : 0);
+      const retained = await page.evaluate(() => Object.entries(localStorage).find(([key]) => key.startsWith("texttext:vault-item-draft:"))?.[1]);
+      assert.equal(JSON.parse(retained!).document.content.title, finalTitle); assert.equal(JSON.parse(retained!).document.content.body, finalBody);
+    }
+    if (!unknownScenario && !unverifiedScenario) {
+      if (accountScenario) changedAccount = false;
+      if (retryScenario) { assert.equal(opens, 4); assert.equal(publishedOpens, 0); }
+      releaseOpen();
+      if (retryScenario) await page.getByRole("button", { name: "Retry connecting", exact: true }).click();
+      await until(() => pushes > 0 && JSON.parse(current.file.documentJSON!).content.title === finalTitle && JSON.parse(current.file.documentJSON!).content.body === finalBody, "retry preserves accepted text exactly");
+      await page.waitForFunction(async () => (await (window as any).texttextFlushForNativeClose()).ok === true);
+      assert.equal(opens, retryScenario ? 5 : 2); assert.equal(publishedOpens, 1); assert.equal(nativeCloses, 0);
+      assert.equal(await title.evaluate((node, prior) => node === prior, original), true, "Retry must preserve the actual mounted Title");
+      assert.equal(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith("texttext:vault-item-draft:") && !key.includes(":before-handoff-v2:"))), false);
+    }
+    assert.equal(creates, 1); assert.equal(localWrites, writesBefore); assert.deepEqual(errors, []); assert.deepEqual(fixtureErrors, []);
+    await writeFile(path.join(dir, "observation.json"), JSON.stringify({ flag, opens, publishedOpens, nativeCloses, finalTitle, finalBody, creates, localWrites, writesBefore, errors, fixtureErrors }, null, 2), { flag: "wx" });
+    console.log("PASS certified-only handoff retry/unknown retention. Evidence: " + dir);
+  } else {
   if (readerScenario) {
     await wait(250); assert.equal(opens, 0, "A reader without an editor surface must not acquire a native lease");
     await page.getByRole("button", { name: "Edit story", exact: true }).click();
@@ -186,4 +234,5 @@ try {
   await writeFile(path.join(dir, "observation.json"), JSON.stringify({ scope: "owned Chromium production VaultApp/controller, synthetic ClipboardEvent only for paste; no installed-native/liveaccount claim",
     captureScenario, readerScenario, drainScenario, heldWrites, captureRequests, opens, creates, localWrites, writesAtPause, addedAssetRequests, pushes, acceptedBody, saved, errors, fixtureErrors }, null, 2), { flag: "wx" });
   console.log("PASS held-native-open controls preserve text and reject nontext writes. Evidence: " + dir);
+  }
 } finally { releaseOpen(); releaseCapture(); releaseWrite(); await browser.close(); }

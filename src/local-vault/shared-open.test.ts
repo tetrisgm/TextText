@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { VaultError, type VaultFile, type vaultRequest } from "./bridge";
-import { openLocalSharedSession } from "./shared-open";
+import { HandoffNotOpenedError, openLocalSharedSession } from "./shared-open";
 
 const itemId = "5076e549-e50a-4996-9fac-29dabf007929";
 const file = (hash: string, id = itemId): VaultFile => ({
@@ -59,4 +59,42 @@ it("requires the actual private profile proof after a requested native handoff o
 it("does not request a new profile for ordinary legacy opens", async () => {
   const request = (async <T,>(_method: string, params: Record<string, unknown>): Promise<T> => { expect(params).not.toHaveProperty("localHandoffVersion"); return { sessionToken: "legacy", path: file("old").path, hash: "old" } as T; }) as typeof vaultRequest;
   expect((await openLocalSharedSession(itemId, file("old"), request)).native.sessionToken).toBe("legacy");
+});
+
+it("retries only certified prepublication failures of a verified handoff", async () => {
+  let opens = 0;
+  const request = (async <T,>(): Promise<T> => {
+    if (++opens === 1) throw new VaultError("certified", "handoff_not_open");
+    return { localHandoff: { version: 1, profileVersion: 4 }, sessionToken: "verified", path: file("old").path, hash: "old" } as T;
+  }) as typeof vaultRequest;
+  expect((await openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 })).native.sessionToken).toBe("verified");
+  expect(opens).toBe(2);
+});
+it("retains exact scoped certification after the bounded retry deadline", async () => {
+  let calls = 0;
+  const request = (async () => { calls++; throw new VaultError("certified", "handoff_not_open"); }) as typeof vaultRequest;
+  const error = await openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 }, 0).catch(error => error);
+  expect(error).toBeInstanceOf(HandoffNotOpenedError); expect(error.matches(itemId, file("old"))).toBe(true);
+  expect(error.matches(itemId, file("new"))).toBe(false); expect(calls).toBe(1);
+});
+it("never certifies generic, unknown, account or unrequested native errors", async () => {
+  for (const code of ["503", "profile_busy", "account_changed", "epoch_changed", "handoff_unverified", "handoff_not_open"]) {
+    let calls = 0;
+    const request = (async () => { calls++; throw new VaultError("refused", code); }) as typeof vaultRequest;
+    const error = await openLocalSharedSession(itemId, file("old"), request, 0, code === "handoff_not_open" ? undefined : { version: 1, profileVersion: 4 }, 0).catch(error => error);
+    expect(error).not.toBeInstanceOf(HandoffNotOpenedError); expect(calls).toBe(1);
+  }
+});
+it("stops certified retry when the captured owner changes", async () => {
+  let current = true, calls = 0;
+  const request = (async () => { calls++; current = false; throw new VaultError("certified", "handoff_not_open"); }) as typeof vaultRequest;
+  await expect(openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 }, 1000,
+    () => { if (!current) throw Error("owner changed"); })).rejects.toThrow("owner changed");
+  expect(calls).toBe(1);
+});
+it("does not reuse an earlier certificate after a later uncertain reply", async () => {
+  let calls = 0;
+  const request = (async () => { throw new VaultError("controlled", ++calls === 1 ? "handoff_not_open" : "503"); }) as typeof vaultRequest;
+  const error = await openLocalSharedSession(itemId, file("old"), request, 0, { version: 1, profileVersion: 4 }).catch(error => error);
+  expect(calls).toBe(2); expect(error).not.toBeInstanceOf(HandoffNotOpenedError); expect(error.code).toBe("503");
 });

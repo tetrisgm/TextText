@@ -181,7 +181,7 @@ test('native handoff gates include exact replay, controls, web boundary, and pur
   for (const name of ['verify-native-handoff-controls.mts', 'verify-native-handoff-restart.mts', 'verify-web-handoff-bootstrap.mts']) {
     assert.ok(verifier.includes(name), name);
   }
-  for (const flag of ['--typing-during-promotion', '--typing-during-baseline', '--typing-during-checkpoint', '--continuous', '--ime', '--capture', '--reader', '--drain']) {
+  for (const flag of ['--typing-during-promotion', '--typing-during-baseline', '--typing-during-checkpoint', '--continuous', '--ime', '--capture', '--reader', '--drain', '--certified-once', '--certified-retry', '--unknown-open', '--retry-account-change', '--unverified-open', '--certified-startup']) {
     assert.ok(verifier.includes(flag), flag);
   }
   for (const config of ['vitest.config.mts', 'vitest.client.config.mts']) {
@@ -190,4 +190,13 @@ test('native handoff gates include exact replay, controls, web boundary, and pur
       assert.ok(source.includes(contract), `${config}: ${contract}`);
     }
   }
+});
+
+
+test('official core gate registers the custom gallery title fixture and fingerprints its source', async () => {
+  const verifier = await fs.readFile(new URL('./verify.mjs', import.meta.url), 'utf8');
+  const shell = await fs.readFile(new URL('../scripts/test-sync.sh', import.meta.url), 'utf8');
+  assert.ok(inputs.includes('src'), 'recursive source inventory includes the new editor fixture');
+  assert.ok(shell.includes('exec node sync/verify.mjs "$@"'), 'normal test-sync invocation delegates to the registered core gate');
+  assert.ok(verifier.includes("['--import', 'tsx', 'src/local-vault/__tests__/verify-custom-gallery-title.mts']"));
 });
