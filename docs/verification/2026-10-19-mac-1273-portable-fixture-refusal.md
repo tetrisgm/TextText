@@ -1,0 +1,11 @@
+# Mac 1273 candidate stopped at portable fixture refusal
+
+Frozen product source75f5b4cbc9501d0eabd55eff0851ffd46c0cca80,3,320files/input94ba0737f5e95c36ab772adde8e05c6ace27da661f7ea3360b1ffc25fef4072f/archive2a15170d8eaaf0a964a825412afbe144822fef5dced18c48064c3fe21ade4e20. The normal build recipe exited1 at a required full-sync gate. No normal app bundle, final signing/health receipt or installation was produced. Installed Mac remains1272/af7; the separately verified Windows75f installation is unaffected.
+
+Before refusal: actor20 and all22 official release checks passed; fullsync client/browser mutation controls, native sync, registered native asset11 including actual WK with zero skips, portable Core and Windows bridge completed their required checks. These individual results do not make the overall candidate pass.
+
+`Windows.LiveAcceptance.Tests` then refused setup at AssetProofObservationTests.cs49: TextPackStore.CheckLinks35 threw `IOException: Linked folders are not supported`. Its three fixture roots used Path.GetTempPath directly; Mac TMPDIR uses a /var alias, while the production guard correctly rejects linked ancestors. The correction is test-only canonical temp paths following existing Mac /private/var conventions. Production link guards and owner permissions remain unchanged. A new source freeze and fresh destination must pass the required gate; do not patch or relabel this failed run.
+
+Failure evidence remains at `/private/tmp/texttext-final-local-store-1273-75f5b4cb-20261019/normal-build-failure.json` and the external build log. Failure receipt SHA25633a34740102e0a51c035f7892c194b84768f7b13b4724b46bfd3669d2e0bd5c4; complete log SHA256490303c9cb31fb5b916d12c19243771955134cd267d0c902a596f512aa419e50. All build children exited and owner Package.resolved remains exacteea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb.
+
+A separate test-isolation preparation removes accidental copying of the owner's2.6GiB preinstall backups by test StateStore constructors. It changes only tests and retains real filesystem migration/permission checks; no running frozen source or owner backup was changed. Known-generation installed rename acceptance remains pending. The fresh-item nil/unknown lifecycle gap is [characterized separately](2026-10-19-fresh-item-lifecycle-contract.md), not fixed or bypassed by either test correction.
