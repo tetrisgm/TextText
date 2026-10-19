@@ -70,6 +70,14 @@ export function ownerBindingScope(config) {
   const account = accountScopeHash(origin, accountId);
   return sha256(`texttext-workspace-owner-v1\0${workspaceId}\0${account}`);
 }
+// Modern runtimes deliberately do not request nomodule fallbacks. Unknown
+// module support keeps those scripts required; applicable bytes must be observed.
+export function applicableScriptPaths(doc = globalThis.document, moduleSupport = globalThis.HTMLScriptElement?.supports?.('module') === true) {
+  return [...new Set([...doc.scripts].filter(script => script.src && !(moduleSupport === true && script.noModule))
+    .map(script => new URL(script.src)).filter(url => url.origin === doc.location.origin && url.pathname.startsWith('/_next/static/'))
+    .map(url => 'web' + url.pathname))];
+}
+
 export function createWebAssetObserver(page, origin) {
   const hashes = new Map(), pending = []; let failure;
   page.on('response', response => {
@@ -86,7 +94,7 @@ export function createWebAssetObserver(page, origin) {
     })().catch(() => { failure = 'loaded script identity unavailable or changed'; }));
   });
   return async () => {
-    const paths = await page.evaluate(() => [...new Set([...document.scripts].filter(script => script.src).map(script => new URL(script.src)).filter(url => url.origin === location.origin && url.pathname.startsWith('/_next/static/')).map(url => 'web' + url.pathname))]);
+    const paths = await page.evaluate(applicableScriptPaths);
     await Promise.all(pending);
     if (failure || !paths.length || paths.some(path => !hashes.has(path))) throw new Error(failure ?? 'loaded script evidence incomplete');
     return digestMap(Object.fromEntries(hashes));

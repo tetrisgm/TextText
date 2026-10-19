@@ -228,3 +228,19 @@ test('independent reopen binds exact partial dwell descriptor and completion wit
   for(const patch of [{soakEvidence:undefined},{soakEvidence:{...receipt.soakEvidence,samples:120}},{soakEvidence:{...receipt.soakEvidence,acceptance:'full-T24'}}])assert.throws(()=>verifyReopenIdentity({...receipt,...patch},config));
   assert.throws(()=>verifyReopenIdentity(receipt,{...config,soak:{...soak,cadenceMs:60000}}));
 });
+
+
+test('applicable scripts omit nomodule only after positive runtime module support', async () => {
+  const { applicableScriptPaths } = await import('./identity-observation.mjs');
+  const script = (name, noModule = false, type = '') => ({ src: 'https://texttext.app/_next/static/' + name, noModule, type });
+  const doc = { scripts: [script('classic.js'), script('module.js', false, 'module'), script('fallback.js', true), { src: 'https://elsewhere.test/ignored.js' }], location: { origin: 'https://texttext.app' } };
+  assert.deepEqual(applicableScriptPaths(doc, true), ['web/_next/static/classic.js', 'web/_next/static/module.js']);
+  for (const unknown of [false, undefined, null]) assert.deepEqual(applicableScriptPaths(doc, unknown), ['web/_next/static/classic.js', 'web/_next/static/module.js', 'web/_next/static/fallback.js']);
+});
+
+test('missing applicable classic and module responses still refuse attestation', async () => {
+  for (const path of ['web/_next/static/classic.js', 'web/_next/static/module.js']) {
+    const page = new EventEmitter(); page.evaluate = async () => [path];
+    await assert.rejects(createWebAssetObserver(page, 'https://texttext.app')(), /incomplete/);
+  }
+});
