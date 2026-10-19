@@ -33,6 +33,6 @@ static class LocalHandoffProfileTests {
    Refuse(()=>RetainedReplacementProfile.PrepareLocalHandoff(s,point=>{if(point==boundary)throw new IOException("fixture interruption");}),"handoff upgrade interruption "+boundary);
    RetainedReplacementProfile.PrepareLocalHandoff(s);check(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(Profile(s))!,"profile-v3.json")).SequenceEqual(original),"handoff restart retains exact prior profile "+boundary);
   }
-  File.WriteAllBytes(Profile(a),JsonSerializer.SerializeToUtf8Bytes(marker with{Version=5}));Refuse(()=>RetainedReplacementProfile.SupportsLocalHandoff(a),"future handoff profile refuses without rewriting");
+  File.WriteAllBytes(Profile(a),JsonSerializer.SerializeToUtf8Bytes(marker with{Version=6}));Refuse(()=>RetainedReplacementProfile.SupportsLocalHandoff(a),"future handoff profile refuses without rewriting");
  }
 }

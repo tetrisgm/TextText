@@ -64,7 +64,7 @@ struct FolderCaseRename {
         try RetainedReplacementProfile.verify(root: root, owner: owner)
         let profile = try StableFileSnapshot.read(state.appendingPathComponent("retained-replacement-profile/profile.json"), maximumBytes: 4096)
         guard let fields = try JSONSerialization.jsonObject(with: profile) as? [String: Any],
-              let version = fields["version"] as? Int, version == 2 || version == 3 || version == 4 else { throw Failure.invalid }
+              let version = fields["version"] as? Int, version == 2 || version == 3 || version == 4 || version == 5 else { throw Failure.invalid }
         return try RetainedReplacementProfile.principalHash(owner)
     }
     private func encode(_ record: Record) throws -> Data {

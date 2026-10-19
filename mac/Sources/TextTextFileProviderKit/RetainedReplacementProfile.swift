@@ -104,7 +104,7 @@ enum RetainedReplacementProfile {
         let marker = try JSONDecoder().decode(Marker.self, from: markerBytes)
         let before = try StableFileSnapshot.read(folder.appendingPathComponent("owner-v1.json"), maximumBytes: 4096)
         let original = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self, from: before)
-        guard (1...4).contains(marker.version), marker.ownerVersion == 2, original.version == 1,
+        guard (1...5).contains(marker.version), marker.ownerVersion == 2, original.version == 1,
               owner.rootHash == rootHash, original.rootHash == rootHash,
               marker.originalOwnerHash == digest(before),
               marker.principalHash == (try principalHash(owner)),
@@ -186,7 +186,7 @@ enum RetainedReplacementProfile {
             try verify(root: canonical, owner: owner) {
                 let marker = try JSONDecoder().decode(Marker.self,
                     from: StableFileSnapshot.read(directory(canonical).appendingPathComponent("profile.json"), maximumBytes: 4096))
-                ready = marker.version == 4
+                ready = marker.version >= 4
             }
         }
         if ready { return }
@@ -200,7 +200,7 @@ enum RetainedReplacementProfile {
             let profile = directory(root).appendingPathComponent("profile.json")
             let before = try StableFileSnapshot.read(profile, maximumBytes: 4096)
             let marker = try JSONDecoder().decode(Marker.self, from: before)
-            if marker.version == 4 { return }
+            if marker.version >= 4 { return }
             guard marker.version == 3 else { throw Failure.invalidProfile }
             try publishCreateOnly(before, target: directory(root).appendingPathComponent("profile-v3.json"))
             try observe?("localHandoffProfilePreserved")
@@ -209,6 +209,55 @@ enum RetainedReplacementProfile {
                 try observe?("localHandoffProfile:" + stage)
             }
             try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
+        }
+    }
+    /// Publish the private format floor before a durable shared rename map.
+    /// This protects supported factories using this same device-state directory.
+    static func prepareSharedRenames(root: URL, observe: ((String) throws -> Void)? = nil) throws {
+        guard try LocalVaultDeviceState.supportsLocalHandoff(root: root) else { throw Failure.unsupportedOwner }
+        let root = root.standardizedFileURL.resolvingSymlinksInPath(), state = LocalVaultDeviceState.directory(root: root)
+        // Supported startup must finish legacy migration first. Publishing a
+        // format floor never imports a late portable journal as a side effect.
+        for name in ["sync", "shared-editing"] {
+            let marker = state.appendingPathComponent(".legacy-\(name)-checked")
+            guard (try? StableFileSnapshot.read(marker, maximumBytes: 1)) == Data() else { throw Failure.changed }
+            let fd = Darwin.open(marker.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw Failure.changed }
+            defer { Darwin.close(fd) }
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size == 0, fsync(fd) == 0 else { throw Failure.changed }
+        }
+        try RetainedFileReplacement.flushDirectory(state)
+        try observe?("sharedRenameMigrationReady")
+        try prepareLocalHandoff(root: root)
+        let existingOwner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self,
+            from: StableFileSnapshot.read(state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName), maximumBytes: 4096))
+        var ready = false
+        try verify(root: root, owner: existingOwner) {
+            ready = try JSONDecoder().decode(Marker.self,
+                from: StableFileSnapshot.read(directory(root).appendingPathComponent("profile.json"), maximumBytes: 4096)).version == 5
+        }
+        if ready { return }
+        try withMigrationLease(stateDirectory: state) {
+            let owner = try JSONDecoder().decode(LocalVaultAccountRootOwnership.Owner.self,
+                from: StableFileSnapshot.read(state.appendingPathComponent(LocalVaultAccountRootOwnership.fileName), maximumBytes: 4096))
+            guard owner.version == 2 else { throw Failure.unsupportedOwner }
+            try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
+            let profile = directory(root).appendingPathComponent("profile.json")
+            let before = try StableFileSnapshot.read(profile, maximumBytes: 4096)
+            let marker = try JSONDecoder().decode(Marker.self, from: before)
+            if marker.version == 5 { return }
+            guard marker.version == 4 else { throw Failure.invalidProfile }
+            try observe?("sharedRenameProfileBeforeBackup")
+            try publishCreateOnly(before, target: directory(root).appendingPathComponent("profile-v4.json"))
+            try RetainedFileReplacement.flushDirectory(directory(root))
+            try observe?("sharedRenameProfilePreserved")
+            let next = Marker(version: 5, ownerVersion: marker.ownerVersion, principalHash: marker.principalHash, originalOwnerHash: marker.originalOwnerHash)
+            _ = try RetainedFileReplacement.replace(profile, expectedHash: digest(before), prepared: encoder().encode(next)) { stage in
+                try observe?("sharedRenameProfile:" + stage)
+            }
+            try verifyUnlocked(stateDirectory: state, owner: owner, expectedRootHash: digest(Data(root.path.utf8)))
+            try observe?("sharedRenameProfileReady")
         }
     }
     /// Owned stores call this before projection mutation. Migration and its

@@ -1,0 +1,36 @@
+# Private saved-move profile floor
+
+The Mac and Windows publishers prepare private profile version 5 before a future durable shared rename map. No caller writes that map yet. The Mac path requires configured, non-provider device state outside the vault, verified ownership and completed supported startup migration. It never imports portable legacy journals. Existing migration markers and their directory are flushed before publication. The exact version-four marker is retained create-only and flushed before retained replacement; owner/principal and earlier marker history remain unchanged. Stable floor-five verification uses shared leases, and local handoff preparation accepts five without downgrading. Folder case operations continue at five.
+
+This fences supported older factories using the **same private state directory**. It does not fence raw old Sync initializers, historical readers ignoring profiles, another device, or the CLI's different default private state base. No shared workspace format floor is introduced.
+
+## Current-source checks
+
+`/private/tmp/texttext-shared-rename-profile-transport-final-20261019.log` exited zero: SharedRenameProfileTests 11 methods (one intentional child-helper skip; fixture producer executed), LocalHandoffProfileTests 6 (including the actual pinned previous CLI), FolderPropagationProfileTests 3 and the concurrently prepared typed transport tests 6. The transport parser has separate later hardening and is not part of this profile checkpoint.
+
+Profile cases cover exact v4/owner/pending retention, actual pending native checkpoint/projection preservation and fresh-store reopening, two device bases for the same vault, foreign backup refusal, unconfigured/in-vault-base refusal, and no import/overwrite of unexpected portable legacy pending bytes. Six boundaries (migration-ready, before backup, preserved backup, before swap, after swap and ready) exit an owned child process and recover through a separate nonce-bound child process. The parent checks exact preserved v4 and pending bytes. These are process-interruption checks, not physical power-loss acceptance.
+
+The final gate log SHA256 is `7214489043d27ba89cabd975822ba35cf2a473d0934cf240c6abfd1187a6958f`. Owner Package.resolved was restored exactly, SHA256 `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`. The earlier `texttext-shared-rename-profile-final-20261019.log` failed only a newly added test journal missing required revision/path fields; that fixture was corrected through the actual materialization API.
+
+## Exact previous product factory
+
+A pristine archive of `4eca8353f455d5960e5c4cd592bece0aefff70fa` (archive SHA256 `97985bbecf11b4b8b516fb8739a1d5e5b3c851e649f7606b49c1b720c7adc512`) was compiled with only the diagnostic test overlay in `sync/fixtures/native/shared-rename-old-factory.swift`. This is an old-source factory proof, not an installed binary or sealed release claim.
+
+The real old LocalVaultConnectionController accepted the separately provisioned floor-four control and created its engine while ignoring a valid-JSON invalid-future-map sentinel. At floor five it returned the exact profile verification error, created no engine, made no HTTP request, and preserved the full file/directory inventory. Binding preflight can decode legacy state before the ownership check; refusal precedes engine creation and new-map interpretation, not every JSON decode.
+
+Evidence: `/private/tmp/texttext-shared-rename-old-product-l9x867hz/{migrated-input.json,migrated-result.json,old-factory-migrated.log,source-second-before.json,source-migrated-after.json}`. One actual factory test passed with no skip; all 3159 archived/harness source files remained unchanged. Before/after manifest SHA256 both equal `e6f129e71c3401c1aa61f452686e893c1ece07a55fa27b618c13a6f2234ce5ce`. The factory log SHA256 is `138e2df82c61501a63a541bd9a9a5a11471d3d11efe23132653548f90fbef815`.
+
+The original two inventory REDs are preserved as `old-factory.log` and `old-factory-second.log`: incomplete fixture startup allowed the old binding preflight to create `.legacy-sync-checked` and `.legacy-shared-editing-checked` before refusing five. Fresh fixtures then ran actual production migration before publication. Floor-four engine creation still creates its normal account-adoption lock; floor-five refusal's changed-path list is empty. This result does not erase or relabel the earlier writes.
+
+No live profile, installed app, account, credential or owner content was changed. Durable rename intent/replay, typed terminal-conflict recovery and stopped-path suppression remain later work.
+
+## Windows publisher and exact prior bridge
+
+Windows retains exact `profile-v4.json` and the displaced v4 record, verifies the complete earlier chain, preserves the owner and ordinary pending upload, and uses shared no-op verification once five is ready. Local handoff never downgrades five; folder spelling operations still work at five. Unowned and in-vault state refuse publication. No production caller publishes five yet.
+
+- Portable reader RED refused a complete v5 chain under the previous reader: `/private/tmp/texttext-windows-floor5-red-second-20261019.log`. The initial harness attempt used macOS's symlinked `/var` temporary path and failed before the profile test; it is retained separately.
+- Final portable tests: 16 passing assertions, `/private/tmp/texttext-windows-floor5-green-final-20261019.log`. Four actual abrupt child kills followed by four separate fresh recovery processes preserved prior marker, owner and pending bytes: `/private/tmp/texttext-windows-floor5-process-_kkuhoxz/result.json`.
+- Actual PC: 18 passing assertions, including native shared-reader no-op and folder spelling at five; four abrupt publication kills and separate fresh-process recoveries all passed exact byte-hash checks. The exact old `4eca8353` Core plus actual WindowsBridge/agent/context/interface source compiled with the diagnostic overlay `sync/fixtures/native/shared-rename-old-windows-factory.cs`. Floor-four control created the engine despite the invalid future-map sentinel. Floor five refused at profile verification before engine construction. Both made zero credential-provider calls and retained the complete file/directory inventory unchanged. This is supported factory source execution on Windows, not an installed old app claim.
+- Actual PC result: `/private/tmp/texttext-windows-floor5-pc-evidence-20261019/result.json`, SHA256 `395081b0160839bedf0c38657fdb007bc46f65839076c903d779e01ba64af758`. All 65 source inputs matched before/after. Current Core DLL SHA256 `316bb906640e5bcc1d0ea3c62bd75a9c6551bfec45482fd44a4d317106d23edb`. Input archive SHA256 `3f581324ad5f3c0e6815b3ec8fd196f9bd9867c067c333aaf94dea0cbedd9e72`. Normal installed process 42616 retained its start time.
+
+The first PC launch exceeded cmd.exe's argument limit. A copied script then exposed the SSH shell's absent dotnet PATH. The passing run used the existing project SDK at LocalAppData/TextTextBuild/dotnet without installing or changing SDK configuration. Original failed driver logs remain. Neither failure reached a product assertion. The PC evidence covers the isolated profile/old-factory slice, not the full concurrent source tree or physical six-client acceptance.
