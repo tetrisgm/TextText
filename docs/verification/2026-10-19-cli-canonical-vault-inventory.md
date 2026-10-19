@@ -17,3 +17,15 @@ The server independently checks existing parent spellings under its vault lock b
 - Owner `mac/Package.resolved` was saved and restored as exact bytes; SHA-256 `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`.
 
 These are source/isolated fixture checks plus a read-only deployed inventory observation. No new candidate was installed or deployed, and the installed CLI has not been relabeled as fixed. Native mirror convergence and the broader six-client acceptance remain separate work.
+
+## Fresh rebuilt CLI, read-only follow-up
+
+Three actual fresh processes of the linked debug CLI from reviewed source
+`9e7daa62` listed194 unique physical paths, listed115 under canonical `Notes`,
+and resolved/read the exact recovered fixture path. All exited0. Binary SHA-256:
+`309a608cd9ea6e6705d742f8d1a37e81feb0440f21428bdf25b5cbc0ed70b00f`.
+Receipt: `/private/tmp/texttext-cli-canonical-fresh-process-20261019/receipt.json`,
+SHA-256 `b3d7b43db9a28f9487a57693e7e71428afd7ddaac75a29d6d501f0ab38703c53`.
+The installed shim was untouched. These checks preceded the later owned-fixture
+Trash tests; counts and hashes are point-in-time evidence. No create/write,
+installation, full physical campaign or performance distribution is claimed.

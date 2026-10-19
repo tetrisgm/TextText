@@ -31,6 +31,13 @@ The final independently downloaded hosted archive is `d2471e407bb30ad8f72a4d605c
 
 For the final PC run, Security audits before startup, before reopen, after the second generation and after shutdown found **zero matching Shokunin 4625/4740 events**, from `2026-10-19T05:23:27.3877098Z` through `05:24:24.4192532Z`. Each actual owned Edge process exposed all 16 locked Playwright defaults plus `AutofillAiWalletPrivatePasses` in its effective final feature switch. Only feature switches were recorded, not full command lines. Browser PID changed from 21236 to 22892 under the same owned profile. The normal installed PC app PID42616 remained preserved.
 
+A later read-only direct SSH audit at `05:55:04.4547211Z` found zero matching
+Shokunin4625/4740 events since `05:24:24Z`; sshd was Running and the exact existing
+WebView2 policy remained intact. Boot time was `2026-10-14T02:41:31.0430510Z`.
+Evidence: `/private/tmp/texttext-pc-ssh-later-window-20261019.json`. This extends
+the clean observation by about31 minutes; it does not establish reboot or
+overnight persistence. No configuration or account protection changed.
+
 All diagnostic browser/adapter/harness children exited. Invocation-owned interactive task registrations were removed without stopping unrelated processes; profiles and journals remain retained.
 
 ## Source and evidence
