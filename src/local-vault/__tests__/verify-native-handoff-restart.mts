@@ -142,7 +142,11 @@ try {
   const next = applyVaultCollaboration(state, remoteBytes, [peerUpdate]); state = next.state; remoteBytes = next.bytes;
   restarted = true;
   const restartContext = await browser.newContext(), reopened = await restartContext.newPage(); await bind(reopened);
-  await reopened.addInitScript(values => { for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value); }, storage);
+  // This case exercises an explicit native startup open, not last-location restoration.
+  // Keep every retained draft/journal byte; avoid racing a second automatic open.
+  await reopened.addInitScript(({ values, locationKey }) => {
+    for (const [key, value] of Object.entries(values)) if (key !== locationKey) localStorage.setItem(key, value);
+  }, { values: storage, locationKey: `texttext:vault-location:${root}` });
   await reopened.goto(pathToFileURL(path.join(output, "index.html")).href);
   await reopened.waitForFunction(() => typeof (window as any).texttextOpenFile === "function");
   assert.equal(await reopened.evaluate(path => (window as any).texttextOpenFile(path), notePath), "opened");
