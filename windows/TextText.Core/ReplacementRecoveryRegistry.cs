@@ -30,6 +30,10 @@ public sealed partial class ReplacementRecoveryRegistry
     readonly string root, stateDirectory, directory, rootHash;
     readonly Action<string>? removalObservation;
     internal Action<AccountRootOwnership.Owner,string>? VerifyProfile {get;init;}
+    // Set only inside a store-serialized inventory scope, whose disposal rereads
+    // the exact owner bytes and profile chain and refuses on any change.
+    internal bool PinnedOwner {get;init;}
+    (bool Known,string? Hash) pinnedOwnerHash;
     public ReplacementRecoveryRegistry(string root, string stateDirectory,Action<string>? removalObservation=null)
     {
         this.removalObservation=removalObservation;
@@ -41,6 +45,13 @@ public sealed partial class ReplacementRecoveryRegistry
         RetainedFileReplacement.CheckPath(this.root); RetainedFileReplacement.CheckPath(directory);
     }
     string? OwnerHash()
+    {
+        if(PinnedOwner&&pinnedOwnerHash.Known)return pinnedOwnerHash.Hash;
+        var hash=ReadOwnerHash();
+        if(PinnedOwner)pinnedOwnerHash=(true,hash);
+        return hash;
+    }
+    string? ReadOwnerHash()
     {
         AccountRootOwnership.RequireNoAdoption(stateDirectory);
         var owner = Path.Combine(stateDirectory, AccountRootOwnership.FileName);

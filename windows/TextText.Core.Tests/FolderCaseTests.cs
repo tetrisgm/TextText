@@ -54,6 +54,21 @@ static class FolderCaseTests
 
         await Scenario("pre-pin source replacement refuses without renaming the foreign directory",()=>{var store=Owned(temp,"pre-pin-race");store.EnsureFolders(["Notes"]);File.WriteAllText(store.Resolve("Notes/original.txt"),"original before pin");Hook(store,point=>{if(point!="beforeSourcePin")return;Directory.Move(store.Resolve("Notes"),store.Resolve("original-before-pin"));Directory.CreateDirectory(store.Resolve("Notes"));File.WriteAllText(store.Resolve("Notes/foreign.txt"),"foreign before pin");});var refused=false;try{store.EnsureFolders(["notes"]);}catch(IOException){refused=true;}if(!refused||!ExactFolder(store,"Notes")||ExactFolder(store,"notes")||File.ReadAllText(store.Resolve("Notes/foreign.txt"))!="foreign before pin"||File.ReadAllText(store.Resolve("original-before-pin/original.txt"))!="original before pin")throw new Exception("pre-pin foreign directory was renamed or original bytes lost");var row=store.FolderRenameRecoveryList().Single();if(row.Resolved)throw new Exception("pre-pin mismatch silently completed");return Task.CompletedTask;});
         await Scenario("nested future consent fields refuse even with matching durable byte hash",()=>{var store=Conflict(temp,"consent-future");var row=store.FolderRenameRecoveryList().Single();store.ResolveFolderRename(row.Id,row.FromPath,row.ToPath,row.Inspection);var consentPath=Path.Combine(store.StateDirectory,"folder-case","consents",row.Id+".json");var consent=JsonNode.Parse(File.ReadAllBytes(consentPath))!;consent["From"]!["Future"]=1;var bytes=JsonSerializer.SerializeToUtf8Bytes(consent);File.WriteAllBytes(consentPath,bytes);var journalPath=Path.Combine(store.StateDirectory,"folder-case",row.Id+".json");var journal=JsonNode.Parse(File.ReadAllBytes(journalPath))!;journal["ConsentHash"]=TextPackStore.Hash(bytes);File.WriteAllBytes(journalPath,JsonSerializer.SerializeToUtf8Bytes(journal));var refused=false;try{_=store.FolderRenameRecoveryRead(row.Id);}catch(InvalidDataException){refused=true;}if(!refused||!File.ReadAllBytes(consentPath).SequenceEqual(bytes))throw new Exception("future nested consent accepted or rewritten");return Task.CompletedTask;});
+        await Scenario("inventory checks folder history once and refuses a change during the scan",()=>{
+            var store=Owned(temp,"scan-scope");store.EnsureFolders(["Notes"]);store.EnsureFolders(["notes"]);
+            for(var i=0;i<300;i++){using var output=new MemoryStream();using(var zip=new ZipArchive(output,ZipArchiveMode.Create,true))using(var writer=new StreamWriter(zip.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: scope-"+i+"\n---\n");File.WriteAllBytes(store.Resolve("notes/item-"+i+".textpack"),output.ToArray());}
+            var hook=typeof(TextPackStore).GetProperty("InventoryObservationForTesting",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+            var checks=0;hook.SetValue(store,(Action<string>)(phase=>{if(phase=="folderCaseChecked")checks++;}));
+            var timing=System.Diagnostics.Stopwatch.StartNew();var files=store.Scan();Console.WriteLine("FOLDER_CASE_SCOPE_300_MS "+timing.ElapsedMilliseconds);
+            if(files.Count!=300||checks!=1)throw new Exception("scan did not share one folder-case check across all files: files="+files.Count+" checks="+checks);
+            var journal=Directory.GetFiles(Path.Combine(store.StateDirectory,"folder-case"),"*.json").Single();var original=File.ReadAllBytes(journal);
+            hook.SetValue(store,(Action<string>)(phase=>{if(phase=="scanned"){var value=JsonNode.Parse(original)!;value["State"]="conflict";File.WriteAllBytes(journal,JsonSerializer.SerializeToUtf8Bytes(value));}}));
+            var refused=false;try{_=store.Scan();}catch(InvalidDataException){refused=true;}
+            hook.SetValue(store,null);
+            var later=false;try{_=store.Scan();}catch(IOException){later=true;}
+            File.WriteAllBytes(journal,original);
+            if(!refused||!later||store.Scan().Count!=300)throw new Exception("folder history change during inventory was accepted");
+            return Task.CompletedTask;});
         check(failures.Count==0,"all folder case scenarios pass: "+string.Join("; ",failures));
     }
 }

@@ -243,15 +243,20 @@ public sealed partial class TextPackStore
             using var verification=RetainedReplacementProfile.HasPublishedMarker(StateDirectory)
                 ?new RetainedReplacementProfile.InventoryVerification(StateDirectory,Hash(Encoding.UTF8.GetBytes(Root))):null;
             inventoryVerification=verification;
+            var outerFolderScope=folderCaseScope is not null;
+            if(!outerFolderScope)folderCaseScope=(false,null);
             try {
-                inventoryReplacements=Replacements;
+                inventoryReplacements=new(Root,StateDirectory,RemovalObservationForTesting){VerifyProfile=VerifyInventoryProfile,PinnedOwner=verification is not null};
                 InventoryObservationForTesting?.Invoke("profileVerified");
                 FolderCases.VerifyExistingProfile();
                 if(noRecoveryItems is not {Count:>0})AssertFolderRenameReadable();
-                // Per-entry recovery remains enabled; only the profile chain is
-                // shared within this synchronous, store-serialized scan.
-                CheckLinks(Root);Visit(Root);InventoryObservationForTesting?.Invoke("scanned");LastScanErrors=errors.ToArray();
-            } finally {inventoryVerification=null;inventoryReplacements=null;}
+                // Per-entry recovery remains enabled; the profile chain and the
+                // folder-case outcome are shared within this synchronous,
+                // store-serialized scan and rechecked before it returns.
+                CheckLinks(Root);Visit(Root);InventoryObservationForTesting?.Invoke("scanned");
+                if(!outerFolderScope)VerifyFolderCaseScopeUnchanged();
+                LastScanErrors=errors.ToArray();
+            } finally {inventoryVerification=null;inventoryReplacements=null;if(!outerFolderScope)folderCaseScope=null;}
         }return new(found.Values.ToArray(),folders.Order(StringComparer.Ordinal).ToArray());
     }
 

@@ -21,7 +21,7 @@ public sealed partial class TextPackStore
                 ?new RetainedReplacementProfile.InventoryVerification(StateDirectory,Hash(System.Text.Encoding.UTF8.GetBytes(Root))):null;
             inventoryVerification=verification;
             try {
-                inventoryReplacements=Replacements;
+                inventoryReplacements=new(Root,StateDirectory,RemovalObservationForTesting){VerifyProfile=VerifyInventoryProfile,PinnedOwner=verification is not null};
                 InventoryObservationForTesting?.Invoke("blockedProfileVerified");
                 return ReplacementBlockedItemsUnshared(inspectOnlyItems,generationScope);
             } finally {inventoryVerification=null;inventoryReplacements=null;}
