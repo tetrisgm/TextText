@@ -1,7 +1,11 @@
 import type { VaultListing } from './bridge';
+import { folderForItem } from './folders';
 import { locateVaultItem } from './item-location';
 import { canCreateInVaultFolder, type VaultAccess } from './shared-vaults';
-export function listingCapabilities(listing: VaultListing | null, access: VaultAccess | null, native: boolean) {
+/** An item the store just created for this session. Its listing row can lag
+ * behind a busy native inventory scan. */
+export type CreatedVaultItem = { root: string; itemId: string; path: string };
+export function listingCapabilities(listing: VaultListing | null, access: VaultAccess | null, native: boolean, created: CreatedVaultItem | null = null) {
   const explicit = typeof listing?.fullAccess === 'boolean';
   // Old local-only adapters have no permission metadata. New account adapters
   // always provide explicit false until their first authenticated manifest.
@@ -11,20 +15,26 @@ export function listingCapabilities(listing: VaultListing | null, access: VaultA
   return {
     fullAccess: full,
     manageFiles: full && writeAll,
-    create(folder: string) {
-      if (!explicit) return legacyLocal || canCreateInVaultFolder(access, folder);
-      return full ? writeAll : (listing.writableFolders ?? []).some(parent => folder === parent || folder.startsWith(`${parent}/`));
-    },
+    create,
     edit,
     /** A path is a location. When the listing no longer has a row at the opened
      * path but identifies the same item at exactly one other path, that row
-     * answers; an unknown identity stays denied. */
+     * answers; an unknown identity stays denied. The one exception is the item
+     * this session just created: until any row names its path or identity, it
+     * may be edited exactly where its folder still accepts new content. */
     editItem(itemId: string | null, path: string) {
       if (!listing || listing.items.some(entry => entry.path === path)) return edit(path);
       const located = locateVaultItem(itemId, listing);
-      return edit(located ? located.path : path);
+      if (located) return edit(located.path);
+      if (itemId && created && created.root === listing.root && created.itemId === itemId && created.path === path &&
+          !listing.items.some(entry => entry.itemId === itemId)) return create(folderForItem(path));
+      return edit(path);
     },
   };
+  function create(folder: string) {
+    if (!explicit) return legacyLocal || canCreateInVaultFolder(access, folder);
+    return full ? writeAll : (listing.writableFolders ?? []).some(parent => folder === parent || folder.startsWith(`${parent}/`));
+  }
   function edit(path: string) {
     const item = listing?.items.find(entry => entry.path === path);
     if (typeof item?.canEditContent === 'boolean') return item.canEditContent;

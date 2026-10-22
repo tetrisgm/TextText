@@ -15,7 +15,7 @@ import { reconcileFolderLocation } from "./folder-location";
 import { newItemPack } from "./new-item-pack";
 import { loadFolderItemDefault, folderStarter } from "./folder-item-default";
 import { useShortcutLabel } from "@/components/accessibility/useShortcutLabel";
-import { listingCapabilities } from "./listing-capabilities";
+import { listingCapabilities, type CreatedVaultItem } from "./listing-capabilities";
 import { workspaceIdFromWebRoot } from "./web-workspace-root";
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { retryBootstrap, isTransientBootstrapError } from "./bootstrap-retry";
@@ -892,6 +892,13 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const restoredLocationRoot = useRef("");
   const [locationReadyRoot, setLocationReadyRoot] = useState("");
   const [newNoteFocus, setNewNoteFocus] = useState<{ file: VaultFile; root: string; itemId: string; origin: HTMLElement | null; focusPending: boolean; focusTitle?: boolean; awaitSharedMode: boolean } | null>(null);
+  // The store already accepted this item. Keep it editable while a busy native
+  // inventory scan delays its listing row; the listing answers once it names it.
+  const [createdItem, setCreatedItem] = useState<CreatedVaultItem | null>(null);
+  const rememberCreated = useCallback((file: VaultFile, root: string | undefined) => {
+    const itemId = selectedIdentity(file);
+    setCreatedItem(root && itemId ? { root, itemId, path: file.path } : null);
+  }, []);
   const noteDraftActive = useRef(false);
   const [noteEditPath, setNoteEditPath] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -1052,7 +1059,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     durabilityResultRef.current = durabilityResult ?? (async () => null);
     localFileModeRef.current = mode === "local-file";
   }, []);
-  const capabilities = listingCapabilities(listing, access, allowFolderPicker);
+  const capabilities = listingCapabilities(listing, access, allowFolderPicker, createdItem);
   const canCreate = capabilities.create(destinationFolder.trim());
   const canEditSelected = Boolean(selected && capabilities.editItem(selectedIdentity(selected), selected.path));
   useEffect(() => {
@@ -1111,6 +1118,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
           if (selectedRef.current !== opened) relocated = null;
         }
         setDestinationFolder(folder => reconcileFolderLocation(folder, previous, value));
+        setCreatedItem(created => created && (created.root !== value.root || value.items.some(item => item.itemId === created.itemId || item.path === created.path)) ? null : created);
         if (opened && relocated && relocated.path !== opened.path) {
           const next = { ...opened, path: relocated.path };
           selectedRef.current = next; setSelectedState(next);
@@ -1214,6 +1222,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     } else created = await vaultRequest<VaultFile>("create", { title: firstText, folder });
     setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin,
       focusPending: true, focusTitle: true, awaitSharedMode: allowFolderPicker });
+    rememberCreated(created, listing?.root);
     setSelected(created);
     refresh();
   });
@@ -1284,6 +1293,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     if (stayInList) onCreated?.();
     else {
       setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: folder === "Blog" || folder === "Notes" && !initialBody, awaitSharedMode: allowFolderPicker });
+      rememberCreated(created, listing?.root);
       setSelected(created); setDestinationFolder(folder);
     }
     refresh();
@@ -1833,6 +1843,7 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         const starter = templateStarterDocument(example, selectedTemplate);
         const created = await vaultRequest<VaultFile>("write", writePayload(cloned, starter, { template: selectedTemplate, sourceJSON: source.templateAuthoringSourceJSON }));
         setNewNoteFocus({ file: created, root: listing?.root ?? "", itemId: packIdentity(created.markdown), origin: focusedControl(), focusPending: true, focusTitle: experience === "article" || experience === "note", awaitSharedMode: allowFolderPicker });
+        rememberCreated(created, listing?.root);
         setSelected(created); setDestinationFolder(folder); setTemplatePicker(false); refresh();
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}

@@ -44,8 +44,40 @@ All edits used the normal UI: UIA focus and real SendKeys. All closes used `Clos
 
 Both packs contain the exact typed title and body in `document.json` and in the projection. `Notes/Untitled 25.textpack` is an empty note created by an extra New note action during sampling. It is retained.
 
+## Hosted readback
+
+Independent authenticated reads through the Mac's signed-in `texttext` CLI (`search` and `read --json` only, no writes) found all three items with an exact title and body:
+- `77f489c0` at `Notes/Untitled 23.textpack`
+- C1 `ebba9c44` at `Notes/Untitled 24.textpack`
+- C2 `17815179` at `Notes/Untitled 26.textpack`
+
+## Follow-up scan cost (`680a8581`)
+
+After `67efe404`, a later launch still reached the bootstrap timeout. Stacks showed per-file `TextPackStore.Read` work during sync scans:
+- `FolderCaseRename.AssertReadable`, which took the exclusive lease and read and validated every journal, twice per file
+- `ReplacementRecoveryRegistry.OwnerHash`, which reread the owner with reparse checks
+
+Within one store-serialized scan, the first folder-case outcome, whether success or error, now stands for every file. The scan repeats the check before returning and refuses the result if the outcome changed. Scoped registries reuse the owner hash that `InventoryVerification` pins and rereads at disposal.
+
+The new regression `FolderCaseTests` "inventory checks folder history once and refuses a change during the scan" checks one folder-case check across 300 files and refuses a journal flipped to conflict mid-scan. The Core suite and every `build.ps1` gate passed.
+
+The 1,100-file inventory benchmark went from 4,710 ms to 1,982 ms. A redundant-rescan patch for `ProtectedPathDecision` would save about 1 of roughly 11 scans per pass. It was prepared and deliberately not landed, because it is low value and its test is fragile.
+
+## New notes editable during slow listing (`listing-capabilities`)
+
+On Windows the native listing always sends an explicit `fullAccess`. So a note the store had just created stayed read-only until its listing row arrived, which took 17–90 s behind busy scans.
+
+`listingCapabilities` now accepts the item this session just created, matched by root, identity and path. It is editable only while no listing row names that path or identity, and only where its folder still accepts new content. Once a row appears, the listing decides. Viewers, other roots, other identities and paths, and unwritable folders stay denied. The native store still enforces every write.
+
+Tests:
+- 3 new `listing-capabilities` tests.
+- Windows `build.ps1` shared client suite 777/777, TypeScript, and every other gate passed (candidate `candidate-0c0c29a8fa734fb99cd6977e5942dce7`).
+- `vitest run src/local-vault` on the PC: 577/612. All 35 failures are in `epoch-recovery-client.test.ts`, whose Node store fixture fsyncs a directory, which Windows refuses (`EPERM`). This is unrelated to the change. Mac-side `npm test` was not run because the Mac was unreachable.
+
+Installed acceptance C3 (final install): after New note, the note was editable and typed while the startup "connection is taking longer than expected" notice was still visible. First-session close exited in 3.5 s. `Notes/Untitled 27.textpack` holds the exact title and body. A fresh reopen rendered them exactly at 12.8 s, and close from the reopened note exited in 0.1 s.
+
 ## Remaining measured shortfalls (not fixed here)
 
-- A newly created note stays read-only, or shows "Opening document…", until the native listing and open complete: 16.8 s, about 40 s, and about 90 s after one launch. Stacks show the store held by `SyncEngine.SyncAsync → ScanForSync → ScanInventory` full-workspace scans. This misses the T25 targets (cached workspace usable p95 < 2 s) and the owner's "keep working during startup" priority. It is the next Windows task.
+- Startup can still show the 8 s bootstrap timeout notice while sync scans hold the store; a restored note can show "Opening document…" for tens of seconds. New notes are now editable meanwhile. Stacks show the store held by `SyncEngine.SyncAsync → ScanForSync → ScanInventory` full-workspace scans. This misses the T25 targets (cached workspace usable p95 < 2 s) and the owner's "keep working during startup" priority. It is the next Windows task.
 - Hosted readback of C1 and C2 was not independently checked here; the Mac became unreachable over SSH during this session.
 - This checkout initially failed hash-pinned node tests because Windows Git's system `core.autocrlf=true` produced CRLF files. Builds need a repository-local `core.autocrlf=false` checkout.
