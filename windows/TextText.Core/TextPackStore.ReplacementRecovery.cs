@@ -13,6 +13,23 @@ public sealed partial class TextPackStore
     public IReadOnlyDictionary<string,Guid> ReplacementBlockedItems(IReadOnlySet<string>? inspectOnlyItems=null,ProtectedRenameScope? generationScope=null)
     {
         lock(gate) {
+            // Sync state saves inspect every entry while holding the store. Share
+            // the profile chain within this pass, as inventory scans do; the
+            // scope rechecks owner and profile before returning.
+            if(inventoryVerification is not null) return ReplacementBlockedItemsUnshared(inspectOnlyItems,generationScope);
+            using var verification=RetainedReplacementProfile.HasPublishedMarker(StateDirectory)
+                ?new RetainedReplacementProfile.InventoryVerification(StateDirectory,Hash(System.Text.Encoding.UTF8.GetBytes(Root))):null;
+            inventoryVerification=verification;
+            try {
+                inventoryReplacements=Replacements;
+                InventoryObservationForTesting?.Invoke("blockedProfileVerified");
+                return ReplacementBlockedItemsUnshared(inspectOnlyItems,generationScope);
+            } finally {inventoryVerification=null;inventoryReplacements=null;}
+        }
+    }
+    IReadOnlyDictionary<string,Guid> ReplacementBlockedItemsUnshared(IReadOnlySet<string>? inspectOnlyItems,ProtectedRenameScope? generationScope)
+    {
+        {
             var result=new Dictionary<string,Guid>();
             foreach(var entry in Replacements.Entries()) {
                 if(inspectOnlyItems?.Contains(entry.ItemId)==true) {

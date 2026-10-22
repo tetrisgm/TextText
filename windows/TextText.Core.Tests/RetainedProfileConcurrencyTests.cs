@@ -34,7 +34,34 @@ static class RetainedProfileConcurrencyTests
         assert(overlappingVerify&&noOpPrepare&&writerRefused,"stable verification permits readers and no-op preparation while excluding actual floor migration");
         assert(File.Exists(Path.Combine(store.StateDirectory,"retained-replacement-profile.lock"))&&!File.Exists(Path.Combine(store.Root,"retained-replacement-profile.lock")),"migration lease is device-private and subsequent prepare/verify have no nested lease deadlock");
         InventoryScope(temp,assert);
+        BlockedItemsScope(temp,assert);
 
+    }
+    // Sync state saves check every retained entry while holding the store.
+    // Startup listing and editor close wait behind that pass.
+    static void BlockedItemsScope(string temp,Action<bool,string> assert)
+    {
+        var store=new TextPackStore(Path.Combine(temp,"blocked-profile-root"),Path.Combine(temp,"blocked-profile-state"));
+        AccountRootOwnership.Open(store,new Uri("https://texttext.test"),"blocked-workspace","blocked-account");
+        RetainedReplacementProfile.PrepareObservedAbsenceRename(store);
+        var registry=new ReplacementRecoveryRegistry(store.Root,store.StateDirectory);
+        for(var i=0;i<200;i++) {
+            var bytes=System.Text.Encoding.UTF8.GetBytes("blocked "+i);
+            File.WriteAllBytes(Path.Combine(store.Root,"item-"+i+".textpack"),bytes);
+            registry.Register(Guid.NewGuid(),"blocked-"+i,"item-"+i+".textpack",TextPackStore.Hash(bytes),TextPackStore.Hash(bytes));
+        }
+        var hook=typeof(TextPackStore).GetProperty("InventoryObservationForTesting",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+        var starts=0;hook.SetValue(store,(Action<string>)(phase=>{if(phase=="blockedProfileVerified")starts++;}));
+        var timing=System.Diagnostics.Stopwatch.StartNew();var blocked=store.ReplacementBlockedItems();
+        Console.WriteLine("BLOCKED_ITEMS_200_FLOOR6_MS "+timing.ElapsedMilliseconds);
+        assert(starts==1&&blocked.Count==200,"blocked-item inspection shares one profile verification and still inspects every entry");
+        var profile=Path.Combine(store.StateDirectory,"retained-replacement-profile","profile.json");var original=File.ReadAllBytes(profile);
+        hook.SetValue(store,(Action<string>)(phase=>{if(phase=="blockedProfileVerified")File.WriteAllText(profile,"{}");}));
+        assert(Refuses(()=>store.ReplacementBlockedItems()),"profile tampering during blocked-item inspection refuses the result");
+        hook.SetValue(store,null);
+        assert(Refuses(()=>store.ReplacementBlockedItems()),"a later pass revalidates the changed profile");
+        File.WriteAllBytes(profile,original);
+        assert(store.ReplacementBlockedItems().Count==200,"restored profile verifies again");
     }
     static void InventoryScope(string temp,Action<bool,string> assert)
     {
