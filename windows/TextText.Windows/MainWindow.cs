@@ -228,8 +228,9 @@ public sealed partial class MainWindow : Window
         var policyPageReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         core.NavigationCompleted += (_,e) => {
             if(e.IsSuccess && IsLocal(core.Source))policyPageReady.TrySetResult();
-            else policyPageReady.TrySetException(new IOException("The workspace page did not load."));
+            else { policyPageReady.TrySetException(new IOException("The workspace page did not load.")); nextBridge?.InitialViewFailed(); }
         };
+        core.ProcessFailed += (_,_) => nextBridge?.InitialViewFailed();
         core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreHostObjectsAllowed = false;
         core.Settings.IsPasswordAutosaveEnabled = false;
@@ -256,7 +257,7 @@ public sealed partial class MainWindow : Window
         var context = new WorkspaceContext(nextRoot, active.WorkspaceId, Origin,
             () => Task.FromResult(active.Token),
             (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId,
-            () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task));
+            () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task), DeferInitialSync: true);
         INativeWorkspaceBridge? CreateBridge() => factory?.Invoke(context);
         Task<INativeWorkspaceBridge?> Construct() => stageInitial
             ? BridgeConstruction.CreateAsync(CreateBridge, IsCurrentOpen, lifetime.Token)

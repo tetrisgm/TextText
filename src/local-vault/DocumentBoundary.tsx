@@ -12,6 +12,7 @@ export class DocumentBoundary extends Component<{
   private pending = false;
   private mounted = false;
   static getDerivedStateFromError(error: Error) { return { error: error.message }; }
+  componentDidCatch() { window.dispatchEvent(new Event("texttext:initial-view-terminal")); }
   componentDidMount() {
     this.mounted = true;
     window.addEventListener("texttext:vault-changed", this.changed);

@@ -11,10 +11,11 @@ export function NativeConnection({ root }: { root: string }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
   const [connectionFailure, setConnectionFailure] = useState("");
+  const [startupFailure, setStartupFailure] = useState("");
 
   useEffect(() => {
     let active = true, receivedStatus = false;
-    setConnection(null); setFailure(""); setConnectionFailure("");
+    setConnection(null); setFailure(""); setConnectionFailure(""); setStartupFailure("");
     const update = (event: Event) => {
       const next = (event as CustomEvent<Connection>).detail;
       if (active && next && typeof next.connected === "boolean" && typeof next.available === "boolean") {
@@ -22,10 +23,12 @@ export function NativeConnection({ root }: { root: string }) {
       }
     };
     window.addEventListener("texttext:vault-sync-status", update);
+    const startupFailed = () => { if (active) setStartupFailure("Initial sync could not start. Reopen the workspace to retry."); };
+    window.addEventListener("texttext:initial-view-failed", startupFailed);
     void vaultRequest<Connection>("connection").then((next) => {
       if (active && !receivedStatus) { setConnection(next); setConnectionFailure(""); }
     }).catch((error: Error) => { if (active && !receivedStatus) setConnectionFailure(error.message); });
-    return () => { active = false; window.removeEventListener("texttext:vault-sync-status", update); };
+    return () => { active = false; window.removeEventListener("texttext:vault-sync-status", update); window.removeEventListener("texttext:initial-view-failed", startupFailed); };
   }, [root]);
 
   const perform = async (method: "openWeb" | "signIn" | "signOut" | "settings" | "recovery") => {
@@ -44,11 +47,13 @@ export function NativeConnection({ root }: { root: string }) {
     actions={<>
       {notice && <div className="vault-account-message" role="status">
         <p>{notice.message}</p>
+        {notice.folders && <ul>{notice.folders.map((folder, index) => <li key={index}>{folder}</li>)}</ul>}
         {notice.kind === "authentication" && <button type="button" disabled={busy} onClick={() => void perform("signIn")}>Sign in again</button>}
       </div>}
       {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}
       {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
       {connectionFailure && <div className="vault-account-message" role="alert"><p>{connectionFailure}</p></div>}
+      {startupFailure && <div className="vault-account-message" role="alert"><p>{startupFailure}</p></div>}
       {failure && <div className="vault-account-message" role="alert"><p>{failure}</p></div>}
     </>} />;
 }

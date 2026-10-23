@@ -142,12 +142,15 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     static string? Optional(JsonElement p, string key) => p.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     static object Result(PackFile file) => new { path = file.Path, hash = file.Hash };
 
+    readonly TaskCompletionSource initialForeground = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public void InitialViewFailed() => initialForeground.TrySetResult();
     async Task Run()
     {
         // Busy or deferred admission does not discharge a yielded full pass.
         var rerunRequired = false;
         var failures = 0; var localWake = false; var lastRemotePass = DateTimeOffset.MinValue;
         try {
+            if(context.DeferInitialSync)await initialForeground.Task.WaitAsync(lifetime.Token);
             while (!lifetime.IsCancellationRequested) {
                 var outcome="success";
 
@@ -242,6 +245,13 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     {
         using var requestLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
         ct=requestLifetime.Token;ct.ThrowIfCancellationRequested();
+        // Initialization may fail before the renderer knows its scope. The host
+        // accepts this only from its current local view, never another bridge.
+        if(method=="files.startupFailed") {initialForeground.TrySetResult();return null;}
+        if(method=="files.startupComplete") {
+            if(Required(p,"root")!=context.Root||Required(p,"workspaceId")!=context.WorkspaceId)throw new InvalidDataException("The startup workspace changed.");
+            initialForeground.TrySetResult();return null;
+        }
         if (method == "agentToolResult") {
             if (agentTools.TryGetValue(Required(p, "requestId"), out var tool)) {
                 var error = Optional(p, "error");
@@ -256,10 +266,14 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         // holds it for the whole manifest download), and the renderer abandons a
         // bootstrap listing after 8 seconds. Reads only touch the file store under
         // its own lock, the cached inventory, and gate-bounded sync state.
-        if (IsRead(method)) return await Task.Run(() => Execute(method, p, ct), ct);
-        await requests.WaitAsync(ct);
+        if (IsRead(method)) {
+            try { return await Task.Run(() => Execute(method, p, ct), ct); }
+            catch { if(method is "files.list" or "files.read" or "files.ready")initialForeground.TrySetResult();throw; }
+        }
+        try { await requests.WaitAsync(ct); }
+        catch { if(method=="collaboration.open")initialForeground.TrySetResult();throw; }
         try { return await Task.Run(() => Execute(method, p, ct), ct); }
-        finally { requests.Release(); }
+        finally { requests.Release();if(method=="collaboration.open")initialForeground.TrySetResult(); }
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
@@ -394,6 +408,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 // after the pass reports status, so answering "not ready" is safe.
                 var itemId = Required(p, "itemId");
                 var ready = await BoundedGateRead(gated => sync.IsReadyAsync(itemId, gated), ct);
+                if(ready!=true)initialForeground.TrySetResult();
                 return new { ready = ready ?? false };
             }
             case "files.list": {

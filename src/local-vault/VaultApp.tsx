@@ -475,6 +475,9 @@ export function OpenVaultEditor(props: VaultEditorProps & { awaitSharedMode?: bo
   const markdown = initial.markdown;
   const [mode, setMode] = useState<VaultCollaborationConfig | "local" | null>(null);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (mode === "local" || error) window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+  }, [mode, error]);
   const [retry, setRetry] = useState(0);
   const [retryable, setRetryable] = useState(false);
   const [handoffRetry, setHandoffRetry] = useState(0);
@@ -1083,6 +1086,12 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
     catch (reason) { return { subscription: null, error: reason instanceof Error ? reason.message : "This feed subscription could not be opened." }; }
   }, [selected]);
   const feedFolder = destinationFolder.trim();
+  useEffect(() => {
+    if (listingError || (listing?.root && locationReadyRoot === listing.root &&
+        (!selected || selectedFeed.subscription || selectedFeed.error))) {
+      window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+    }
+  }, [listingError, listing?.root, locationReadyRoot, selected, selectedFeed]);
   const canKeepFeed = canReadFeeds && capabilities.create(feedFolder);
   useEffect(() => {
     if (!selected || (!selectedFeed.subscription && !selectedFeed.error)) return;

@@ -10,6 +10,50 @@ import { readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 afterEach(() => { vi.unstubAllGlobals(); });
+it("releases native initial admission when status fails before terminal listeners exist", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const view = native(method => {
+    if (method === "native.status") throw new Error("Status failed");
+    if (method === "files.startupFailed") return null;
+    throw new Error(`Unexpected ${method}`);
+  });
+  await expect(createWindowsVaultTransport(view)).rejects.toThrow("Status failed");
+  expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.startupFailed"]);
+  expect(view.listeners.size).toBe(0);
+});
+it("sends initial view completion with captured native scope and removes its listener on retirement", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const view = native(method => {
+    if (method === "native.status") return { available: true, workspaceId: "captured", root: "C:\\Vault" };
+    if (method === "files.startupComplete") return null;
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+  window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+  await vi.waitFor(() => expect(view.messages.filter(m => m.method === "files.startupComplete")).toHaveLength(1));
+  expect(view.messages.at(-1)?.params).toEqual({ root: "C:\\Vault", workspaceId: "captured" });
+  transport.destroy();
+  window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+  expect(view.messages.filter(m => m.method === "files.startupComplete")).toHaveLength(1);
+});
+it("reports rejected initial admission without retry spam or claiming connection readiness", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  let failures = 0;
+  window.addEventListener("texttext:initial-view-failed", () => failures++);
+  const view = native(method => {
+    if (method === "native.status") return { available: true, workspaceId: "captured", root: "C:\\Vault" };
+    throw new Error("Native admission rejected");
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+    await vi.waitFor(() => expect(failures).toBe(1));
+    await expect(transport.request("connection", {})).rejects.toThrow("Initial sync could not start");
+    window.dispatchEvent(new Event("texttext:initial-view-terminal"));
+    expect(view.messages.filter(m => m.method === "files.startupComplete")).toHaveLength(1);
+  } finally { transport.destroy(); }
+});
 it.each(["list", "open"])("uses one native snapshot for %s items, folders and permissions", async method => {
   vi.stubGlobal("window", new EventTarget());
   let reads = 0;

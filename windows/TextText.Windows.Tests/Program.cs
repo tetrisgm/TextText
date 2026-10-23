@@ -16,6 +16,7 @@ await PrivateActorWorkspaceTests.Run(Assert);
 if(args.Contains("--isolated-workspace-only"))return failures==0?0:1;
 #endif
 if(args.Contains("--feed-proposal-only")){await WindowsFeedProposalTests.Run(Assert);return failures==0?0:1;}
+if(args.Contains("--initial-foreground-only")){await InitialForegroundTests.Run(Path.Combine(Path.GetTempPath(),"texttext-initial-"+Guid.NewGuid()),Assert);return failures==0?0:1;}
 await BridgeConstructionTests.Run(Assert);
 await AccountIdentityTests.Run(Assert);
 await WindowsFeedProposalTests.Run(Assert);
@@ -134,6 +135,7 @@ try {
     await ReadinessAdmissionTests.Run(temp,Assert);
     await ReadinessAdmissionTests.RunFlood(temp,Assert);
     await ReadinessAdmissionTests.Arbitration(Path.Combine(temp,"arbitration"),Assert);
+    await InitialForegroundTests.Run(temp,Assert);
 } finally { try { Directory.Delete(temp, true); } catch { /* best effort */ } }
 Console.WriteLine(failures == 0 ? "All Windows bridge startup tests passed." : failures + " failure(s).");
 return failures == 0 ? 0 : 1;

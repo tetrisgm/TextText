@@ -54,8 +54,24 @@ export function createNativeRPC(view: NativeView) {
 
 export async function createWindowsVaultTransport(view: NativeView) {
   const rpc = createNativeRPC(view);
-  const status = await rpc.request<Status>("native.status");
-  if (!status.available || !status.workspaceId) throw new Error("Sign in to open your workspace.");
+  let status: Status;
+  try {
+    status = await rpc.request<Status>("native.status");
+    if (!status.available || !status.workspaceId) throw new Error("Sign in to open your workspace.");
+  } catch (error) {
+    try { await rpc.request("files.startupFailed"); }
+    catch (releaseError) { throw new AggregateError([error, releaseError], "Workspace initialization failed and sync could not start. Reopen the workspace."); }
+    finally { rpc.destroy(); }
+    throw error;
+  }
+  let startupSent = false, startupFailed = false, retired = false;
+  const startupComplete = () => {
+    if (startupSent || retired) return;
+    startupSent = true;
+    void rpc.request("files.startupComplete", { root: status.root, workspaceId: status.workspaceId }).catch(() => {
+      if (!retired) { startupFailed = true; window.dispatchEvent(new Event("texttext:initial-view-failed")); }
+    });
+  };
   const base = `/api/vault/${encodeURIComponent(status.workspaceId)}/items`;
   const folderMetadataCache = new FolderViewMetadataCache();
   const list = () => rpc.request<Manifest>("files.list");
@@ -159,7 +175,10 @@ export async function createWindowsVaultTransport(view: NativeView) {
     }
     if (method === "workspacesList" || method === "workspaceOpen") return rpc.request(`native.${method}`, params, signal);
     if (method.startsWith("agent")) return rpc.request(method, params, signal);
-    if (method === "connection") return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
+    if (method === "connection") {
+      if (startupFailed) throw new Error("Initial sync could not start. Reopen the workspace to retry.");
+      return { ...await rpc.request<Status>("native.status", {}, signal), ...await rpc.request<Record<string, unknown>>("files.connection", {}, signal) };
+    }
     if (method === "trashReconcile") return rpc.request("files.restoreReconcile", params, signal);
     if (method === "recoveryList") {
       const saved = await rpc.request<{entries: unknown[]; truncated: boolean}>("files.savedFileMoveList", { ...(typeof params.path === "string" ? {path:params.path} : {}), ...recoveryScope }, signal);
@@ -266,6 +285,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       return { items: matches, truncated: false, skippedCount };
     }
     if (method === "collaborationConfig") {
+      try {
       const config = await shared.request(method, params, signal) as { itemId: string };
       const readiness = await rpc.request<{ ready: boolean }>("files.ready", { itemId: config.itemId }, signal);
       if (!readiness.ready) return null;
@@ -273,6 +293,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
       const localHandoff = status.localHandoffVersion === 1 ? await rpc.request<unknown>("collaboration.localHandoffConfig", {}, signal) : null;
       return { ...remoteConfig, namespace: "https://texttext.app", localFiles: true,
         ...(isLocalHandoffCapability(localHandoff) ? { localHandoff } : {}) };
+      } catch (error) { startupComplete(); throw error; }
     }
     if (method === "collaborationCheckpoint") {
       const pack = await read(String(params.itemId), signal);
@@ -303,5 +324,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
   window.addEventListener("texttext:windows-agent-cancel", agentCancel);
   window.addEventListener("texttext:vault-changed", changed);
   window.addEventListener("texttext:vault-sync-status", changed);
-  return { request: transport, destroy() { window.removeEventListener("texttext:windows-agent-tool", agentTool); window.removeEventListener("texttext:windows-agent-cancel", agentCancel); for (const controller of agentTools.values()) controller.abort(); agentTools.clear(); window.removeEventListener("texttext:vault-changed", changed); window.removeEventListener("texttext:vault-sync-status", changed); folderMetadataCache.clear(); shared.destroy(); rpc.destroy(); } };
+  window.addEventListener("texttext:initial-view-terminal", startupComplete);
+  window.addEventListener("error", startupComplete);
+  return { request: transport, destroy() { retired = true; window.removeEventListener("texttext:initial-view-terminal", startupComplete); window.removeEventListener("error", startupComplete); window.removeEventListener("texttext:windows-agent-tool", agentTool); window.removeEventListener("texttext:windows-agent-cancel", agentCancel); for (const controller of agentTools.values()) controller.abort(); agentTools.clear(); window.removeEventListener("texttext:vault-changed", changed); window.removeEventListener("texttext:vault-sync-status", changed); folderMetadataCache.clear(); shared.destroy(); rpc.destroy(); } };
 }
