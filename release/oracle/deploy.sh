@@ -287,7 +287,7 @@ sudo -n systemctl reset-failed texttext-backup.service
 trap - EXIT
 backup_unit_replaced=0
 if [ "$backup_unit_had_previous" = 1 ]; then
-  sudo -n rm "$backup_unit_previous" || echo "The retired backup unit remains at $backup_unit_previous." >&2
+  echo "The previous backup unit is retained at $backup_unit_previous."
 fi
 echo "Oracle TextText is serving $expected. Previous release retained."
 REMOTE

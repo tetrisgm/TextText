@@ -12,6 +12,10 @@ retention deletion for that invocation. Scheduled backups retain their default
 policy. Archive validation, size budget, free-space floor, locking and durable
 commit ordering remain unchanged.
 
+The success path also previously deleted the saved old backup service unit.
+It now retains that existing unit and prints its saved path. Failure rollback
+behavior is unchanged; this does not expand cleanup or change other services.
+
 Verification on the Mac, outside its active checkout:
 
 - Baseline backup implementation with the new preservation regression failed
@@ -27,6 +31,9 @@ Verification on the Mac, outside its active checkout:
   preservation suite: **22 passed** (16 existing + 6 new), zero failures or skips.
   Run from `/tmp/texttext-oracle-regression.7lkcnr` with a read-only dependency
   link to the Mac checkout's `node_modules`; no checkout files changed.
+  Repeated after retaining the prior service unit: **22 passed** and shell
+  syntax passed, including a source regression requiring the retained-path
+  message and refusing success-path deletion of the previous unit.
 
 Final scratch source: `/tmp/texttext-backup-preservation-final.DUP7By` on the Mac.
 Baseline RED source: `/tmp/texttext-backup-preservation.lElldL`.

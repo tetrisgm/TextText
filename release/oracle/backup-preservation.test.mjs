@@ -55,6 +55,9 @@ test("only the deployment transient service enables preservation", () => {
   const deploy = readFileSync(new URL("./deploy.sh", import.meta.url), "utf8");
   assert.match(deploy, /--unit=texttext-deploy-backup\.service[\s\S]*\/usr\/bin\/env TEXTTEXT_BACKUP_PRESERVE_EXISTING=1 \/usr\/bin\/node "\$release\/release\/oracle\/backup\.mjs"/);
   assert.doesNotMatch(readFileSync(new URL("./texttext-backup.service", import.meta.url), "utf8"), /TEXTTEXT_BACKUP_PRESERVE_EXISTING/);
+  const success = deploy.slice(deploy.indexOf("trap - EXIT"));
+  assert.match(success, /echo "The previous backup unit is retained at \$backup_unit_previous\."/);
+  assert.doesNotMatch(success, /\brm\b[^\n]*\$backup_unit_previous/);
 });
 
 test("deployment command overrides retention settings loaded from the service environment", t => {
