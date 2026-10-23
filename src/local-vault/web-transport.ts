@@ -522,10 +522,12 @@ export function createWebVaultTransport(workspaceId: string, name = "Workspace",
       if (folder && folder.split("/").some((part) => !part || part.startsWith(".") || /[\\:\x00-\x1f]/.test(part))) throw new Error("Invalid folder path.");
       await listing();
       const stem = safeName(title);
-      let path = `${folder ? folder + "/" : ""}${stem}.textpack`;
+      // A local listing cannot reserve a name on another offline replica.
+      // The new document identity also distinguishes its physical filename.
+      let path = `${folder ? folder + "/" : ""}${stem}${params.exactPath === undefined ? ` ${id}` : ""}.textpack`;
       if (params.exactPath !== undefined && params.exactPath !== path) throw new Error("The folder view destination does not match its folder.");
       if (params.exactPath !== undefined && manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase())) throw new Error("A file already occupies the folder view path.");
-      for (let suffix = 2; manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase()); suffix++) path = `${folder ? folder + "/" : ""}${stem} ${suffix}.textpack`;
+      if (manifest!.items.some((item) => item.relativePath.toLowerCase() === path.toLowerCase())) throw new Error("A file already occupies the creation path.");
       let pack: Pick<OpenPack, "entries" | "prefix">, file: VaultFile;
       if (method === "importPack") {
         const data = params.data;

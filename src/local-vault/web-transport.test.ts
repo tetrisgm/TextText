@@ -57,6 +57,18 @@ function fixture() {
   };
   return { id, path, files, operations, initial, transport: createWebVaultTransport("workspace", "Workspace", request), fail: () => { failNextPut = true; } };
 }
+it("allocates identity-bound paths for two clients creating the same title from the same stale listing", async () => {
+  const first = fixture(), second = fixture();
+  const params = {title:"Untitled",folder:"Notes",body:"Exact body"};
+  const [left,right] = await Promise.all([first.transport.request("create",params),second.transport.request("create",params)]) as VaultFile[];
+  expect(left.path).not.toBe(right.path);
+  for (const file of [left,right]) {
+    const id = file.markdown.match(/textTextId: "([^"]+)"/)?.[1];
+    expect(file.path).toBe(`Notes/Untitled ${id}.textpack`);
+    expect(readDocument(file).content.title).toBe("Untitled");
+    expect(readDocument(file).content.body).toBe("Exact body");
+  }
+});
 function cachedOpenFixture() {
   const { id, path, initial } = fixture();
   const live = { bytes: initial, path, epoch: 1, seq: 0, allowed: true, canEdit: true,
@@ -473,7 +485,7 @@ describe("web file vault transport", () => {
     const test = fixture();
     const data = Buffer.from(test.initial).toString("base64");
     const imported = await test.transport.request("importPack", { data, title: "Original", folder: "Notes" }) as VaultFile;
-    expect(imported.path).toBe("Notes/Original 2.textpack");
+    expect(imported.path).toMatch(/^Notes\/Original [0-9a-f-]{36}\.textpack$/);
     expect(imported.markdown).not.toContain(test.id);
     expect(test.files.get(test.id)!.bytes).toEqual(test.initial);
     const entry = [...test.files.values()].find((entry) => entry.path === imported.path)!;
@@ -586,7 +598,7 @@ describe("web file vault transport", () => {
     await test.transport.request("write", payload);
     expect(test.operations[0]).toBe(test.operations[1]);
     const created = await test.transport.request("create", { title: "Original", folder: "Notes" }) as VaultFile;
-    expect(created.path).toBe("Notes/Original 2.textpack");
+    expect(created.path).toMatch(/^Notes\/Original [0-9a-f-]{36}\.textpack$/);
     const list = await test.transport.request("list", {}) as VaultListing;
     expect(list.items).toHaveLength(2);
     expect(await test.transport.refresh()).toBe(false);

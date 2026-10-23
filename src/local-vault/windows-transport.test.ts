@@ -286,7 +286,7 @@ describe("Windows shared transport", () => {
       const original = await f.transport.request("read", { path: f.path }) as VaultFile;
       expect(readDocument(original).content.body).toBe("first needle");
       const created = await f.transport.request("create", { title: "Second", folder: "Notes" }) as VaultFile;
-      expect(created.path).toBe("Notes/Second.textpack"); expect(f.files.size).toBe(2);
+      expect(created.path).toMatch(/^Notes\/Second [0-9a-f-]{36}\.textpack$/); expect(f.files.size).toBe(2);
       expect(f.view.messages.some(call => call.method === "native.http")).toBe(false);
     } finally { f.transport.destroy(); }
   });
