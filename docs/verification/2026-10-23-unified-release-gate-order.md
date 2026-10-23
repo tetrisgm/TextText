@@ -1,0 +1,7 @@
+# Unified release gate order
+
+Two pre-delivery runs built and smoke-tested Windows candidates while deterministic Mac test failures were still pending. `d42b9526` stopped in the web workspace browser fixture after waiting for an obsolete `Untitled.textpack` path; `6b5b6c11` stopped with six Windows recovery transport fixture failures. Neither delivered a surface. The later successful `044e5441` release receipt measured 654,375 ms of full release gates, including 301,515 ms of Swift tests and 213,026 ms of web tests. The concurrent Windows build could not help either failed run.
+
+The human-invoked `ship-all` command now runs TypeScript and those two proven failure fixtures first, then the unchanged full release and sync gates. Only after both full gates pass does it build Windows and Mac candidates concurrently. Web deployment still revalidates both exact-source receipts before using its existing `--skip-tests` path; no gate, signing check, backup, or installed acceptance was removed. Stage errors identify the failing check or candidate surface instead of only reporting `node failed (1)` or `ssh failed (1)`.
+
+Focused orchestration tests passed 16/16 on Windows and 16/16 on Mac Node 22 from an isolated scratch copy; `git diff --check` passed. The Mac checkout and its owner package pin were not changed during the active `30f167df` release. This is a source/process correction, not a new release or installed acceptance.

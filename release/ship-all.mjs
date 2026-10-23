@@ -10,8 +10,12 @@ import { signingPreflight } from './signing-preflight.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 let checkpoint = () => {};
-function run(command, args, env = {}, onSuccess) {
-  runReleaseStage(checkpoint, command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } }, onSuccess);
+function run(command, args, env = {}, onSuccess, stage = `${command} ${args[0] ?? ''}`.trim()) {
+  try {
+    runReleaseStage(checkpoint, command, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } }, onSuccess);
+  } catch (error) {
+    throw new Error(`${stage} failed: ${error.message}`, { cause: error });
+  }
 }
 function output(command, args) { return execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trim(); }
 const git = (...args) => output('git', args);
@@ -22,7 +26,7 @@ export function windowsArgs(mode, commit, runId, powerShell7Path = process.env.T
   return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pc', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')];
 }
 function windows(mode, commit, runId, onSuccess) {
-  run('ssh', windowsArgs(mode, commit, runId), {}, onSuccess);
+  run('ssh', windowsArgs(mode, commit, runId), {}, onSuccess, `Windows ${mode}`);
 }
 function plist(path, key) { return output('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, path]); }
 
@@ -91,19 +95,24 @@ async function main() {
         TEXTTEXT_STORE_LOCAL: '1', APP_VERSION: version, APP_BUILD_NUMBER: build,
         NEXT_DEPLOYMENT_ID: `texttext-all-${runId}`,
       });
-      // Join the Windows build before pin restoration or delivery, even when a
-      // Mac gate fails. This joins local SSH, not an independently lost remote job.
+      // Fail fast on the fixtures that previously stopped releases after a
+      // Windows candidate had already been built. Full gates still run below.
+      run('npx', ['tsc', '--noEmit'], {}, undefined, 'TypeScript preflight');
+      run('npx', ['vitest', 'run', 'src/local-vault/windows-recovery-transport.test.ts'], {}, undefined, 'Windows recovery transport preflight');
+      run('node', ['src/local-vault/__tests__/verify-web-browser.mjs'], {}, undefined, 'Web workspace browser preflight');
+      run('node', ['src/local-vault/__tests__/mirror-policy.browser.mjs'], {}, undefined, 'Mirror policy producer');
+      run('node', ['scripts/with-local-database.mjs', 'npx', 'tsx', 'scripts/verify-release.ts'], {}, undefined, 'Mac full release gate');
+      run('npm', ['run', 'test:sync'], {}, undefined, 'Mac full sync gate');
+      // Build both native candidates only after the full gates pass. Join the
+      // Windows child before pin restoration or delivery if either build fails.
       await withParallelStage(checkpoint, 'ssh', windowsArgs('Build', commit, runId), { cwd: root, env: { ...process.env } }, () => {
-        run('node', ['src/local-vault/__tests__/mirror-policy.browser.mjs']);
-        run('node', ['scripts/with-local-database.mjs', 'npx', 'tsx', 'scripts/verify-release.ts']);
-        run('npm', ['run', 'test:sync']);
         run('bash', ['mac/scripts/verify-workflow-capabilities.sh', process.env.TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT]);
         run('bash', ['mac/scripts/texttext-build-attestation.sh', process.env.TEXTTEXT_BUILD_ATTESTATION, version, build]);
         checkpoint();
         preserveBuildCandidate(join(root, 'mac/build/TextText.app'), evidence);
-        run('bash', ['mac/scripts/build-store.sh']);
+        run('bash', ['mac/scripts/build-store.sh'], {}, undefined, 'Mac candidate build');
         run('bash', ['mac/scripts/verify-app-health.sh', 'mac/build/TextText.app', version, build]);
-      });
+      }, 'Windows candidate build');
       // Build a fresh archive after revalidating the genuine gate receipts.
       process.env.TEXTTEXT_ORACLE_ARTIFACT = '';
       deployVerifiedWeb(run, () => delivered.push({ surface: 'web', commit, buildId: process.env.NEXT_DEPLOYMENT_ID }));

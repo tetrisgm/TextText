@@ -37,6 +37,11 @@ test('both lane failures remain visible', async () => {
   });
 });
 
+test('a failed child names its release stage after the foreground is joined', async () => {
+  const { root } = fixture();
+  await assert.rejects(withParallelStage(() => {}, process.execPath, ['-e', 'process.exit(7)'], { cwd: root }, () => {}, 'Windows candidate build'), /Windows candidate build failed \(7\)/);
+});
+
 test('preflight cancellation prevents either lane', async () => {
   const { marker, run } = fixture();
   await assert.rejects(run(() => assert.fail('foreground started'), () => { throw Error('cancelled'); }), /cancelled/);

@@ -85,3 +85,19 @@ test('web deployment reuses gates only after both receipt checks pass', () => {
   ]);
   assert.equal(delivered, true);
 });
+
+test('deterministic fixtures and full gates finish before native candidate builds', () => {
+  const source = readFileSync(new URL('./ship-all.mjs', import.meta.url), 'utf8');
+  const stages = [
+    "['tsc', '--noEmit']",
+    "['vitest', 'run', 'src/local-vault/windows-recovery-transport.test.ts']",
+    "['src/local-vault/__tests__/verify-web-browser.mjs']",
+    "['scripts/with-local-database.mjs', 'npx', 'tsx', 'scripts/verify-release.ts']",
+    "['run', 'test:sync']",
+    "withParallelStage(checkpoint, 'ssh', windowsArgs('Build'",
+    "deployVerifiedWeb(run,",
+  ];
+  const positions = stages.map(stage => source.indexOf(stage, source.indexOf('async function main')));
+  assert.ok(positions.every(position => position >= 0), 'every required stage remains present');
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'no candidate build or deployment starts before the gates');
+});
