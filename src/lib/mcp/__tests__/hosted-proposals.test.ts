@@ -21,7 +21,7 @@ vi.mock("@/lib/shares", () => ({ listScopeShares: vi.fn(async () => []) }));
 vi.mock("@/lib/db/client", () => ({ db: {}, executeAtomicBatch: mocks.batch }));
 vi.mock("@/lib/audit", () => ({ auditInsertQuery: mocks.audit, auditCteFrom: vi.fn(), recordAction: vi.fn() }));
 import { callTool, listTools } from "@/lib/mcp/registry";
-import { hostedToolNeedsProposal, stageHostedToolProposal } from "@/lib/mcp/write-proposals";
+import { hostedToolNeedsProposal, stageHostedToolProposal, stageAgentToolProposal } from "@/lib/mcp/write-proposals";
 import type { ToolContext } from "@/lib/mcp/tools";
 const context: ToolContext = { authInfo: { token: "", clientId: "user-1", scopes: ["sync"], extra: {
   sub: "apple-sub", userId: "user-1", connectionName: "Research agent",
@@ -105,11 +105,11 @@ describe("hosted MCP durable proposal boundary", () => {
       hostedToolNeedsProposal(name, { status: "published" }),
     );
     expect(staged.sort()).toEqual([
-      "add_item_asset", "delete_folder", "delete_item", "delete_items", "empty_trash",
+      "add_feed", "add_item_asset", "delete_folder", "delete_item", "delete_items", "empty_trash",
       "move_folder_tree", "remove_item_asset", "retire_document_template", "set_item_status",
     ]);
     for (const name of staged) {
-      if (name === "delete_item" || name === "retire_document_template" || name === "remove_item_asset" || name === "add_item_asset" || name === "move_folder_tree") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
+      if (name === "add_feed" || name === "delete_item" || name === "retire_document_template" || name === "remove_item_asset" || name === "add_item_asset" || name === "move_folder_tree") expect(listTools().find((tool) => tool.name === name)).toBeDefined();
       else expect(listTools().find((tool) => tool.name === name)).toBeUndefined();
     }
     for (const name of ["restore_item", "restore_folder", "set_access", "revoke_access", "update_item"] as const) {
@@ -160,4 +160,10 @@ describe("hosted MCP durable proposal boundary", () => {
   it.each(["unknown_tool", "constructor", "toString"])("rejects unknown tool %s", async (name) => {
     await expect(callTool(name, {}, context)).rejects.toThrow("Unknown tool"); expect(mocks.execute).not.toHaveBeenCalled();
   });
+});
+
+it("rejects native workspace mismatch in actual staging service before proposal or audit insertion",async()=>{
+ mocks.getOwnedBlog.mockResolvedValue({handle:"alpha"});mocks.getBlogEditRecord.mockResolvedValue({id:"blog-1",handle:"alpha",ownerId:"user-1"});mocks.insert.mockClear();mocks.audit.mockClear();mocks.approvedExecute.mockClear();
+ const result=await stageAgentToolProposal("add_feed",{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"key"},context,"local_cli","other-workspace");
+ expect(result.isError).toBe(true);expect(mocks.insert).not.toHaveBeenCalled();expect(mocks.audit).not.toHaveBeenCalled();expect(mocks.approvedExecute).not.toHaveBeenCalled();
 });

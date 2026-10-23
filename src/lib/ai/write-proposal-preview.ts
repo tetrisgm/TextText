@@ -38,7 +38,7 @@ export type FrozenItemPreview = {
   missing?: true;
 };
 
-export type FrozenProposalPreview = FrozenFolderMovePreview | {
+export type FrozenProposalPreview = { kind: "feed"; tool: "add_feed"; sourceUrl: string; folderPath: string; name: string | null } | FrozenFolderMovePreview | {
   kind: "items";
   tool: WorkspaceToolName;
   items: FrozenItemPreview[];
@@ -61,6 +61,7 @@ export type FrozenProposalPreview = FrozenFolderMovePreview | {
 
 /** The sentence the owner is shown, built from the frozen preview. */
 export function describeFrozenPreview(preview: FrozenProposalPreview): string {
+  if (preview.kind === "feed") return `Fetch ${preview.sourceUrl} and save a private feed subscription${preview.name ? ` named "${preview.name}"` : ""} in "${preview.folderPath}". The publisher will receive this request after approval. Articles are not imported automatically.`;
   if (preview.kind === "folder_move") {
     const { plan } = preview;
     const added = plan.addedAccess.map(access => `${access.email} (${access.role})`).join(", ");

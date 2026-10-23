@@ -10,7 +10,7 @@ export function insideAgentFolder(folder: string, path: string): boolean {
 }
 /** New tools must explicitly opt into the folder authorization callbacks. */
 export const FOLDER_AGENT_TOOLS = new Set([
-  "list_folders", "list_items", "read_item", "search", "create_item", "update_item",
+  "add_feed", "list_folders", "list_items", "read_item", "search", "create_item", "update_item",
   "append_to_item", "add_item_asset", "remove_item_asset", "list_comments",
   "add_comment", "set_comment_resolved", "create_folder", "move_item", "delete_item",
 ]);

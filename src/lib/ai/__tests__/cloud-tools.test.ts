@@ -8,7 +8,7 @@ describe("cloudAssistantToolNames", () => {
   const names = cloudAssistantToolNames();
 
   it("exposes the safe editing tools", () => {
-    for (const safe of ["create_item", "update_item", "move_item"]) {
+    for (const safe of ["add_feed", "create_item", "update_item", "move_item"]) {
       expect(names).toContain(safe);
     }
   });

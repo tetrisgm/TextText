@@ -1225,6 +1225,7 @@ export function createWorkspaceAgentTools(
         return runRemote("keep_item", args as WorkspaceToolInput<"keep_item">);
       case "add_feed": {
         const result = await runRemote("add_feed", args as WorkspaceToolInput<"add_feed">);
+        if (result.approvalRequired === true) return result;
         await refreshPoolAfterMutation();
         return result;
       }

@@ -1233,6 +1233,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = {
         url: z.string().trim().url().max(2048),
         parent_path: folderPath.describe('The bookmarks folder to add it under, such as "bookmarks".'),
         name: z.string().trim().min(1).max(120).optional().describe("Folder name; defaults to the feed's title."),
+        idempotency_key: z.string().trim().min(1).max(500).optional(),
         retention_days: z.number().int().min(0).max(3650).optional().describe("0 keeps articles until deleted; omitted uses the workspace default."),
       })
       .strict(),

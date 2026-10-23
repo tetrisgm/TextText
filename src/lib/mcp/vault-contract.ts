@@ -1,6 +1,7 @@
 import { WORKSPACE_TOOL_DEFINITIONS, type WorkspaceToolName } from "@/lib/ai/tools";
-export const VAULT_TOOL_NAMES = ["get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "add_item_asset", "remove_item_asset", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template", "move_folder_tree"] as const;
+export const VAULT_TOOL_NAMES = ["add_feed", "get_workspace", "list_folders", "create_folder", "list_items", "read_item", "search", "create_item", "update_item", "append_to_item", "add_item_asset", "remove_item_asset", "list_comments", "add_comment", "set_comment_resolved", "move_item", "delete_item", "list_trash", "restore_item", "list_document_templates", "set_item_template", "create_item_type", "save_item_as_look", "update_item_type", "remix_item_type", "retire_document_template", "set_folder_template", "move_folder_tree"] as const;
 const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
+  add_feed: ["url", "parent_path", "name", "idempotency_key"],
   remove_item_asset: ["id", "asset_id", "if_match_hash", "idempotency_key"],
   set_folder_template: ["folder_path", "template_id", "template_version", "source_item_id", "source_hash", "if_match_hash", "idempotency_key"],
   update_item_type: ["template_id", "base_version", "source_item_id", "source_hash", "blueprint", "definition", "idempotency_key"],
@@ -10,6 +11,7 @@ const fields: Partial<Record<WorkspaceToolName, readonly string[]>> = {
   update_item: ["id", "title", "body", "excerpt", "tags", "fields", "asset_metadata", "section", "expected_section_body", "if_match_hash", "idempotency_key"],
 };
 const descriptions: Partial<Record<WorkspaceToolName, string>> = {
+  add_feed: "Follow one public feed as a private subscription TextPack in parent_path (use Feeds or a chosen folder). Requires a stable idempotency_key. The exact URL and destination are reviewed before fetching. Publisher metadata does not alter the saved title; name defaults to the URL hostname. Articles remain transient until kept; no background crawler or retention setting is created.",
   remove_item_asset: "Detach one asset by its ID from document references and gallery. Requires current hash and stable idempotency key. Original archive bytes are retained for recovery; this is not permanent media deletion.",
   set_folder_template: "Set the pinned template for future generic items in one folder. Requires current folder view if_match_hash, or null to create a new definition, exact template version and stable idempotency_key. Custom templates require source_item_id/source_hash. Existing items and collection layout remain unchanged. Explicit template choices override this default.",
   retire_document_template: "Retire a custom template identity from future creation and pickers using a file-backed library record. Requires source_item_id, source_hash and stable idempotency_key. Existing embedded documents stay unchanged. Explicitly deleting the retirement record restores availability; retrying this operation never recreates a deleted marker.",
@@ -39,6 +41,11 @@ export function vaultToolDefinitions() {
     const allowed = fields[name];
     if (allowed && inputSchema.properties) inputSchema.properties = Object.fromEntries(Object.entries(inputSchema.properties).filter(([key]) => allowed.includes(key)));
     if (allowed && inputSchema.required) inputSchema.required = inputSchema.required.filter(key => allowed.includes(key));
+    if (name === "add_feed" && inputSchema.properties) {
+      inputSchema.properties.parent_path = { ...(inputSchema.properties.parent_path as object), description: "Destination folder for the private subscription TextPack, such as Feeds." };
+      inputSchema.properties.name = { ...(inputSchema.properties.name as object), description: "Subscription title; defaults to the URL hostname." };
+    }
+    if (name === "add_feed") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "idempotency_key"])];
     if (name === "set_folder_template") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "template_version", "if_match_hash", "idempotency_key"])];
     if (name === "remove_item_asset") inputSchema.required = ["id", "asset_id", "if_match_hash", "idempotency_key"];
     if (name === "add_item_asset") inputSchema.required = [...new Set([...(inputSchema.required ?? []), "if_match_hash", "idempotency_key"])];

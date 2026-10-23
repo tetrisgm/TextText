@@ -256,3 +256,10 @@ describe("POST /api/agent/commands", () => {
     expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
   });
 });
+
+it("forwards explicit native workspace binding only through proposal staging",async()=>{
+ verifyTextTextApiToken.mockResolvedValue({token:"",clientId:"owner",scopes:["sync"],extra:{userId:"owner",sub:"owner-sub"}});stageAgentToolProposal.mockResolvedValue({content:[]});runWorkspaceToolForAuth.mockClear();
+ const send=(expectedWorkspaceId:unknown)=>POST(new Request("https://texttext.app/api/agent/commands",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:"proposal:add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"key"},expectedWorkspaceId})}));
+ expect((await send("workspace-id")).status).toBe(200);expect(stageAgentToolProposal.mock.calls.at(-1)?.[4]).toBe("workspace-id");expect(runWorkspaceToolForAuth).not.toHaveBeenCalled();
+ stageAgentToolProposal.mockClear();expect((await send("../other")).status).toBe(400);expect(stageAgentToolProposal).not.toHaveBeenCalled();
+});

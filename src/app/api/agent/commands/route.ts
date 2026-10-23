@@ -156,6 +156,8 @@ export async function POST(request: Request) {
 
   const rawName = typeof body.name === "string" ? body.name : "";
   const proposalMode = body.mode === "proposal" || rawName.startsWith("proposal:");
+  const expectedWorkspaceId = body.expectedWorkspaceId;
+  if (expectedWorkspaceId !== undefined && (!proposalMode || typeof expectedWorkspaceId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(expectedWorkspaceId))) return noStore({ error: "Provide a valid expected workspace for this proposal." }, 400);
   const name = rawName.startsWith("proposal:") ? rawName.slice("proposal:".length) : rawName;
   if (!(VAULT_TOOL_NAMES as readonly string[]).includes(name) || proposalMode && !DURABLE_PROPOSAL_TOOLS.has(name)) {
     return noStore({ error: "That command is not available for file workspaces yet." }, 400);
@@ -207,7 +209,7 @@ export async function POST(request: Request) {
       },
     },
   };
-  if (proposalMode) return noStore(await stageAgentToolProposal(name as WorkspaceToolName, args as Record<string, unknown>, context, "local_cli"));
+  if (proposalMode) return noStore(await (expectedWorkspaceId === undefined ? stageAgentToolProposal(name as WorkspaceToolName, args as Record<string, unknown>, context, "local_cli") : stageAgentToolProposal(name as WorkspaceToolName, args as Record<string, unknown>, context, "local_cli", expectedWorkspaceId as string)));
   const result = await runWorkspaceToolForAuth(
     name as WorkspaceToolName,
     args as Record<string, unknown>,

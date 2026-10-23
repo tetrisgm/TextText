@@ -22,6 +22,7 @@ const HOSTED_STAGED_TOOLS: ReadonlySet<WorkspaceToolName> = new Set<WorkspaceToo
   "empty_trash",
   "remove_item_asset",
   "add_item_asset",
+  "add_feed",
   "retire_document_template",
   "move_folder_tree",
 ]);
@@ -40,6 +41,7 @@ export async function stageAgentToolProposal(
   args: Record<string, unknown>,
   context: ToolContext,
   surface: "hosted_mcp" | "local_cli",
+  expectedWorkspaceId?: string,
 ): Promise<CallToolResult> {
   const error = (text: string): CallToolResult => ({
     isError: true, content: [{ type: "text", text }],
@@ -58,6 +60,7 @@ export async function stageAgentToolProposal(
     const { createWorkspaceWriteProposal } = await import("@/lib/ai/write-proposals.server");
     const proposal = await createWorkspaceWriteProposal({
       actor: { sub, userId, handle: blog.handle, actorType: "external_agent", ...(typeof connectionId === "string" && connectionId ? { connectionId } : {}) },
+      expectedWorkspaceId,
       tool: name,
       arguments: args,
       origin: { surface, connectionName: typeof connectionName === "string" ? connectionName : "Connected agent" },

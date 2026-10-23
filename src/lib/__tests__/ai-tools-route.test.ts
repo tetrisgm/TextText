@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  createProposal: vi.fn(),
   getCurrentUser: vi.fn(),
   getOwnedBlog: vi.fn(),
   getUserIdBySub: vi.fn(),
   runWorkspaceToolForSession: vi.fn(),
 }));
 
+vi.mock("@/lib/ai/write-proposals.server", () => ({ createWorkspaceWriteProposal: mocks.createProposal }));
 vi.mock("@/lib/session", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/store", () => ({
   getOwnedBlog: mocks.getOwnedBlog,
@@ -48,7 +50,8 @@ function streamedRequest(chunks: string[], contentLength?: number) {
 
 describe("/api/ai/tools stable assistant transport", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    mocks.createProposal.mockResolvedValue({id:"feed-proposal",summary:"Review feed"});
     mocks.getCurrentUser.mockResolvedValue({
       sub: "owner-sub",
       userId: "owner-id",
@@ -215,4 +218,14 @@ describe("/api/ai/tools stable assistant transport", () => {
       error: "The workspace command failed. Try again.",
     });
   });
+});
+
+it("stages legacy assistant feed without directly fetching or executing", async()=>{
+ mocks.getCurrentUser.mockResolvedValue({sub:"owner-sub",userId:"owner-id"});mocks.getOwnedBlog.mockResolvedValue({handle:"current-workspace"});mocks.createProposal.mockResolvedValue({id:"feed-proposal",summary:"Review feed"});mocks.runWorkspaceToolForSession.mockClear();
+ const args={url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"key"};
+ const response=await POST(request({handle:"current-workspace",name:"add_feed",args}));
+ expect(response.status).toBe(200);expect((await response.json()).result).toMatchObject({approvalRequired:true,proposalId:"feed-proposal"});
+ expect(mocks.createProposal).toHaveBeenLastCalledWith({actor:{sub:"owner-sub",userId:"owner-id",handle:"current-workspace",actorType:"ai"},tool:"add_feed",arguments:args});expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
+ mocks.createProposal.mockRejectedValueOnce(new Error("storage unavailable"));
+ expect((await POST(request({handle:"current-workspace",name:"add_feed",args}))).status).toBe(409);expect(mocks.runWorkspaceToolForSession).not.toHaveBeenCalled();
 });

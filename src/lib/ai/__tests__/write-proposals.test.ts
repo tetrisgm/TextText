@@ -5,6 +5,8 @@ import { buildTextpack, parseTextpack } from "@/lib/github/textpack";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
 import { writeVaultTextpack, readVaultTextpack } from "@/sync/engine/store";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
+const feedRead = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/vault/rss-feed.server", () => ({ readVaultFeed: feedRead }));
 const imagePreparation = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/vault/image-fetch", () => ({ preparePublicImage: imagePreparation }));
 const access = vi.hoisted(() => ({ allowed: true }));
@@ -18,6 +20,7 @@ vi.mock("@/lib/store", async () => {
     readVaultTextpackIdentity: engine.readVaultTextpackIdentity,
     readVaultCollaboration: engine.readVaultCollaboration, joinVaultPresence: engine.joinVaultPresence, leaveVaultPresence: engine.leaveVaultPresence, updateVaultPresence: engine.updateVaultPresence,
     readVaultTextpack: engine.readVaultTextpack,
+    writeVaultTextpack: (input: Parameters<typeof engine.writeVaultTextpack>[0] & { actorUserId: string }) => engine.writeVaultTextpack({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     createVaultFolder: (input: Parameters<typeof engine.createVaultFolder>[0] & { actorUserId: string }) => engine.createVaultFolder({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     createVaultTemplate: (input: Parameters<typeof engine.createVaultTemplate>[0] & { actorUserId: string }) => engine.createVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
     retireVaultTemplate: (input: Parameters<typeof engine.retireVaultTemplate>[0] & { actorUserId: string }) => engine.retireVaultTemplate({ ...input, audit: { actorUserId: input.actorUserId, actorType: "external_agent" }, onReceipt: async () => {} }),
@@ -769,4 +772,50 @@ it.each(["gallery", "cover", "body_end"] as const)("imports a %s image only afte
   access.allowed = false; expect((await approve()).status).not.toBe("completed"); access.allowed = true;
   expect((await approve()).status).toBe("completed"); expect(imagePreparation).toHaveBeenCalledOnce(); expect((await readVaultTextpack(location))!.revision).toBe(committed.revision);
  } finally { access.allowed = true; vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+it("freezes feed URL and destination without fetching, then recovers an approved lost response", async () => {
+ const root = await fs.mkdtemp(path.join(os.tmpdir(), "texttext-feed-proposal-")); vi.stubEnv("TEXTTEXT_VAULT_ROOT", root); access.allowed = true; feedRead.mockReset(); feedRead.mockResolvedValue({ title: "Changing publisher" });
+ const h = harness(); h.dependencies.execute = runWorkspaceToolForSession;
+ try {
+  const proposal = await createWorkspaceWriteProposal({ actor: owner, tool: "add_feed", arguments: {url:"https://example.com/feed", parent_path:"Feeds", name:"Reviewed feed", idempotency_key:"input"} }, h.dependencies);
+  expect(proposal.summary).toContain("https://example.com/feed"); expect(proposal.summary).toContain("Feeds"); expect(proposal.summary).toContain("after approval"); expect(feedRead).not.toHaveBeenCalled();
+  h.repository.rejectCompletion = true;
+  const approve = () => decideWorkspaceWriteProposal({actor:owner, proposalId:proposal.id, decision:"approve"}, h.dependencies);
+  expect((await approve()).status).toBe("ambiguous"); expect(feedRead).toHaveBeenCalledTimes(1);
+  const store = await import("@/sync/engine/store");
+  const files = await store.listVaultTextpacks({root,workspaceId:"blog-1"}); expect(files.items).toHaveLength(1);
+  const saved = await readVaultTextpack({root,workspaceId:"blog-1",itemId:files.items[0].itemId});
+  h.advance(16*60_000); h.repository.rejectCompletion=false; feedRead.mockRejectedValue(new Error("publisher offline"));
+  expect((await approve()).status).toBe("completed"); expect(feedRead).toHaveBeenCalledTimes(1);
+  expect((await readVaultTextpack({root,workspaceId:"blog-1",itemId:files.items[0].itemId}))?.revision).toBe(saved?.revision);
+ } finally { vi.unstubAllEnvs(); }
+});
+it("refuses a feed proposal whose frozen URL or destination was changed", async () => {
+ for (const field of ["url", "parent_path"] as const) {
+  const h=harness(); const proposal=await createWorkspaceWriteProposal({actor:owner,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"input"}},h.dependencies);
+  h.repository.rows.get(proposal.id)!.arguments[field]=field==="url"?"https://other.example/feed":"Private";
+  expect((await decideWorkspaceWriteProposal({actor:owner,proposalId:proposal.id,decision:"approve"},h.dependencies)).status).toBe("failed");
+  expect(h.repository.rows.get(proposal.id)!.status).toBe("failed");
+  expect(h.execute).not.toHaveBeenCalled();
+ }
+});
+
+it("refuses mismatched expected native workspace before staging or execution", async()=>{
+ const h=harness();
+ await expect(createWorkspaceWriteProposal({actor:owner,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"key"},expectedWorkspaceId:"other-workspace"},h.dependencies)).rejects.toThrow("selected workspace");
+ expect(h.repository.rows.size).toBe(0);expect(h.execute).not.toHaveBeenCalled();
+ const proposal=await createWorkspaceWriteProposal({actor:owner,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"key"},expectedWorkspaceId:"blog-1"},h.dependencies);expect(h.repository.rows.has(proposal.id)).toBe(true);
+});
+it("folder assistant feed proposal keeps exact destination inside its task", async()=>{
+ const h=harness();const actor={...owner,folderAgentPath:"Feeds"};
+ await expect(createWorkspaceWriteProposal({actor,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Other",idempotency_key:"key"}},h.dependencies)).rejects.toThrow("inside this task");
+ expect(h.repository.rows.size).toBe(0);
+ expect((await createWorkspaceWriteProposal({actor,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds/Topic",idempotency_key:"key"}},h.dependencies)).tool).toBe("add_feed");
+});
+
+it("replays lost feed proposal staging response without a second proposal",async()=>{
+ const h=harness();const input={actor:owner,tool:"add_feed",arguments:{url:"https://example.com/feed",parent_path:"Feeds",idempotency_key:"same-staging-key"}};
+ const first=await createWorkspaceWriteProposal(input,h.dependencies),retry=await createWorkspaceWriteProposal(input,h.dependencies);expect(retry).toEqual(first);expect(h.repository.rows.size).toBe(1);
+ await expect(createWorkspaceWriteProposal({...input,arguments:{...input.arguments,url:"https://other.example/feed"}},h.dependencies)).rejects.toThrow("reused");expect(h.repository.rows.size).toBe(1);expect(h.execute).not.toHaveBeenCalled();
 });

@@ -807,3 +807,9 @@ describe("external agent presence signalling", () => {
     expect(signalAgentActivity).not.toHaveBeenCalled();
   });
 });
+
+it("preserves staged feed review result without claiming a completed pool mutation",async()=>{
+ const review={approvalRequired:true,proposalId:"feed",reviewUrl:"https://texttext.test/proposals/feed",message:"Nothing changed"};const executeTool=vi.fn().mockResolvedValue(review),refreshPool=vi.fn();
+ const tools=createWorkspaceAgentTools({handle:"local",getPool:workspacePool,executeTool,refreshPool});
+ expect(await tools.executor("add_feed",{url:"https://example.com/feed",parent_path:"bookmarks",idempotency_key:"key"})).toEqual(review);expect(refreshPool).not.toHaveBeenCalled();
+});

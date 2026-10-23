@@ -427,13 +427,16 @@ export async function createWorkspaceWriteProposal(
     arguments: unknown;
     ttlMs?: number;
     stagingKey?: string;
+    expectedWorkspaceId?: string;
     origin?: { surface: "hosted_mcp" | "local_cli"; connectionName: string };
   },
   dependencies: WorkspaceWriteProposalDependencies = defaultDependencies,
 ): Promise<WorkspaceWriteProposalPreview> {
   const owner = await proposalBinding(input.actor, dependencies);
   if (!owner) throw new Error("Only the workspace owner can stage a write.");
+  if (input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== owner.workspace.id) throw new Error("The selected workspace does not match this connection.");
   const requested = validateWorkspaceWriteProposal(input.tool, input.arguments);
+  if (requested.name === "add_feed" && input.stagingKey === undefined) input = { ...input, stagingKey: createHash("sha256").update(`feed:${String(requested.arguments.idempotency_key)}`).digest("hex") };
   if (input.actor.folderAgentPath !== undefined) {
     const boundary = input.actor.folderAgentPath;
     if (!folderAgentAllowsTool(boundary, requested.name)) throw new Error("This task can only work in its selected folder.");
@@ -442,7 +445,7 @@ export async function createWorkspaceWriteProposal(
     if (requested.name === "create_item" || requested.name === "move_item") {
       if (typeof args.folder_path !== "string" || !insideAgentFolder(boundary, args.folder_path)) throw new Error("Choose a destination inside this task's folder.");
     }
-    if (requested.name === "create_folder") {
+    if (requested.name === "create_folder" || requested.name === "add_feed") {
       const parent = typeof args.parent_path === "string" ? args.parent_path : "";
       if (!insideAgentFolder(boundary, parent)) throw new Error("Choose a destination inside this task's folder.");
     } else if (requested.name !== "create_item" && !rootTemplateCommand) {
@@ -487,7 +490,9 @@ export async function createWorkspaceWriteProposal(
   // public are. The revision travels with each one so approval can ask whether
   // the world still matches.
   let preview: FrozenProposalPreview | null = null;
-  if (validated.name === "move_folder_tree") {
+  if (validated.name === "add_feed") {
+    preview = { kind: "feed", tool: "add_feed", sourceUrl: validated.arguments.url as string, folderPath: validated.arguments.parent_path as string, name: typeof validated.arguments.name === "string" ? validated.arguments.name : null };
+  } else if (validated.name === "move_folder_tree") {
     if (!dependencies.resolveFolderMove) throw new Error("Folder review storage is not configured.");
     preview = validateFolderMoveReview(await dependencies.resolveFolderMove(input.actor, {
       source: validated.arguments.source_path as string, destination: validated.arguments.destination_path as string,
@@ -737,6 +742,11 @@ export async function decideWorkspaceWriteProposal(
     } catch {
       await dependencies.repository.fail(input.proposalId,owner.binding,"preview_missing",dependencies.now());
       return {status:"failed",proposalId:input.proposalId,message:"The stored folder review is invalid. Ask for a new proposal."};
+    }
+  } else if (validated.name === "add_feed") {
+    if (frozen?.kind !== "feed" || frozen.sourceUrl !== validated.arguments.url || frozen.folderPath !== validated.arguments.parent_path || frozen.name !== (validated.arguments.name ?? null)) {
+      await dependencies.repository.fail(input.proposalId, owner.binding, "preview_missing", dependencies.now());
+      return { status: "failed", proposalId: input.proposalId, message: "The approved feed request does not match this command. Ask for a new proposal." };
     }
   } else if (requiresFrozenPreview(validated.name) && (frozen?.kind !== "items" || frozen.tool !== validated.name || !Array.isArray(frozen.items) || frozen.items.length !== 1 || frozen.items[0].id !== (validated.name === "retire_document_template" ? validated.arguments.source_item_id : validated.arguments.id))) {
     await dependencies.repository.fail(

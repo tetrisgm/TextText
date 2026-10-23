@@ -86,7 +86,7 @@ export function cloudAssistantToolNames(
     // confirmation, they are an outbound exfiltration channel a prompt injection
     // could steer (the fetched URL leaks item content in its query string). They
     // stay available on the confirmed native and MCP rungs.
-    if (definition.annotations.openWorldHint && name !== "add_item_asset") return false;
+    if (definition.annotations.openWorldHint && name !== "add_item_asset" && name !== "add_feed") return false;
     return true;
   });
 }

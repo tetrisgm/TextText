@@ -1,3 +1,5 @@
+import { createWorkspaceWriteProposal } from "@/lib/ai/write-proposals.server";
+import { rootDomainUrl } from "@/lib/site-url";
 import { isWorkspaceToolName } from "@/lib/ai/tools";
 import { runWorkspaceToolForSession } from "@/lib/mcp/tools";
 import { getCurrentUser } from "@/lib/session";
@@ -141,6 +143,10 @@ export async function POST(request: Request) {
     ReturnType<typeof runWorkspaceToolForSession>
   >;
   try {
+    if (body.name === "add_feed") {
+      const proposal = await createWorkspaceWriteProposal({ actor: { sub: user.sub, userId: userId ?? null, handle: body.handle, actorType: "ai" }, tool: body.name, arguments: body.args });
+      return Response.json({ result: { approvalRequired: true, proposalId: proposal.id, reviewUrl: new URL(`/proposals/${proposal.id}`, rootDomainUrl()).href, proposal, message: "Staged for owner review in TextText. Nothing has been changed. Open the review link to approve or dismiss this proposal." } }, { headers: JSON_HEADERS });
+    }
     commandResult = await runWorkspaceToolForSession(
       body.name,
       body.args as Record<string, unknown>,

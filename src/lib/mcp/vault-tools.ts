@@ -156,7 +156,7 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         return json(await organizeVaultItem(name, args, { ...location, actorUserId: userId, actorType, authorize }));
       }
       const action = async () => {
-        const receipt = await mutateVaultTool(name, args, { ...location, actorUserId: userId, actorType, authorize, authorizeTemplate: async (itemId, relativePath) => {
+        const receipt = await (name === "add_feed" ? (await import("./vault-feeds")).addVaultFeed : (args: Record<string, unknown>, context: import("./vault-mutations").VaultMutationContext) => mutateVaultTool(name, args, context))(args, { ...location, actorUserId: userId, actorType, authorize, authorizeTemplate: async (itemId, relativePath) => {
           if (!await allowedNow({ itemId, relativePath })) throw new Error("Template source is unavailable");
         } });
         if (receipt.status === "conflict") throw new Error("The item changed. Read it again before editing.");
@@ -166,9 +166,9 @@ export async function executeVaultReadTool(name: string, args: Record<string, un
         const document = readDocument(openPack(current.bytes, current.relativePath, current.revision, receipt.itemId).file);
         if (!await allowedNow({ itemId: receipt.itemId, relativePath: current.relativePath })) throw new Error("Item not found.");
         const item = summary(receipt.itemId, current.relativePath, current.revision, document.content.title, document, Boolean(readVaultPublicationFromPack(current.bytes)));
-        return { ...receipt, item, ...(name === "create_item" ? { receipt: { item_id: item.id, kind: item.kind, saved_to: item.folder_path, title: item.title, path: item.path } } : {}) };
+        return { ...receipt, item, ...((name === "create_item" || name === "add_feed") ? { receipt: { item_id: item.id, kind: item.kind, saved_to: item.folder_path, title: item.title, path: item.path } } : {}) };
       };
-      if (name === "create_item" || actorType === "human" || location.receiptOnly) return json(await action());
+      if (name === "create_item" || name === "add_feed" || actorType === "human" || location.receiptOnly) return json(await action());
       const { withVaultAgentPresence } = await import("./vault-agent-presence");
       return json(await withVaultAgentPresence({ ...location, itemId: String(args.id), actorUserId: userId,
         connectionName: typeof auth?.extra?.connectionName === "string" ? auth.extra.connectionName : "Connected agent",
