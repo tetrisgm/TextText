@@ -6,6 +6,8 @@ $dotnet = Join-Path $env:LOCALAPPDATA 'TextTextBuild/dotnet/dotnet.exe'
 if (!(Test-Path $dotnet)) { throw 'Run windows/scripts/bootstrap-sdk.ps1 first.' }
 Push-Location $root
 try {
+  & node windows/scripts/check-checkout.mjs
+  if ($LASTEXITCODE -ne 0) { throw 'Windows checkout preflight failed.' }
   if (!(Test-Path 'windows/TextText.Windows/Runtime/bin/codex.exe')) { throw 'Run node windows/TextText.Windows/fetch-runtime.mjs before building.' }
   # Match the Mac lockfile resolver and replace stale dependencies before tests.
   & npx --yes npm@11.10.0 ci --ignore-scripts

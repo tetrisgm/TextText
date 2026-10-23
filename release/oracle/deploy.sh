@@ -14,6 +14,16 @@ case "${1:-}" in
 esac
 [ "$#" -eq 0 ] || { echo "Unexpected deployment argument." >&2; exit 1; }
 
+ORACLE_HOST="${TEXTTEXT_ORACLE_HOST:-}"
+if [ -z "$ORACLE_HOST" ] && [ -f "$HOME/.config/texttext/oracle-host" ]; then
+  ORACLE_HOST="$(cat "$HOME/.config/texttext/oracle-host")"
+fi
+SSH_OPTIONS=(-i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10)
+if [ "$DRY_RUN" = "0" ]; then
+  [[ "$ORACLE_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9._@-]*$ ]] || { echo "Set TEXTTEXT_ORACLE_HOST to the existing SSH destination." >&2; exit 1; }
+  ssh "${SSH_OPTIONS[@]}" "$ORACLE_HOST" sudo -n /usr/bin/node --input-type=module - --check < "$ROOT/release/oracle/storage-preflight.mjs"
+fi
+
 ARTIFACT="${TEXTTEXT_ORACLE_ARTIFACT:-}"
 if [ -z "$ARTIFACT" ]; then
   RELEASE_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
@@ -38,10 +48,6 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-ORACLE_HOST="${TEXTTEXT_ORACLE_HOST:-}"
-if [ -z "$ORACLE_HOST" ] && [ -f "$HOME/.config/texttext/oracle-host" ]; then
-  ORACLE_HOST="$(cat "$HOME/.config/texttext/oracle-host")"
-fi
 REMOTE_ROOT="${TEXTTEXT_ORACLE_ROOT:-/home/ubuntu/texttext}"
 BOOTSTRAP="${TEXTTEXT_ORACLE_BOOTSTRAP:-0}"
 [[ "$BOOTSTRAP" = 0 || "$BOOTSTRAP" = 1 ]] || { echo "TEXTTEXT_ORACLE_BOOTSTRAP must be 0 or 1." >&2; exit 1; }
@@ -57,7 +63,6 @@ case "$REMOTE_ROOT" in
     exit 1 ;;
 esac
 RELEASE_NAME="$(date -u +%Y%m%dT%H%M%SZ)-$DEPLOYMENT_ID-$(node -e 'console.log(require("node:crypto").randomBytes(3).toString("hex"))')"
-SSH_OPTIONS=(-i "$HOME/.ssh/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10)
 echo ">> check the existing Oracle runtime"
 ssh "${SSH_OPTIONS[@]}" "$ORACLE_HOST" bash -s -- "$REMOTE_ROOT" "$RELEASE_NAME" "$BOOTSTRAP" <<'REMOTE'
 set -euo pipefail
