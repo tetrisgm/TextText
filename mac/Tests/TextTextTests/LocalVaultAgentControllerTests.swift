@@ -172,8 +172,36 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testFeedProposalUsesCapturedFolderAndDiscardsCancelledResult() async throws {
+        var capturedFolder: String?
+        var resume: CheckedContinuation<String, Never>?
+        let (root, controller, server) = try await fixture(feedProposal: { folder, _, retryKey in
+            capturedFolder = folder
+            XCTAssertTrue(retryKey.hasPrefix("native-agent:"))
+            return await withCheckedContinuation { resume = $0 }
+        })
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("News"), withIntermediateDirectories: true)
+        try await start("feed-task", threadID: "feed-thread", turnID: "feed-turn", controller: controller, server: server, folderPath: "News")
+        let namespaces = try XCTUnwrap(server.requests("thread/start").first?.params["dynamicTools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(namespaces.first?["tools"] as? [[String: Any]])
+        XCTAssertTrue(tools.contains { $0["name"] as? String == "propose_feed" })
+        server.emitNotification("item/tool/call", params: [
+            "threadId": "feed-thread", "turnId": "feed-turn", "namespace": "texttext",
+            "tool": "propose_feed", "arguments": ["url": "https://example.test/feed"],
+        ], id: AnyHashable(921))
+        try await eventually { resume != nil }
+        XCTAssertEqual(capturedFolder, "News")
+        try controller.cancel(taskID: "feed-task")
+        resume?.resume(returning: "Review proposal retained on server")
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertFalse(server.responses.contains { $0.id == AnyHashable(921) })
+    }
+
+    @MainActor
     private func fixture(ownsProfile: Bool = false, accountEmail: String? = "writer@example.com",
-                         cancellationTimeout: TimeInterval = 15) async throws
+                         cancellationTimeout: TimeInterval = 15,
+                         feedProposal: LocalVaultAgentController.FeedProposal? = nil) async throws
         -> (URL, LocalVaultAgentController, VaultAgentTestServer) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-agent-task-\(UUID().uuidString)", isDirectory: true)
@@ -181,7 +209,7 @@ final class LocalVaultAgentControllerTests: XCTestCase {
         let server = VaultAgentTestServer(accountEmail: accountEmail)
         let controller = LocalVaultAgentController(root: root, serverFactory: { server },
             ownsProfile: ownsProfile,
-            cancellationTimeout: cancellationTimeout)
+            cancellationTimeout: cancellationTimeout, feedProposal: feedProposal)
         try controller.connect()
         try await eventually { controller.status["state"] as? String == "ready" }
         return (root, controller, server)
@@ -199,9 +227,9 @@ final class LocalVaultAgentControllerTests: XCTestCase {
 
     @MainActor
     private func start(_ taskID: String, threadID: String, turnID: String,
-                       controller: LocalVaultAgentController, server: VaultAgentTestServer) async throws {
+                       controller: LocalVaultAgentController, server: VaultAgentTestServer, folderPath: String? = nil) async throws {
         let threadIndex = server.requests("thread/start").count
-        try controller.send(taskID: taskID, prompt: "List the current files")
+        try controller.send(taskID: taskID, prompt: "List the current files", folderPath: folderPath)
         try await eventually { server.requests("thread/start").count == threadIndex + 1 }
         let thread = server.requests("thread/start")[threadIndex]
         server.emitResponse(thread, result: ["thread": ["id": threadID]])

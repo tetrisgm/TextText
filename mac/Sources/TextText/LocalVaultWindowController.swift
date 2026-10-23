@@ -104,6 +104,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         return path
     }
 #endif
+    private var feedProposalGeneration = UUID()
     private var agent: LocalVaultAgentController?
     var onSelectedFolder: (() -> Void)?
     var onVerifyAccount: (() -> Bool)?
@@ -259,6 +260,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         let current = credentials()
         let same = profileAccount.flatMap { owner in current.map { owner.sameAccount(as: $0) } } ?? (current == nil)
         if !same {
+            feedProposalGeneration = UUID()
             legacyDraftsWindow?.close(); legacyDraftsWindow = nil
             if accountFence == nil { accountFence = fenceNativeInput() }
             collaboration?.cancelAll()
@@ -684,7 +686,24 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
         if method.hasPrefix("agent") {
             guard let root else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
             if agent == nil {
-                agent = LocalVaultAgentController(root: root)
+                var feedProposal: LocalVaultAgentController.FeedProposal?
+                if let owner = profileAccount, owner.accountId != nil,
+                   let account = credentials(), owner.sameAccount(as: account),
+                   let binding = try? LocalVaultSync.binding(root: root), binding.origin == account.origin {
+                    let proposalGeneration = feedProposalGeneration
+                    let captured = LocalVaultFeedProposal.Context(root: root, account: account, binding: binding)
+                    let adapter = LocalVaultFeedProposal(captured: captured, current: { [weak self] in
+                        guard let self, self.feedProposalGeneration == proposalGeneration,
+                              !self.switchingWorkspace, self.root == root,
+                              let account = self.credentials(),
+                              let binding = try LocalVaultSync.binding(root: root) else { return nil }
+                        return .init(root: root, account: account, binding: binding)
+                    })
+                    feedProposal = { folder, arguments, retryKey in
+                        try await adapter.stage(folder: folder, arguments: arguments, retryKey: retryKey)
+                    }
+                }
+                agent = LocalVaultAgentController(root: root, feedProposal: feedProposal)
                 agent?.onEvent = { [weak self] event in self?.emit("texttext:vault-agent", value: event) }
                 agent?.onFilesChanged = { [weak self] in
                     self?.emit("texttext:vault-changed", value: [:])

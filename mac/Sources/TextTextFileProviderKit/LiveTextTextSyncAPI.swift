@@ -395,6 +395,15 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         name: String, argumentsJSON: String,
         agentName: String?, agentIntent: String?
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
+        await agentRunCommand(name: name, argumentsJSON: argumentsJSON,
+            expectedWorkspaceId: nil, agentName: agentName, agentIntent: agentIntent)
+    }
+
+    public func agentRunCommand(
+        name: String, argumentsJSON: String,
+        expectedWorkspaceId: String?,
+        agentName: String?, agentIntent: String?
+    ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
         let parsed: Any
         do {
             parsed = try JSONSerialization.jsonObject(
@@ -407,7 +416,7 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
         }
         return await agentCommandJSON(
             name: name, arguments: arguments,
-            agentName: agentName, agentIntent: agentIntent)
+            agentName: agentName, agentIntent: agentIntent, expectedWorkspaceId: expectedWorkspaceId)
     }
 
     private func agentCommand(
@@ -421,14 +430,13 @@ public final class LiveTextTextSyncAPI: TextTextSyncAPI, @unchecked Sendable {
 
     private func agentCommandJSON(
         name: String, arguments: [String: Any],
-        agentName: String?, agentIntent: String?
+        agentName: String?, agentIntent: String?, expectedWorkspaceId: String? = nil
     ) async -> Result<TextTextAgentCommandReply, TextTextSyncError> {
         let encoded: Data
         do {
-            encoded = try JSONSerialization.data(withJSONObject: [
-                "name": name,
-                "arguments": arguments,
-            ])
+            var body: [String: Any] = ["name": name, "arguments": arguments]
+            if let expectedWorkspaceId { body["expectedWorkspaceId"] = expectedWorkspaceId }
+            encoded = try JSONSerialization.data(withJSONObject: body)
         } catch {
             return .failure(.decode(error.localizedDescription))
         }

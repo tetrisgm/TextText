@@ -17,14 +17,17 @@ protocol LocalVaultAgentServer: AnyObject {
 
 extension CodexAppServerController: LocalVaultAgentServer {}
 
-/// Reuses the existing signed-in runtime, but every workspace tool reads or
-/// writes the selected folder. No hosted workspace command is involved.
+/// Local tools stay inside the selected scope. A connected folder may also
+/// stage a hosted feed proposal for explicit owner review.
 @MainActor
 final class LocalVaultAgentController {
     private static let log = Logger(subsystem: "app.texttext.mac", category: "local-vault-agent")
     var onEvent: (([String: Any]) -> Void)?
     var onFilesChanged: (() -> Void)?
     private(set) var status: [String: Any] = ["state": "disconnected"]
+    typealias FeedProposal = @MainActor (String, [String: Any], String) async throws -> String
+    private let feedProposal: FeedProposal?
+    private var hostedTools: [UUID: Task<Void, Never>] = [:]
     private let root: URL
     private let files: DispatchQueue
     private let makeServer: (() throws -> any LocalVaultAgentServer)?
@@ -80,8 +83,10 @@ final class LocalVaultAgentController {
     init(root: URL,
          serverFactory: (() throws -> any LocalVaultAgentServer)? = nil,
          ownsProfile: Bool = false,
-         cancellationTimeout: TimeInterval = 15) {
+         cancellationTimeout: TimeInterval = 15,
+         feedProposal: FeedProposal? = nil) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        self.feedProposal = feedProposal
         self.makeServer = serverFactory
         self.ownsProfile = ownsProfile
         self.cancellationTimeout = max(0.01, cancellationTimeout)
@@ -226,9 +231,9 @@ final class LocalVaultAgentController {
             // previous task's context and late notifications can never cross
             // this task boundary, even when its file scope is identical.
             try request("thread/start", CodexAppServerRequests.threadStart(
-                dynamicTools: CodexAppServerRequests.textTextToolNamespace(LocalVaultAgentFiles.tools(for: access)),
+                dynamicTools: CodexAppServerRequests.textTextToolNamespace(tools(for: access)),
                 disabledMCPServers: disabledMCPServers, workingDirectory: root.path,
-                developerInstructions: access.developerInstructions), task: task)
+                developerInstructions: access.developerInstructions + (feedProposal == nil ? "" : "\nIf supplied, propose_feed only stages an owner-review proposal. It does not fetch or subscribe until approved. Return its review link and never claim the feed was added.")), task: task)
         } catch {
             let failure = classifiedFailure(error.localizedDescription, diagnosticID: task.diagnosticID)
             abandonTask(taskID: taskID, instanceID: task.instanceID)
@@ -281,6 +286,7 @@ final class LocalVaultAgentController {
         guard !task.cancelRequested else { return }
         task.cancelRequested = true
         task.fileFence.cancel()
+        hostedTools.values.forEach { $0.cancel() }
         activeTask = task
         pendingProposals.removeAll()
         phases.removeAll()
@@ -323,6 +329,7 @@ final class LocalVaultAgentController {
 
     func stop() {
         activeTask?.fileFence.cancel()
+        hostedTools.values.forEach { $0.cancel() }
         if let loginID { try? request("account/login/cancel", ["loginId": loginID]) }
         loginID = nil; attemptedLogin = false; disconnecting = false
         generation = UUID(); pendingProposals.removeAll(); deadline?.cancel(); deadline = nil
@@ -363,6 +370,7 @@ final class LocalVaultAgentController {
         guard let task = activeTask, task.taskID == taskID,
               task.instanceID == instanceID else { return }
         task.fileFence.cancel()
+        hostedTools.values.forEach { $0.cancel() }
         activeTask = nil
         busy = false
         pendingProposals.removeAll()
@@ -618,6 +626,18 @@ final class LocalVaultAgentController {
         armDeadline(seconds: 120)
     }
 
+    private func tools(for access: LocalVaultAgentAccess) -> [[String: Any]] {
+        var tools = LocalVaultAgentFiles.tools(for: access)
+        if feedProposal != nil, case .folder(let folder) = access, !folder.isEmpty {
+            tools.append(["type": "function", "name": "propose_feed",
+                "description": "Stage a feed subscription TextPack in the selected folder for owner review. No feed is fetched or added before approval. Return the review link.",
+                "inputSchema": ["type": "object", "properties": [
+                    "url": ["type": "string"], "name": ["type": "string"]],
+                    "required": ["url"], "additionalProperties": false]])
+        }
+        return tools
+    }
+
     private func performTool(_ message: CodexAppServerMessage, requestID: AnyHashable, task: ActiveTask) {
         let params = message.rawParams ?? [:]
         guard params["namespace"] as? String == "texttext" else {
@@ -633,6 +653,34 @@ final class LocalVaultAgentController {
         // including when its first response was lost after publication.
         let creationRetryKey = "native-agent:\(taskInstanceID):\(params["callId"] ?? requestID)"
         emitTaskEvent(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""], taskID: taskID)
+        if tool == "propose_feed" {
+            guard let feedProposal, case .folder(let folder) = access, !folder.isEmpty else {
+                try? server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
+                    text: "Feed proposals require a connected folder task.", success: false))
+                return
+            }
+            let operationID = UUID()
+            hostedTools[operationID] = Task { [weak self] in
+                let result: Result<String, Error>
+                do {
+                    try fence.check(); try Task.checkCancellation()
+                    result = .success(try await feedProposal(folder, arguments, creationRetryKey))
+                } catch { result = .failure(error) }
+                guard let self else { return }
+                defer { self.hostedTools.removeValue(forKey: operationID) }
+                guard self.generation == token, let current = self.activeTask,
+                      current.taskID == taskID, current.instanceID == taskInstanceID,
+                      !current.cancelRequested, self.busy else { return }
+                let text: String, success: Bool
+                switch result {
+                case .success(let value): text = value; success = true
+                case .failure(let error): text = error.localizedDescription; success = false
+                }
+                try? self.server?.respond(id: toolRequestID.rawValue,
+                    result: CodexAppServerRequests.dynamicToolResult(text: text, success: success))
+            }
+            return
+        }
         files.async { [weak self] in
             let result = Result { try LocalVaultAgentFiles.perform(tool, arguments: arguments, root: root, access: access, cancellation: fence, creationRetryKey: creationRetryKey) }
             DispatchQueue.main.async {
@@ -727,7 +775,7 @@ enum LocalVaultAgentAccess: Equatable, Sendable {
         }
         return """
         You are TextText's assistant for a selected local TextPack scope.
-        Use only the supplied texttext file tools for workspace work. They operate directly on local files without any hosted workspace API. Do not use installed skills, other MCP servers, or other integrations.
+        Use only the supplied texttext tools for workspace work. File tools operate directly on local files; an explicitly supplied proposal tool stages owner review through TextText. Do not use installed skills, other MCP servers, or other integrations.
         \(boundary)
         Read a file before editing it. Pass its exact hash to write_file. On a stale-file error, read again, preserve the user's intervening edits, and retry at most once. Never replace a file blindly. Do not edit anything for a read-only request.
         TextPack contains Markdown, a schema-v1 document snapshot, an embedded template, and assets. Preserve metadata and assets. For a template change, read its templateJSON first and update validated declarative JSON, never executable HTML, CSS, or JavaScript. Keep Markdown and documentJSON content consistent when supplying both.
