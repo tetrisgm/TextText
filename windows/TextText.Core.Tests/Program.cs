@@ -33,7 +33,7 @@ static class Test
      assert(Retained(engine),"portable unavailable queued staging remains exact with no eligible retry across restart");
  }
  static async Task Main(string[] args){
- if(args.SequenceEqual(new[]{"--catalog-quarantine"})){await CatalogQuarantineTests.Run(Path.Combine(Path.GetTempPath(),"texttext-catalog-"+Guid.NewGuid()),Assert);return;}
+ if(args.SequenceEqual(new[]{"--catalog-quarantine"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/",StringComparison.Ordinal))basis="/private"+basis;await CatalogQuarantineTests.Run(Path.Combine(basis,"texttext-catalog-"+Guid.NewGuid()),Assert);return;}
  if(args.SequenceEqual(new[]{"--registry-index-reads"})){var fixture=Path.Combine(Path.GetTempPath(),"texttext-registry-index-"+Guid.NewGuid());RegistryIndexReadTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
  if(args.SequenceEqual(new[]{"--repeated-recovery-inventory"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/"))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-repeated-recovery-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);RepeatedRecoveryInventoryTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
  if(args.SequenceEqual(new[]{"--path-inspection"})){var pathBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&pathBase.StartsWith("/var/"))pathBase="/private"+pathBase;var pathTemp=Path.Combine(pathBase,"texttext-path-inspection-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(pathTemp);PathInspectionTests.Run(pathTemp,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+pathTemp);return;}

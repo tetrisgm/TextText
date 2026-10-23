@@ -13,7 +13,15 @@ static class CatalogQuarantineTests {
         File.WriteAllBytes(Path.Combine(store.StateDirectory,"sync.json"),JsonSerializer.SerializeToUtf8Bytes(state));
         var remote=new Remote(download);var engine=Test.NewSync(store,remote);Exception? failure=null;
         try{await engine.SyncAsync();}catch(Exception error){failure=error;}
-        if(failure is not null)Console.WriteLine(failure);
+        if(failure is not null&&OperatingSystem.IsWindows())Console.WriteLine(failure);
+        if(!OperatingSystem.IsWindows()) {
+            // Fingerprint intentionally provides no physical identity on this
+            // portable test host. Unknown held identities must stay fail-closed.
+            check(failure is IOException&&failure.Message.StartsWith("A held folder's local identity",StringComparison.Ordinal),"portable unavailable physical identity explicitly refuses held subtree");
+            check(File.ReadAllBytes(store.Resolve(heldFile.Path)).SequenceEqual(held)&&File.ReadAllBytes(store.Resolve(local.Path)).SequenceEqual(upload)&&File.ReadAllBytes(Path.Combine(store.StateDirectory,"sync.json")).SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(state)),"portable refusal retains exact local content and durable operation state");
+            check(remote.Uploads==0&&remote.Downloads==0&&engine.CatalogIssues.Count==0,"portable refusal dispatches no content writes and exposes fatal error without stale scoped warning");
+            return;
+        }
         check(failure is null,"nonportable catalog folder does not stop unrelated actual-engine sync");
         check(remote.Uploads==1&&remote.Uploaded!.SequenceEqual(upload),"unrelated queued upload reaches remote exactly once with exact bytes");
         check(store.Read("Good/Download.textpack").SequenceEqual(download),"unrelated remote item downloads exact bytes");
