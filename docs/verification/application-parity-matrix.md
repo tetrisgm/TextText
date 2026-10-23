@@ -2,6 +2,10 @@
 
 Status: per-flow source inventory refreshed October 17, 2026 (T10). This identifies implementation owners and acceptance gaps; it does not claim installed feature parity.
 
+## Current bounded acceptance: October 23
+
+The authoritative remaining-work plan supersedes the historical checklist below. [044e5441 live web Batch A evidence](2026-10-23-044e5441-web-batch-a.md) proves exact-content normal tab reopen and title-search navigation on a dedicated fixture. Folder default/design controls were present in light/dark DOM; default persistence, inheritance, visual contrast, List/Cards, current-release folder move, and actual backlink navigation remain unverified. This does not accept complete rows across all six platform/theme cells.
+
 ## Application surfaces
 
 | Surface | UI owner | Runtime and adapter boundary | Known difference or open check |

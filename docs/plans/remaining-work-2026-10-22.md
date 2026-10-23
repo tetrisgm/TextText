@@ -18,6 +18,27 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+October 23 latest: the human-invoked `ship-all.sh` on full commit
+`044e544160862b625eea02afd649f4917325f51c` exited 0 and installed
+that commit on Oracle web, Mac 0.203 build 1280, and Windows. Each surface
+passed a real exact-content edit, save, normal close, and fresh reopen.
+The owner's Mac package pin remained byte-identical. [Mac receipt](../verification/2026-10-23-044e5441-mac-acceptance.md),
+[Windows receipt](../verification/2026-10-23-windows-044-installed-acceptance.md).
+Phase 1's delivery and per-surface exit checks are complete. Real multiplayer
+acceptance exposed a separate two-ID same-path conflict, now being fixed in
+the sync/recovery architecture.
+
+October 23 source progress after that release: `841fcf5f` and `cbf8ea18`
+allocate identity-bound names for newly created web/Windows and native Mac
+notes; focused distributed-creation regressions pass. `82eec23b` adds a
+reviewed Windows keep-both recovery UI and scoped bridge with restart-safe
+operation identity ([source receipt](../verification/2026-10-23-windows-path-collision-recovery-ui.md)).
+Windows Core recovery is now committed as `7fd56a20` after 1,863 PC Core
+assertions and 24 focused Mac assertions
+([receipt](../verification/2026-10-23-windows-path-collision-recovery.md)).
+Installed keep-both and multiplayer remain open. These commits are not yet
+a delivered Batch A release.
+
 October 23 current: one human-invoked `release/ship-all.sh` run exited 0
 at full commit `ec300bb388126631edb73a491faf80bad14fb776`, installing it on
 Oracle web, Mac 0.203 build 1279, and Windows. After catalog repair, Mac and
@@ -123,6 +144,11 @@ Exit: one invocation brings web, Mac and Windows to the same commit. Each surfac
 Effort: about 1 day. Mac build time dominates.
 
 ## Phase 2: Windows startup and open responsiveness
+
+October 23 latest: `044e5441` installed successfully, with one observed
+first-launch upper bound of 7.8 s. That sample cannot establish either side
+of the 3 s target. The required five-launch timestamped check remains open;
+do not count the edit/save/reopen pass as a responsiveness pass.
 
 October 23 current: installed `ec300bb3` still showed `about:blank` at
 +8.86 s on one launch. A single native stack sample at +9.85 s points to
