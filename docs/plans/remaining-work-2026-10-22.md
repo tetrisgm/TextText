@@ -18,6 +18,17 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+October 23 latest: one human-invoked `release/ship-all.sh` run exited 0 at
+`d7a06af4` and installed that full commit on Oracle web, Mac 0.203 build 1278,
+and Windows. All three passed a real exact-content edit, save, normal close,
+and reopen. The installed Mac assistant also staged a feed proposal for review
+without applying it. The owner's Mac package pin remained byte-identical.
+[Mac/web receipt](../verification/2026-10-23-d7-mac-web-installed.md),
+[Windows receipt](../verification/2026-10-23-windows-d7-installed-acceptance.md).
+The previous `644deafd` run stopped before delivery on stale generated MCP
+documentation; `d7a06af4` corrected the two generated files and passed the
+Mac documentation gate. Cross-client sync and Phase 2 targets remain open.
+
 October 23 latest: the human-invoked unified `a868426a` run exited 0 and
 delivered that full commit to Oracle web, Mac 0.203 build 1277, and Windows.
 Each surface passed one real exact-content edit, save, normal close, and reopen
@@ -98,6 +109,16 @@ Exit: one invocation brings web, Mac and Windows to the same commit. Each surfac
 Effort: about 1 day. Mac build time dominates.
 
 ## Phase 2: Windows startup and open responsiveness
+
+October 23 latest: installed `d7a06af4` failed the target on its first
+uninstrumented launch: workspace still absent at +8.53 s, restored note visible
+at +15.45 s. Exact content survived normal quit/reopen and no timeout banner
+appeared. This decisive failure stopped repeated timing attempts. The shipped
+retained-registry read reuse was insufficient. A production transport harness
+found a second redundant `files.list` call for folders already present in the
+first response; its one-call correction and regression are in progress, without
+claiming it accounts for the full delay. The five-launch installed exit check
+remains open. [Receipt](../verification/2026-10-23-windows-d7-installed-acceptance.md).
 
 October 23 later evidence: the installed `a868426a` app passed one exact-content
 normal reopen check, without a latency claim. A single sampled launch of the
@@ -183,6 +204,13 @@ Exit: the matrix has a real result for every row on all three surfaces, and no u
 Effort: 1–2 weeks, depending on the failures found.
 
 ## Phase 4: templates and agent workflows (T20)
+
+October 23 latest: `d7a06af4` delivers server `add_feed` and stage-only Mac and
+Windows native assistant adapters. A real installed Mac proposal reached the
+review page and remained unapplied. Canonical asset-add and template
+save/version/retire commands are still missing from native assistant tool lists;
+the root-only reviewed adapter and retry identity are in progress. No four-entry
+point workflow or multiplayer acceptance is claimed yet.
 
 October 23 progress: reviewed file-backed feed commands and durable proposal
 staging are committed as `20baf011` (with a line-ending-only follow-up
