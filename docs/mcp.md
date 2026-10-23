@@ -13,7 +13,7 @@ agents used with that channel connect through this hosted endpoint instead. See
 endpoint was retired in `0.146`.
 
 <!-- generated:tool-source -->
-`src/lib/mcp/vault-contract.ts` defines the 27 hosted tool
+`src/lib/mcp/vault-contract.ts` defines the 28 hosted tool
 names, file-backed schemas and descriptions. Shared mutability and MCP
 annotations come from `src/lib/ai/tools.ts`. The MCP registry advertises
 this hosted catalog rather than every internal workspace command.
@@ -110,7 +110,7 @@ Manual tokens currently carry `sync` access and remain valid until revoked.
 | Scope | Access |
 |-------|--------|
 | `read` | Call the 8 read-scope tools: `get_workspace`, `list_folders`, `list_items`, `read_item`, `search`, `list_comments`, `list_trash`, `list_document_templates`. |
-| `sync` | Call all 27 tools, including the 19 that mutate content or read administration data. It also grants every `read` operation. |
+| `sync` | Call all 28 tools, including the 20 that mutate content or read administration data. It also grants every `read` operation. |
 <!-- /generated:scope-table -->
 
 A mutation attempted with a `read` token returns `403 insufficient_scope` and
@@ -140,10 +140,11 @@ or workspace selector that could cross that boundary.
   cover and asset references use the same audited command surface.
 
 <!-- generated:tool-table -->
-## Tools (27)
+## Tools (28)
 
 | Tool | Scope | Effect |
 |------|-------|--------|
+| `add_feed` | `sync` | Follow one public feed as a private subscription TextPack in parent_path (use Feeds or a chosen folder). Requires a stable idempotency_key. The exact URL and destination are reviewed before fetching. Publisher metadata does not alter the saved title; name defaults to the URL hostname. Articles remain transient until kept; no background crawler or retention setting is created. |
 | `get_workspace` | `read` or `sync` | Return this workspace's handle, name, your effective access, and server capabilities. |
 | `list_folders` | `read` or `sync` | List every folder you can see with its id, path, mode, and item count. |
 | `create_folder` | `sync` | Create one ordinary folder inside an existing parent_path; use an empty parent_path for the workspace root. Requires editing permission on the parent and a stable idempotency_key. Does not set folder templates or privacy. |
