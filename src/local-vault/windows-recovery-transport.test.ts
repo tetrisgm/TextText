@@ -18,11 +18,16 @@ function native(handler: (method: string, params: Record<string, unknown>) => un
 }
 const status = { root: "C:\\Bound", workspaceId: "workspace", name: "Workspace", accountId: "account-a", available: true, connected: true };
 const replacement = { id: "operation", path: "Moved.textpack", itemId: "item", currentHash: "a".repeat(64), preparedHash: "b".repeat(64), displacedHash: "c".repeat(64), savedAt: "2026-10-18" };
+const collision = { localItemId: "local", remoteItemId: "remote", sourcePath: "Notes/Untitled.textpack", localOperationId: "local-operation", remoteOperationId: "remote-operation", state: "review", resolutionId: null };
 
 it.each([false, true])("keeps bound local recovery available with hosted history offline=%s", async offline => {
   vi.stubGlobal("window", new EventTarget());
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") {
+      expect(params).toEqual({ workspaceRoot: status.root, workspaceId: status.workspaceId, accountId: status.accountId });
+      return [collision];
+    }
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -37,7 +42,7 @@ it.each([false, true])("keeps bound local recovery available with hosted history
   const transport = await createWindowsVaultTransport(view);
   try {
     const result = await transport.request("recoveryList", { workspaceRoot: "C:\\Untrusted" }) as Record<string, unknown>;
-    expect(result).toMatchObject({ replacements: [replacement], assetsTruncated: true });
+    expect(result).toMatchObject({ replacements: [replacement], pathCollisions: [collision], assetsTruncated: true });
     expect(result.entries).toEqual(offline ? [] : [{ id: "server-copy" }]);
     expect(Boolean(result.warning)).toBe(offline);
   } finally { transport.destroy(); }
@@ -47,6 +52,7 @@ it("surfaces a corrupt native registry before requesting server recovery", async
   vi.stubGlobal("window", new EventTarget());
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -65,6 +71,7 @@ it("returns opaque displaced bytes and binds explicit resolution and raw downloa
   const retained = { opaque: true, path: "Moved.textpack", hash: "c".repeat(64), data: btoa("not a ZIP"), parseError: "Retained file" };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -87,6 +94,7 @@ it("returns explicit removal absence without parsing a fabricated empty pack", a
   const absent = { absent: true, path: "Removed.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -107,6 +115,7 @@ it("binds four-version move consent to the original native root", async () => {
   const move = { ...replacement, kind: "move", sourcePath: "Original.textpack", sourcePresent: false, sourceHash: null, currentPresent: true, captured: true };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -128,6 +137,7 @@ it("preserves an absent original move path without fabricating a TextPack", asyn
   const absent = { absent: true, path: "Original.textpack", hash: null, data: null };
   const view = native(method => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     if (method === "files.folderSyncMoveList") return [];
     if (method === "files.folderRenameList") return [];
@@ -144,6 +154,7 @@ it("lists global folder recovery before fenced file history and scopes inspectio
   const folder = { id: "folder-op", fromPath: "notes", toPath: "Notes", expectedIdentity: "1:2", from: { present: false, identity: null }, to: { present: true, identity: "1:3" }, inspection: "e".repeat(64), summary: "Retained folder details", resolutionBlocked: null, resolved: false };
   const view = native((method, params) => {
     if (method === "native.status") return status;
+    if (method === "files.pathCollisionList") return [];
     if (method === "files.savedFileMoveList") return {entries:[],truncated:false};
     expect(params).toMatchObject({workspaceRoot: status.root, workspaceId: status.workspaceId, accountId: status.accountId});
     if (method === "files.folderSyncMoveList") return [];
@@ -157,7 +168,7 @@ it("lists global folder recovery before fenced file history and scopes inspectio
     expect(await transport.request("recoveryList", {path: "elsewhere.textpack"})).toMatchObject({folderRenames: [folder], entries: [], replacements: [], assets: []});
     expect(await transport.request("folderRenameRead", { id: folder.id, workspaceRoot: "untrusted", accountId: "other" })).toEqual(folder);
     expect(await transport.request("resolveFolderRename", { id: folder.id, fromPath: folder.fromPath, toPath: folder.toPath, inspection: folder.inspection, workspaceRoot: "untrusted" })).toEqual({resolved: true});
-    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.savedFileMoveList", "files.folderSyncMoveList", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
+    expect(view.messages.map(m => m.method)).toEqual(["native.status", "files.pathCollisionList", "files.savedFileMoveList", "files.folderSyncMoveList", "files.folderRenameList", "files.folderRenameRead", "files.resolveFolderRename"]);
   } finally { transport.destroy(); }
 });
 
@@ -165,6 +176,7 @@ it("keeps saved folder commands visible before fenced metadata reads and binds f
  vi.stubGlobal("window",new EventTarget());const entry={id:"saved-folder",state:"unavailable"};
  const view=native((method,params)=>{
   if(method==="native.status")return status;
+    if(method==="files.pathCollisionList")return [];
   if(method==="files.savedFileMoveList")return {entries:[],truncated:false};
   expect(params.workspaceRoot).toBe(status.root);expect(params.workspaceId).toBe(status.workspaceId);expect(params.accountId).toBe(status.accountId);
   if(method==="files.folderSyncMoveList")return[entry];
@@ -176,7 +188,7 @@ it("keeps saved folder commands visible before fenced metadata reads and binds f
   expect(await transport.request("recoveryList",{})).toMatchObject({folderSyncMoves:[entry],entries:[],replacements:[],assets:[]});
   expect(await transport.request("folderSyncMoveRead",{id:entry.id,workspaceRoot:"foreign",accountId:"foreign"})).toEqual(entry);
   expect(await transport.request("resolveFolderSyncMove",{id:entry.id,inspection:"i",localInspection:"l",requestHash:"r",consent:true})).toEqual({resolved:true});
-  expect(view.messages.map(m=>m.method)).toEqual(["native.status","files.savedFileMoveList","files.folderSyncMoveList","files.folderSyncMoveRead","files.resolveFolderSyncMove"]);
+  expect(view.messages.map(m=>m.method)).toEqual(["native.status","files.pathCollisionList","files.savedFileMoveList","files.folderSyncMoveList","files.folderSyncMoveRead","files.resolveFolderSyncMove"]);
  }finally{transport.destroy();}
 });
 
@@ -184,6 +196,7 @@ it("binds saved file move reads and explicit consent to the selected native work
   vi.stubGlobal("window",new EventTarget());
   const view=native((method,params)=>{
     if(method==="native.status")return status;
+    if(method==="files.pathCollisionList")return [];
     if(["files.savedFileMoveRead","files.retrySavedFileMove","files.keepSavedFileMoveNames"].includes(method)){
       expect(params).toMatchObject({workspaceRoot:status.root,workspaceId:status.workspaceId,accountId:status.accountId,id:"saved"});
       return {resolved:true};
@@ -203,6 +216,7 @@ it("keeps saved moves available offline and filters before the native bounded li
   vi.stubGlobal("window",new EventTarget());
   const view=native((method,params)=>{
     if(method==="native.status")return status;
+    if(method==="files.pathCollisionList")return [];
     if(method==="files.savedFileMoveList"){expect(params).toEqual({workspaceRoot:status.root,workspaceId:status.workspaceId,accountId:status.accountId,path:"Notes/one.textpack"});return {entries:[{id:"saved"}],truncated:true};}
     if(["files.folderSyncMoveList","files.folderRenameList","files.replacementList"].includes(method))return [];
     if(method==="files.recoveryAssets")return {assets:[],assetsTruncated:false};
