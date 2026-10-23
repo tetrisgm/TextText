@@ -5,6 +5,22 @@ import TextTextWorkspaceCore
 @testable import TextTextFileProviderKit
 
 final class LocalVaultImportTests: XCTestCase {
+    func testAllocatedIdentityIsPreservedByImportAndClone() throws {
+        try fixture { root, store in
+            let source = root.appendingPathComponent("Untitled.md")
+            try Data("---\ntitle: \"Untitled\"\n---\nExact body\n".utf8).write(to: source)
+            let identity = UUID()
+            let path = "Untitled \(identity.uuidString.lowercased()).textpack"
+            let imported = try store.importFile(from: source, newPath: path, newItemId: identity)
+            XCTAssertEqual(MarkdownIdentityCodec.extract(from: imported.contents.markdown)?.itemId, identity.uuidString.lowercased())
+            let cloneID = UUID()
+            let cloned = try store.clone(path: path, newPath: "Untitled \(cloneID.uuidString.lowercased()).textpack", newItemId: cloneID)
+            XCTAssertEqual(MarkdownIdentityCodec.extract(from: cloned.contents.markdown)?.itemId, cloneID.uuidString.lowercased())
+            XCTAssertTrue(cloned.contents.markdown.contains("Exact body"))
+            XCTAssertThrowsError(try store.importFile(from: source, newPath: path, newItemId: UUID()))
+            XCTAssertEqual(try store.read(path: path).hash, imported.hash)
+        }
+    }
     func fixture(_ run: (URL, LocalVaultDocumentStore) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

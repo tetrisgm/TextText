@@ -5,7 +5,7 @@ import TextTextWorkspaceCore
 extension LocalVaultDocumentStore {
     /// Import is a copy with a fresh identity, including when the same source
     /// is imported twice. Never overwrite a workspace file or mutate the source.
-    public func importFile(from source: URL, newPath: String) throws -> Document {
+    public func importFile(from source: URL, newPath: String, newItemId: UUID = UUID()) throws -> Document {
         let destination = try url(for: newPath)
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
@@ -54,7 +54,7 @@ extension LocalVaultDocumentStore {
         // bound, and changes only text.md so opaque entries remain untouched.
         let stagingStore = LocalVaultDocumentStore(root: temporary)
         try Self.ensureImportSnapshot(at: staged, filename: source.deletingPathExtension().lastPathComponent, temporary: temporary)
-        _ = try stagingStore.clone(path: "Source.textpack", newPath: "Imported.textpack")
+        _ = try stagingStore.clone(path: "Source.textpack", newPath: "Imported.textpack", newItemId: newItemId)
         let ready = temporary.appendingPathComponent("Imported.textpack")
         let prepared = try parseDocument(path: newPath, bytes: StableFileSnapshot.read(ready), preserveHistory: true)
         var installed: Result<Void, Error>?

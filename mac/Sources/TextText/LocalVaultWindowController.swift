@@ -381,12 +381,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             do {
                 let files = DocumentStore(root: root)
                 let stem = url.host ?? "Bookmark"
-                var title = stem, suffix = 2
-                while FileManager.default.fileExists(atPath: root.appendingPathComponent(DocumentCreation.filename(for: title) + ".textpack").path) {
-                    title = "\(stem) \(suffix)"; suffix += 1
-                }
                 let created = try LocalVaultEditOriginJournal(root: root).recordingNativeSave {
-                    let created = try files.create(title: title, body: url.absoluteString, kind: "bookmark", sourceURL: url.absoluteString)
+                    let created = try files.create(title: stem, body: url.absoluteString, kind: "bookmark", sourceURL: url.absoluteString, distributedFilename: true)
                     return try LocalVaultDocumentStore(root: root).read(path: files.relativePath(of: created))
                 }
                 DispatchQueue.main.async { _ = self?.openFile(root.appendingPathComponent(created.path)); self?.emit("texttext:vault-changed", value: [:]) }
@@ -432,12 +428,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let store = LocalVaultDocumentStore(root: root)
                     let stem = DocumentCreation.filename(for: source.deletingPathExtension().lastPathComponent)
                     let prefix = folder.isEmpty ? "" : folder + "/"
-                    var path = prefix + stem + ".textpack", suffix = 2
-                    while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
-                        path = prefix + stem + " \(suffix).textpack"; suffix += 1
-                    }
+                    let identity = UUID()
+                    let path = prefix + stem + " " + identity.uuidString.lowercased() + ".textpack"
                     let document = try LocalVaultEditOriginJournal(root: root).recordingNativeSave {
-                        try store.importFile(from: source, newPath: path)
+                        try store.importFile(from: source, newPath: path, newItemId: identity)
                     }
                     return ["file": Self.payload(document)]
                 }
@@ -904,12 +898,10 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let stem = DocumentCreation.filename(for: try Self.string(params, "title"))
                     let folder = try Self.string(params, "folder")
                     let prefix = folder.isEmpty ? "" : folder + "/"
-                    var path = prefix + stem + ".textpack", suffix = 2
+                    let identity = UUID()
+                    let path = prefix + stem + (params["exactPath"] == nil ? " " + identity.uuidString.lowercased() : "") + ".textpack"
                     if let exact = params["exactPath"] as? String, exact != path { throw VaultBridgeError("The folder view destination does not match its folder.") }
-                    while FileManager.default.fileExists(atPath: try store.url(for: path).path) {
-                        if params["exactPath"] != nil { throw VaultBridgeError("A file already occupies the folder view path.") }
-                        path = prefix + stem + " \(suffix).textpack"; suffix += 1
-                    }
+                    guard !FileManager.default.fileExists(atPath: try store.url(for: path).path) else { throw VaultBridgeError("A file already occupies the creation path.") }
                     let temporary = FileManager.default.temporaryDirectory
                         .appendingPathComponent("texttext-import-\(UUID().uuidString)", isDirectory: true)
                     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)
@@ -917,7 +909,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let source = temporary.appendingPathComponent(stem + ".textpack")
                     try data.write(to: source, options: .withoutOverwriting)
                     return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
-                        try store.importFile(from: source, newPath: path)
+                        try store.importFile(from: source, newPath: path, newItemId: identity)
                     })
                 case "rename":
                     return try Self.payload(store.rename(path: Self.string(params, "path"),
@@ -959,22 +951,18 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                     let files = DocumentStore(root: root)
                     let title = try Self.string(params, "title")
                     let folder = params["folder"] as? String
-                    var uniqueTitle = title
-                    var suffix = 2
-                    while FileManager.default.fileExists(atPath: try store.url(for:
-                        (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack").path) {
-                        uniqueTitle = "\(title) \(suffix)"; suffix += 1
-                    }
+                    let identity = UUID()
+                    let newPath = (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: title) + " " + identity.uuidString.lowercased() + ".textpack"
                     let destination = try store.url(for:
-                        (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack")
+                        newPath)
                     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if let source = params["sourcePath"] as? String {
                         return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
                             try store.clone(path: source, sourceHash: params["sourceHash"] as? String,
-                                newPath: (folder.flatMap { $0.isEmpty ? nil : $0 + "/" } ?? "") + DocumentCreation.filename(for: uniqueTitle) + ".textpack",
+                                newPath: newPath,
                                 documentJSON: params["documentJSON"] as? String,
                                 templateJSON: params["templateJSON"] as? String,
-                                templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String)
+                                templateAuthoringSourceJSON: params["templateAuthoringSourceJSON"] as? String, newItemId: identity)
                         })
                     }
                     let kind = params["kind"] as? String ?? "note"
@@ -985,8 +973,8 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                               url.host != nil, url.user == nil, url.password == nil else { throw VaultBridgeError("Choose an HTTP or HTTPS link without credentials.") }
                     }
                     return try Self.payload(LocalVaultEditOriginJournal(root: root).recordingNativeSave {
-                        let created = try files.create(title: uniqueTitle, body: params["body"] as? String ?? "",
-                            folder: folder, kind: kind, sourceURL: source)
+                        let created = try files.create(title: title, body: params["body"] as? String ?? "",
+                            folder: folder, kind: kind, sourceURL: source, distributedFilename: true)
                         return try store.read(path: files.relativePath(of: created))
                     })
                 default: throw VaultBridgeError("Unknown file operation.")

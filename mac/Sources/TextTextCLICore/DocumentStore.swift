@@ -306,10 +306,10 @@ public struct DocumentStore: Sendable {
     @discardableResult
     public func create(
         title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
-        sourceURL: String? = nil
+        sourceURL: String? = nil, distributedFilename: Bool = false
     ) throws -> URL {
         try prepareCreation(title: title, body: body, folder: folder, kind: kind,
-                            sourceURL: sourceURL, itemId: UUID().uuidString.lowercased())
+                            sourceURL: sourceURL, itemId: UUID().uuidString.lowercased(), distributedFilename: distributedFilename)
     }
 
     /// Prepare a complete package at an unpublished location when a durable
@@ -319,7 +319,7 @@ public struct DocumentStore: Sendable {
         title: String, body: String? = nil, folder: String? = nil, kind: String? = nil,
         sourceURL: String? = nil, itemId: String, preparedOutput: URL? = nil,
         customDocumentJSON: String? = nil, customTemplateJSON: String? = nil,
-        assets: [TextTextTextBundlePackage.MaterializedAsset] = []
+        assets: [TextTextTextBundlePackage.MaterializedAsset] = [], distributedFilename: Bool = false
     ) throws -> URL {
         let fileManager = FileManager.default
         var destination = root
@@ -361,7 +361,7 @@ public struct DocumentStore: Sendable {
                 throw TextTextCLIError.invalidDocument("custom creation must match title/body and contain no unimported assets")
             }
         }
-        let name = DocumentCreation.filename(for: title)
+        let name = DocumentCreation.filename(for: title) + (distributedFilename ? " \(itemId)" : "")
         let url = destination.appendingPathComponent("\(name).textpack")
         guard !fileManager.fileExists(atPath: url.path) else {
             throw TextTextCLIError.invalidDocument(

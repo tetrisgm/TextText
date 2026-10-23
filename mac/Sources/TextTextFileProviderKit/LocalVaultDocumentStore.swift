@@ -487,7 +487,7 @@ public struct LocalVaultDocumentStore: Sendable {
     /// Mutation receipts belong to the old identity and must not be inherited.
     public func clone(path: String, sourceHash: String? = nil, newPath: String,
                       documentJSON: String? = nil, templateJSON: String? = nil,
-                      templateAuthoringSourceJSON: String? = nil) throws -> Document {
+                      templateAuthoringSourceJSON: String? = nil, newItemId: UUID = UUID()) throws -> Document {
         let source = try sourceHash.map { try readRevision(path: path, hash: $0) } ?? read(path: path)
         let destination = try url(for: newPath)
         let saved = root.appendingPathComponent(".texttext/history/\(source.hash).textpack")
@@ -514,7 +514,7 @@ public struct LocalVaultDocumentStore: Sendable {
             guard let markdown = String(data: original, encoding: .utf8) else { throw Failure.invalidPath }
             let identity = MarkdownIdentityCodec.extract(from: markdown)
             let replacement = MarkdownIdentityCodec.inject(into: markdown,
-                itemId: UUID().uuidString.lowercased(), folderId: nil, kind: identity?.kind)
+                itemId: newItemId.uuidString.lowercased(), folderId: nil, kind: identity?.kind)
             let replacementURL = temporary.appendingPathComponent("text.md")
             try Data(replacement.utf8).write(to: replacementURL)
             guard let currentMarkdown = archive[entryPath] else { throw Failure.invalidPath }

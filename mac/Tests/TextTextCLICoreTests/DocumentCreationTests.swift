@@ -1,8 +1,20 @@
 import XCTest
+import TextTextWorkspaceCore
 @testable import TextTextFileProviderKit
 @testable import TextTextCLICore
 
 final class DocumentCreationTests: XCTestCase {
+    func testReplicaCreationUsesDocumentIdentityInPathWithoutChangingTitle() throws {
+        let left = try store.create(title: "Untitled", body: "Exact body", folder: "Notes", distributedFilename: true)
+        let secondRoot = root.appendingPathComponent("second-client")
+        try FileManager.default.createDirectory(at: secondRoot.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        let right = try DocumentStore(root: secondRoot).create(title: "Untitled", body: "Exact body", folder: "Notes", distributedFilename: true)
+        XCTAssertNotEqual(left.lastPathComponent, right.lastPathComponent)
+        let file = try LocalVaultDocumentStore(root: root).read(path: store.relativePath(of: left))
+        let id = try XCTUnwrap(MarkdownIdentityCodec.extract(from: file.contents.markdown)?.itemId)
+        XCTAssertEqual(left.lastPathComponent, "Untitled \(id).textpack")
+        XCTAssertTrue(file.contents.markdown.contains("title: \"Untitled\""))
+    }
     private var root: URL!
     private var store: DocumentStore!
 
