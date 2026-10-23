@@ -16,11 +16,13 @@ with one heavy Mac build lane and independent Windows investigation.
   backups. [Mac/web](verification/2026-10-23-mac-web-installed-acceptance.md),
   [Windows](verification/2026-10-23-windows-98b-installed-acceptance.md).
   The next unified release must verify the permanent backup correction end to end.
-- Phase 2 changes are integrated but uncommitted: durable-checkpoint foreground
+- Phase 2 changes are committed (`41959359`, `317aab3c`): durable-checkpoint foreground
   yielding with bounded fairness, explicit incomplete-pass retry obligation,
   consistent connection state and remote-response diagnostics, scoped UI errors,
   nonblocking listing permissions and staged initial bridge construction. Full
-  native suites and Mac checks are underway. Installed five-launch targets and
+  native suites, WPF compilation, Mac checks and renderer regressions pass.
+  [Checks](verification/2026-10-23-sync-foreground-checkpoints.md).
+  Installed five-launch targets and
   server round-trip acceptance remain mandatory; Windows hosted convergence is
   not yet independently established.
 - Latest unified invocation `446784e2`: Mac release/sync gates and Windows

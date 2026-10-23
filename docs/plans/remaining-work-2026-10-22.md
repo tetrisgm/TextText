@@ -79,7 +79,9 @@ Effort: about 1 day. Mac build time dominates.
 ## Phase 2: Windows startup and open responsiveness
 
 October 23 status: checkpoint scheduling/fairness, state reporting, scoped-error,
-listing and initial-construction changes are integrated for required checks.
+listing and initial-construction changes are committed as `41959359` and
+`317aab3c`. Full PC/Mac native suites, WPF compilation and renderer regressions
+pass ([receipt](../verification/2026-10-23-sync-foreground-checkpoints.md)).
 No three-second installed target or Windows server-convergence claim yet.
 
 Problem: on a real 1,100-note workspace, launch can still show "The connection is taking longer than expected". A restored note can show "Opening document…" for tens of seconds while `SyncEngine.SyncAsync` runs 10 or more full workspace scans per pass and holds the store. Per-file costs are fixed (`67efe404`, `680a8581`); the number of scans is not.
