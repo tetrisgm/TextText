@@ -9,3 +9,5 @@ Safari's existing authenticated production workspace then displayed the Mac mark
 > Web 24104475 live acceptance. Exact content survives tab close and reopen. Verified web a868426a. Verified web d7a06af4. Mac ec300bb3 sync verified. Web ec300bb3 sync verified.
 
 Foreground checks aborted input whenever the owner's app became active. Existing tabs and content were preserved. These are real installed/live UI results, not visual contrast or multi-user acceptance. Backlink navigation and the root-scoped stage-only agent proposal remain pending.
+
+The live Linked from control opened the honest empty result, `No cards link here yet`, for this fixture. A root assistant request for `propose_feed` was invalid verification scope: that tool is intentionally folder-only, while root exposes asset/template discovery and proposals. The corrected root request was interrupted during keyboard input: an Open workspace folder dialog appeared and the transcript contained truncated repeated prompt entries, then Stopped. No full request or proposal success is claimed; input stopped without dismissing the dialog. No approval or content operation was requested.
