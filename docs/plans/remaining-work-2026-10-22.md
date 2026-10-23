@@ -20,13 +20,17 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 October 23 current: one human-invoked `release/ship-all.sh` run exited 0
 at full commit `ec300bb388126631edb73a491faf80bad14fb776`, installing it on
-Oracle web, Mac 0.203 build 1279, and Windows. Post-repair installed
-exact-content checks are still in progress; build success is not acceptance.
+Oracle web, Mac 0.203 build 1279, and Windows. After catalog repair, Mac and
+web each passed a real exact-content normal reopen on the same shared note;
+the Mac marker reached the live web app. Windows `ec` acceptance is superseded
+by a decisive startup failure and will be run on the next fixed release.
+[Mac/web receipt](../verification/2026-10-23-ec300bb3-mac-web-acceptance.md).
 The owner authorized removal of three exact malformed, empty Oracle folders.
 The empty-directory-only repair preserved all 1,480 TextPack path/content
 hashes, receipts, and journals ([receipt](../verification/2026-10-23-empty-catalog-folders.md)).
 Native clients still need scoped catalog-error handling so the next malformed
-folder does not pause healthy-item sync.
+folder does not pause healthy-item sync. The server guard and Mac classifier
+are now committed with focused regressions; Windows remains in progress.
 
 October 23 latest: one human-invoked `release/ship-all.sh` run exited 0 at
 `d7a06af4` and installed that full commit on Oracle web, Mac 0.203 build 1278,
@@ -124,8 +128,9 @@ October 23 current: installed `ec300bb3` still showed `about:blank` at
 +8.86 s on one launch. A single native stack sample at +9.85 s points to
 `SyncPass` → `ScanForSync` → `ScanInventory` → recovery indexed paths and
 reparse checks, while the main dispatcher was idle. This is a decisive
-miss; work now targets the inventory/recovery scan path and its bridge
-gating, with a focused regression before another release. Do not run a
+miss; `74712389` now admits the initial foreground screen/read before the
+background pass, with native/renderer/transport lifecycle regressions passed.
+Installed targets remain unverified until the next release. Do not run a
 five-launch loop on this known failing build.
 
 October 23 latest: installed `d7a06af4` failed the target on its first
@@ -179,6 +184,11 @@ Effort: 2–4 days.
 
 ## Phase 3: application parity flows (T19)
 
+October 23 current: Batch A's distinct **Default for new items** folder control
+is committed as `de9dd346`, with guarded update and create-only source checks
+on PC and Mac ([receipt](../verification/2026-10-23-folder-default-control.md)).
+Installed light/dark and the remaining rows still require the next batch release.
+
 Use the 24 flow rows of the [application parity matrix](../verification/application-parity-matrix.md):
 - home and all files
 - List and Cards
@@ -222,6 +232,14 @@ Exit: the matrix has a real result for every row on all three surfaces, and no u
 Effort: 1–2 weeks, depending on the failures found.
 
 ## Phase 4: templates and agent workflows (T20)
+
+October 23 current: root-scoped native asset/template proposals are source
+shipped, but the installed `ec300bb3` root stage-only check was inconclusive
+because foreground input interfered. A prior root prompt incorrectly asked
+for the folder-only feed tool; neither attempt establishes a product failure.
+The shared template library still lacks an explicit UI version/retire flow;
+the canonical reviewed commands exist, so this is the next Batch B/Phase 4
+slice after Batch A release.
 
 October 23 latest: `d7a06af4` delivers server `add_feed` and stage-only Mac and
 Windows native assistant adapters. A real installed Mac proposal reached the
