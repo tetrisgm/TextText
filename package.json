@@ -84,7 +84,7 @@
     "test:epoch-adoption:browser": "node --import tsx src/local-vault/__tests__/epoch-adoption.browser.mjs",
     "test:note-template:browser": "node src/local-vault/__tests__/open-item-move.browser.mjs && node src/local-vault/__tests__/rename-editor-continuity.browser.mjs && node src/local-vault/__tests__/note-template.browser.mjs && node src/local-vault/__tests__/parent-reference.browser.mjs && node src/local-vault/__tests__/note-tag-paste.browser.mjs && node src/local-vault/__tests__/note-rapid-draft.browser.mjs",
     "test:trash-restore:browser": "node src/local-vault/__tests__/trash-restore.browser.mjs",
-    "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs && node src/local-vault/__tests__/document-recovery.browser.mjs && node src/local-vault/__tests__/backlinks-cancellation.browser.mjs",
+    "test:long-note-reader:browser": "node src/local-vault/__tests__/long-note-reader.browser.mjs && node src/local-vault/__tests__/reader-rerender.browser.mjs && node src/local-vault/__tests__/document-recovery.browser.mjs && node src/local-vault/__tests__/backlinks-cancellation.browser.mjs && node src/local-vault/__tests__/shared-note-backlinks.browser.mjs",
     "test:note-icon:browser": "node src/local-vault/__tests__/note-icon.browser.mjs",
     "test:template-intent:browser": "node src/local-vault/__tests__/template-intent.browser.mjs && node src/local-vault/__tests__/template-versions.browser.mjs",
     "test:web-session:browser": "node src/local-vault/__tests__/workspace-chooser.browser.mjs && node src/local-vault/__tests__/listing-capabilities.browser.mjs && node src/local-vault/__tests__/web-session.browser.mjs",
