@@ -15,8 +15,10 @@ void Assert(bool condition, string name) { Console.WriteLine((condition ? "ok   
 await PrivateActorWorkspaceTests.Run(Assert);
 if(args.Contains("--isolated-workspace-only"))return failures==0?0:1;
 #endif
+if(args.Contains("--feed-proposal-only")){await WindowsFeedProposalTests.Run(Assert);return failures==0?0:1;}
 await BridgeConstructionTests.Run(Assert);
 await AccountIdentityTests.Run(Assert);
+await WindowsFeedProposalTests.Run(Assert);
 static byte[] Pack(string body, string id) {
     using var output = new MemoryStream();
     using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true)) using (var writer = new StreamWriter(zip.CreateEntry("text.md").Open())) writer.Write("---\ntextTextId: \"" + id + "\"\n---\n" + body);

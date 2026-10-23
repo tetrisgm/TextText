@@ -86,7 +86,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             : new HttpSyncTransport(http, context.Origin, context.WorkspaceId, context.TokenProvider, context.Access == "owner"));
         sync = new(files, remote, context.AccountId, mirrorPolicy);
         editing = new(files, sync, context.AccountId);
-        agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool);
+        agent = new(context.Root, context.WorkspaceId, context.Emit, ExecuteAgentTool, allowFeedProposals: context.AccountId is not null);
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
         files.Changed += Changed;
         sync.DurabilityChanged += SyncStateChanged;
@@ -506,6 +506,11 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     {
         if (folder) { if(path.Length > 0) _ = files.Resolve(path); } else _ = files.Resolve(path);
         if (!folder && Required(args, "path") != path) throw new InvalidDataException("The agent can only access its selected item.");
+        if(tool=="propose_feed") {
+            if(!folder || path.Length==0)throw new InvalidDataException("Feed proposals require a connected folder task.");
+            using var proposalLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
+            return await new WindowsFeedProposal(context,http,()=>!lifetime.IsCancellationRequested).StageAsync(path,args,operationId,proposalLifetime.Token);
+        }
         var id = Guid.NewGuid().ToString();
         var pending = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (agentTools.Count >= 16 || !agentTools.TryAdd(id, pending)) throw new IOException("Too many pending agent tools.");

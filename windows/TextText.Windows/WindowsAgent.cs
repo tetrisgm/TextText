@@ -11,6 +11,7 @@ namespace TextText.Windows;
 public sealed class WindowsAgent : IDisposable
 {
     private readonly string root, workspaceId;
+    private readonly bool allowFeedProposals;
     private readonly Func<string,object?,Task> emit;
     private readonly Func<string,bool,string,JsonElement,string,CancellationToken,Task<string>> tools;
     private readonly SemaphoreSlim write = new(1), commands = new(1);
@@ -27,8 +28,8 @@ public sealed class WindowsAgent : IDisposable
     private readonly string runtime;
     private readonly string[] runtimePrefix;
     private readonly Action<Uri> openBrowser;
-    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,bool,string,JsonElement,string,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null)
-    { openBrowser = launchBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })); runtime = runtimePath ?? Path.Combine(AppContext.BaseDirectory,"Runtime","bin","codex.exe"); runtimePrefix = runtimePrefixArguments ?? []; this.root = Path.GetFullPath(root); this.workspaceId = workspaceId; this.emit = emit; tools = executeTool; }
+    public WindowsAgent(string root,string workspaceId,Func<string,object?,Task> emit,Func<string,bool,string,JsonElement,string,CancellationToken,Task<string>> executeTool,string? runtimePath = null,string[]? runtimePrefixArguments = null,Action<Uri>? launchBrowser = null,bool allowFeedProposals = false)
+    { this.allowFeedProposals=allowFeedProposals; openBrowser = launchBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })); runtime = runtimePath ?? Path.Combine(AppContext.BaseDirectory,"Runtime","bin","codex.exe"); runtimePrefix = runtimePrefixArguments ?? []; this.root = Path.GetFullPath(root); this.workspaceId = workspaceId; this.emit = emit; tools = executeTool; }
     public object Status => new { state, message, accountEmail = string.IsNullOrEmpty(email) ? null : email, available = File.Exists(runtime) };
     private async Task Update(string next,string text = "") { state = next; message = text; await emit("texttext:vault-agent",new { type = "status",state,message,accountEmail = email }); }
     public async Task<object?> DispatchAsync(string method,JsonElement parameters,CancellationToken ct)
@@ -141,7 +142,7 @@ public sealed class WindowsAgent : IDisposable
             features["code_mode"] = new { direct_only_tool_namespaces = new[] { "texttext" } };
             var result = await Call("thread/start",new { approvalPolicy = "never",sandbox = "read-only",ephemeral = true,cwd = root,
                 developerInstructions = "You are TextText's assistant. Use only the supplied texttext tools within the selected " + (folderTask ? "folder boundary: " : "file: ") + path + ". Read before editing and use its exact hash. Preserve other changes. Never use shell, filesystem, skills, web or other integrations. For read-only requests do not write. " + (customizing ? "Only propose a template preview; do not write." : ""),
-                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing,folderTask) } },
+                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing,folderTask,allowFeedProposals && selectedPath.Length>0) } },
                 config = new { mcp_servers = servers,features,agents = new { enabled = false },tools = new { view_image = false },web_search = "disabled",project_doc_max_bytes = 0 } },token);
             token.ThrowIfCancellationRequested(); if(fence != generation) return;
             threadId = result.GetProperty("thread").GetProperty("id").GetString()!;
@@ -160,12 +161,13 @@ public sealed class WindowsAgent : IDisposable
             }
         }
     }
-    private static object[] Definitions(bool design,bool folder = false)
+    private static object[] Definitions(bool design,bool folder = false,bool feed = false)
     {
         object Tool(string name,string description,string[] required,params string[] properties) => new { type = "function",name,description,inputSchema = new { type = "object",properties = properties.ToDictionary(key => key,key => new { type = "string" }),required,additionalProperties = false } };
         var itemTools = new[] { Tool("read_file","Read the selected TextPack and revision hash.",new[]{"path"},"path"),
           design ? Tool("propose_template","Preview a complete declarative template without writing.",new[]{"path","hash","templateJSON"},"path","hash","templateJSON","templateAuthoringSourceJSON")
           : Tool("write_file","Update selected TextPack with exact read hash, preserving assets.",new[]{"path","hash","markdown"},"path","hash","markdown","documentJSON","templateJSON","templateAuthoringSourceJSON") };
+        if(folder && feed)itemTools=itemTools.Concat(new[]{Tool("propose_feed","Stage a feed subscription for owner review in the selected folder. Does not fetch or subscribe before approval. Return the review link.",new[]{"url"},"url","name")}).ToArray();
         return folder ? itemTools.Concat(new[] { Tool("search_files","Search titles and content within the selected folder.",new[]{"query"},"query"), Tool("list_files","List files in the selected folder.",Array.Empty<string>()), Tool("create_file","Create a TextPack in the selected folder. For a custom look supply matching complete documentJSON and templateJSON; snapshot title/body must match title/body.",new[]{"title","body"},"title","body","folder","kind","documentJSON","templateJSON") }).ToArray() : itemTools;
     }
     static bool FolderToolAllowed(string folder,string tool,JsonElement args) {
@@ -208,7 +210,7 @@ public sealed class WindowsAgent : IDisposable
             if(method == "item/tool/call" && value.TryGetProperty("id",out var callId)) {
                 var tool = Get(p,"tool"); var args = p.GetProperty("arguments");
                 var success = false; var text = "The tool is unavailable for this task.";
-                if(Get(p,"namespace") == "texttext" && (folderTask ? FolderToolAllowed(selectedPath,tool,args) : Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file")))) {
+                if(Get(p,"namespace") == "texttext" && (folderTask ? (tool=="propose_feed" ? allowFeedProposals && selectedPath.Length>0 : FolderToolAllowed(selectedPath,tool,args)) : Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file")))) {
                     await emit("texttext:vault-agent",new { type = "tool-call",taskId = id,tool,path = selectedPath });
                     try {
                         token.ThrowIfCancellationRequested();

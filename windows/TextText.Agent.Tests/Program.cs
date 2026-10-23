@@ -6,11 +6,12 @@ using System.Text.Encodings.Web;
 using TextText.Windows;
 
 if(args.Contains("app-server")) { await Fake(args.Contains("--login")); return; }
+if(args.Contains("--feed-proposal-only")){await FeedProposalAgentTests.Run();return;}
 static string S(JsonElement value,string key) => value.TryGetProperty(key,out var p) && p.ValueKind == JsonValueKind.String ? p.GetString()! : "";
 static async Task Fake(bool login)
 {
     Console.InputEncoding = new UTF8Encoding(false); Console.OutputEncoding = new UTF8Encoding(false);
-    var logged = !login; var unicode = false; var retry=false; var toolResponses=0;
+    var advertisedFeed=false; var logged = !login; var unicode = false; var retry=false; var toolResponses=0;
     const string Unicode = "“Café” 日本語 🧪";
     async Task Send(object value) { await Console.Out.WriteLineAsync(JsonSerializer.Serialize(value,new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping })); await Console.Out.FlushAsync(); }
     while(await Console.In.ReadLineAsync() is { } line) {
@@ -32,6 +33,7 @@ static async Task Fake(bool login)
             await Task.Delay(200); logged = true; await Send(new { method = "account/login/completed",@params = new { loginId = "valid",success = true } }); break;
           case "config/read": await Send(new { id,result = new { config = new { mcp_servers = new { unexpected = new { enabled = true } } } } }); break;
           case "thread/start":
+            advertisedFeed=p.GetProperty("dynamicTools")[0].GetProperty("tools").EnumerateArray().Any(t=>S(t,"name")=="propose_feed");
             if(S(p,"sandbox") != "read-only" || p.GetProperty("dynamicTools")[0].GetProperty("name").GetString() != "texttext" || p.GetProperty("config").GetProperty("mcp_servers").GetProperty("unexpected").GetProperty("enabled").GetBoolean()) throw new Exception("Unsafe thread config");
             await Send(new { id,result = new { thread = new { id = "thread" } } }); break;
           case "turn/start":
@@ -41,7 +43,8 @@ static async Task Fake(bool login)
             if(prompt != "accept" && input.GetArrayLength() != 1) throw new Exception("Photo leaked into another task");
             await Send(new { id,result = new { turn = new { id = "turn" } } });
             await Send(new { method = "item/completed",@params = new { threadId = "obsolete",item = new { type = "agentMessage",phase = "final_answer",text = "stale-leak" } } });
-            if(prompt == "folder-search") await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "search_files",arguments = new { query = "match" } } });
+            if(prompt?.Contains("feed")==true) { Check(advertisedFeed==(prompt is "folder-feed" or "folder-feed-cancel"),"Feed advertisement escaped connected nonempty folder scope"); await Send(new{id=42,method="item/tool/call",@params=new{threadId="thread",@namespace="texttext",tool="propose_feed",arguments=new{url="https://feed.test/rss"}}}); }
+            else if(prompt == "folder-search") await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "search_files",arguments = new { query = "match" } } });
             else if(prompt?.StartsWith("folder-") == true) await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "create_file",arguments = new { folder = prompt == "folder-deny" ? "Other" : "Notes",title = "New",body = "Keep" } } });
             else await Send(new { id = 42,method = "item/tool/call",@params = new { threadId = "thread",@namespace = "texttext",tool = "write_file",arguments = new { path = prompt == "deny" ? "Other.textpack" : "Note.textpack",hash = "hash",markdown = unicode ? Unicode : "new" } } }); break;
           case "turn/interrupt": await Send(new { id,result = new {} }); break;
@@ -51,6 +54,7 @@ static async Task Fake(bool login)
 }
 static void Check(bool condition,string message) { if(!condition) throw new Exception(message); }
 static async Task Until(Func<bool> predicate) { for(var i=0;i<200;i++) { if(predicate()) return; await Task.Delay(10); } throw new Exception("Timed out"); }
+await FeedProposalAgentTests.Run();
 var flush = new RendererFlushGuard();
 string FlushId(string script) { var start = script.IndexOf("{id:",StringComparison.Ordinal)+4; var end = script.IndexOf(",method:",start,StringComparison.Ordinal); return JsonSerializer.Deserialize<string>(script[start..end])!; }
 string? issuedId = null;
