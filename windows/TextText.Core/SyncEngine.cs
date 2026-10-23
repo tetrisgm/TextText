@@ -48,6 +48,7 @@ public sealed partial class SyncEngine
     async Task<IReadOnlyList<RemoteItem>> ReadRemoteManifest(CancellationToken cancellation) {
         var items = await transport.ManifestAsync(cancellation);
         RemoteManifestReceived?.Invoke();
+        CheckCatalogRefresh(items);
         return items;
     }
     public event Action? DurabilityChanged;
@@ -455,6 +456,7 @@ public sealed partial class SyncEngine
         if(waitForGate)await gate.WaitAsync(cancellation);
         else if(!await gate.WaitAsync(0,cancellation)) return PassOutcome.Busy;
         State? state=null;
+        catalogHeldIDs.Clear();catalogPrefixes.Clear();catalogState=null;observedCatalog=null;
         generationSyncPass=true;HasEligiblePending=false;remainingQueueBudget=128;deferredQueuedUploadPaths.Clear();generationInspectionItems.Clear();generationInspectionBlocked.Clear();generationInspectionPaths.Clear();generationInspectionScope=null;
         try {
             // The existing sync lock also fences foreign active editors. This
@@ -466,20 +468,25 @@ public sealed partial class SyncEngine
             var potentialAbsence=state.Items.Where(p=>p.Value.Lifecycle is null).Select(p=>p.Key).ToHashSet(StringComparer.Ordinal);
             foreach(var pair in state.ProtectedRenames.Where(p=>p.Value.Version==2))potentialAbsence.Add(pair.Key);
             generationInspectionItems.UnionWith(potentialAbsence);generationInspectionScope=transport.ProtectedRenameBinding;
-            if(!FolderSpellingChanged(state)){var earlyAcknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state,potentialAbsence);if(earlyAcknowledged.Count>0){Save(state);foreach(var file in earlyAcknowledged)File.Delete(file);}}
+
+            // Preserve the pre-network global folder-history refusal; acknowledgement writes wait for catalog classification.
+            _=FolderSpellingChanged(state);
             Report(true,null,state.Outbox.Count);
             var discovered=store.InspectGenerationInventory();
             var local=discovered.Files.ToDictionary(x=>x.ItemId);
             var retainedAbsence=state.ProtectedRenames.Where(pair=>pair.Value.Version==2).Select(pair=>pair.Key).Concat(state.SharedRenames.Where(pair=>pair.Value.Lifecycle is null).Select(pair=>pair.Key)).ToHashSet(StringComparer.Ordinal);
+            if(retainedAbsence.Count>0)store.ValidateGenerationFolderHistory(transport.ProtectedRenameBinding);
             var namingAbsence=transport.ProtectedRenameBinding is null?new HashSet<string>(StringComparer.Ordinal):potentialAbsence.Where(id=>state.Items.TryGetValue(id,out var baseline)&&(!local.TryGetValue(id,out var file)||file.Path!=baseline.Path||discovered.Errors.Any(error=>error.ItemId==id||error.Path==baseline.Path))).ToHashSet(StringComparer.Ordinal);
             var requiresAbsenceInspection=retainedAbsence.Count>0||namingAbsence.Count>0;
             if(localChangesOnly){generationInspectionItems.Clear();generationInspectionItems.UnionWith(retainedAbsence);generationInspectionItems.UnionWith(namingAbsence);}
-            if(localChangesOnly&&!requiresAbsenceInspection&&discovered.Errors.Count==0&&state.PendingPull==null&&state.FolderCommand==null&&!FolderSpellingChanged(state)&&!HasLocalWork(state,local)) {foregroundYieldAvailable=true;Report(false,StateError(state),state.Outbox.Count);return PassOutcome.Completed;}
+            if(localChangesOnly&&!CatalogQuarantined&&!requiresAbsenceInspection&&discovered.Errors.Count==0&&state.PendingPull==null&&state.FolderCommand==null&&!FolderSpellingChanged(state)&&!HasLocalWork(state,local)) {foregroundYieldAvailable=true;Report(false,StateError(state),state.Outbox.Count);return PassOutcome.Completed;}
             var remote=(await ReadRemoteManifest(cancellation)).ToDictionary(x=>x.ItemId);
+            ObserveCatalog(state,remote.Values.ToArray(),discovered);
+            if(!CatalogQuarantined&&!FolderSpellingChanged(state)){var earlyAcknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state,potentialAbsence);if(earlyAcknowledged.Count>0){Save(state);foreach(var file in earlyAcknowledged)File.Delete(file);}}
             SelectGenerationCandidates(state,remote,discovered);
             local=ScanForSync().ToDictionary(x=>x.ItemId);
-            remote=await ReconcileFolderCase(state,local,remote,cancellation);
-            var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state,generationInspectionItems);if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
+            if(!CatalogQuarantined)remote=await ReconcileFolderCase(state,local,remote,cancellation);
+            var acknowledged=SharedEditingStore.ReconcileAcknowledgements(store,state,generationInspectionItems.Union(catalogHeldIDs).ToHashSet(StringComparer.Ordinal));if(acknowledged.Count>0){Save(state);foreach(var file in acknowledged)File.Delete(file);}
             if(state.PendingPull is {} incoming && !ReplacementBlockedForSync(incoming.ItemId) && remote.TryGetValue(incoming.ItemId,out var incomingRemote) && incomingRemote.Lifecycle!=null && incomingRemote.Lifecycle!=incoming.Lifecycle) {store.Preserve(Convert.FromBase64String(incoming.Payload),"previous-lifecycle");state.PendingPull=null;Save(state);}
             if(state.PendingPull!=null && !ReplacementBlockedForSync(state.PendingPull.ItemId)) {if(IsEditing(state.PendingPull.ItemId)){Report(false,null,state.Outbox.Count);return PassOutcome.Deferred;}ApplyPull(state);}
             local=ScanForSync().ToDictionary(x=>x.ItemId);
@@ -494,6 +501,7 @@ public sealed partial class SyncEngine
             await Drain(state,cancellation);
             if(YieldForAdmission(state))return PassOutcome.ForegroundYield;
             if(hadPendingWrites) {remote=(await ReadRemoteManifest(cancellation)).ToDictionary(x=>x.ItemId);RememberCapabilities(state);}
+            if(!CatalogQuarantined) {
             if(transport.Folders.Count>20000)throw new IOException("Too many workspace folders.");
             store.ValidateFolderCatalog(transport.AuthoritativeFolders is {} combinedCatalog?transport.Folders.Concat(combinedCatalog).Distinct(StringComparer.Ordinal).ToArray():transport.Folders);
             if(transport.AuthoritativeFolders is {} catalog) {
@@ -503,8 +511,9 @@ public sealed partial class SyncEngine
                 if(updated.Count>40000)throw new IOException("Too many retained workspace folders.");
                 if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
             }
+            }
             var folderError=false;
-            foreach(var folder in transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
+            foreach(var folder in CatalogQuarantined?Array.Empty<string>():transport.Folders)try{store.EnsureFolders([folder]);}catch(IOException){folderError=true;}catch(UnauthorizedAccessException){folderError=true;}
             local=ScanForSync().ToDictionary(x=>x.ItemId);
             foreach(var id in state.Items.Keys.Union(state.ProtectedRenames.Keys,StringComparer.Ordinal).Union(state.SharedRenames.Keys,StringComparer.Ordinal).ToArray()) {
                 cancellation.ThrowIfCancellationRequested();
@@ -596,7 +605,7 @@ public sealed partial class SyncEngine
                 else if(action==MirrorDisposition.Pull)await Pull(state,id,file,cancellation,server.Lifecycle,server.Revision);
             }
             foreach(var file in local.Values.Where(x=>!state.Items.ContainsKey(x.ItemId))) {
-                if(IsEditing(file.ItemId)||SavedRenameOwnsPath(state,file.ItemId)||Blocked(state,file.ItemId))continue;
+                if(ReplacementBlockedForSync(file.ItemId)||IsEditing(file.ItemId)||SavedRenameOwnsPath(state,file.ItemId)||Blocked(state,file.ItemId))continue;
                 if(remote.TryGetValue(file.ItemId,out var server)) {
                     if(server.Deleted) { store.Preserve(ReadForSync(file.Path,file.ItemId),"conflict");Queue(state,new(Guid.NewGuid().ToString(),"conflict",file.ItemId,file.Path,null,server.Revision,file.Hash,null,true));continue; }
                     var pack=await transport.DownloadAsync(file.ItemId,cancellation);
@@ -616,7 +625,7 @@ public sealed partial class SyncEngine
             }
             foreach(var item in remote.Values.Where(x=>!ReplacementBlockedForSync(x.ItemId)&&!store.LastScanErrors.Any(e=>e.ItemId==x.ItemId||e.Path=="."||e.Path==x.RelativePath||x.RelativePath.StartsWith(e.Path+"/",StringComparison.OrdinalIgnoreCase)) && !IsEditing(x.ItemId) && !SavedRenameOwnsPath(state,x.ItemId) && !Blocked(state,x.ItemId) && !x.Deleted && !local.ContainsKey(x.ItemId) && !state.Items.ContainsKey(x.ItemId))) await Pull(state,item.ItemId,null,cancellation,item.Lifecycle,item.Revision);
             foreach(var pending in state.Items.Where(x=>x.Value.Refresh).ToArray()) { if(IsEditing(pending.Key)||SavedRenameOwnsPath(state,pending.Key)||Blocked(state,pending.Key)||ReplacementBlockedForSync(pending.Key))continue;var current=DescribeForSync(pending.Value.Path,pending.Key); if(current.Hash==pending.Value.Hash) await Pull(state,pending.Key,current,cancellation,remote.GetValueOrDefault(pending.Key)?.Lifecycle,remote.GetValueOrDefault(pending.Key)?.Revision); }
-            if(transport.AuthoritativeFolders is {} currentCatalog) {
+            if(!CatalogQuarantined&&transport.AuthoritativeFolders is {} currentCatalog) {
                 var retained=new HashSet<string>(currentCatalog,StringComparer.Ordinal);
                 foreach(var folder in (state.ManagedFolders??[]).Where(x=>!retained.Contains(x)).OrderByDescending(x=>x.Length).ToArray()) {
                     try {if(!store.RemoveEmptyManagedFolder(folder))retained.Add(folder);}catch(IOException){retained.Add(folder);}catch(UnauthorizedAccessException){retained.Add(folder);}
@@ -624,17 +633,17 @@ public sealed partial class SyncEngine
                 var updated=retained.OrderBy(x=>x,StringComparer.Ordinal).ToList();
                 if(state.ManagedFolders==null||!state.ManagedFolders.SequenceEqual(updated)){state.ManagedFolders=updated;Save(state);}
             }
-            CaptureFolderBaseline(state,remote);
+            if(!CatalogQuarantined)CaptureFolderBaseline(state,remote);
             Report(false,StateError(state)??(folderError?"A workspace folder could not be opened. Other files continue syncing.":null),state.Outbox.Count);
             foregroundYieldAvailable=true;
             return PassOutcome.Completed;
-        } catch(Exception error) { Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {generationSyncPass=false;generationInspectionItems.Clear();generationInspectionBlocked.Clear();generationInspectionPaths.Clear();generationInspectionScope=null;gate.Release();}
+        } catch(Exception error) { CatalogIssues=[];Report(false,error.Message,state?.Outbox.Count??0);throw; } finally {catalogState=null;observedCatalog=null;catalogHeldIDs.Clear();catalogPrefixes.Clear();generationSyncPass=false;generationInspectionItems.Clear();generationInspectionBlocked.Clear();generationInspectionPaths.Clear();generationInspectionScope=null;gate.Release();}
     }
     async Task AdoptQueuedUploadPaths(State state,Dictionary<string,RemoteItem> remote,CancellationToken ct) {
         foreach(var op in state.Outbox.ToArray()) {
             // This phase owns only adoption of an already queued upload's path.
             // Ordinary queue/CAS admission still owns every eventual send.
-            if(op.Kind!="upload"||op.Revision is null||!remote.TryGetValue(op.ItemId,out var server)||server.RelativePath==op.Path)continue;
+            if(ReplacementBlockedForSync(op.ItemId)||op.Kind!="upload"||op.Revision is null||!remote.TryGetValue(op.ItemId,out var server)||server.RelativePath==op.Path)continue;
             deferredQueuedUploadPaths.Add(op.Id);
             if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("Queued file path policy unavailable.");
             var baseline=state.Items.GetValueOrDefault(op.ItemId);
@@ -695,7 +704,7 @@ public sealed partial class SyncEngine
             // decides whether the change still competes. The superseded payload
             // stays preserved, the base is never moved, and the receipt identity
             // changes because the replacement is a new command.
-            if(op.Kind!="upload"||!op.Conflicted||op.Revision==null||op.Payload==null||IsEditing(op.ItemId)
+            if(ReplacementBlockedForSync(op.ItemId)||op.Kind!="upload"||!op.Conflicted||op.Revision==null||op.Payload==null||IsEditing(op.ItemId)
                 ||state.Outbox.Count(x=>x.ItemId==op.ItemId)!=1||store.Intent(op.ItemId)!=null
                 ||!state.Items.TryGetValue(op.ItemId,out var baseline)||baseline.Revision!=op.Revision||baseline.Path!=op.Path||baseline.Lifecycle!=op.Lifecycle
                 ||!local.TryGetValue(op.ItemId,out var file)||file.Path!=op.Path||file.Hash==op.Hash||file.Hash==baseline.Hash
@@ -776,7 +785,7 @@ public sealed partial class SyncEngine
     }
     void RecoverMetadataAdoption(State state,Dictionary<string,PackFile> local,Dictionary<string,RemoteItem> remote) {
         foreach(var op in state.Outbox.Where(x=>x.Kind=="conflict"&&x.Conflicted&&x.Revision!=null).ToArray()) {
-            if(state.Items.ContainsKey(op.ItemId)||IsEditing(op.ItemId)||!Permitted(state,op)||
+            if(ReplacementBlockedForSync(op.ItemId)||state.Items.ContainsKey(op.ItemId)||IsEditing(op.ItemId)||!Permitted(state,op)||
                 state.Outbox.Count(x=>x.ItemId==op.ItemId)!=1||!local.TryGetValue(op.ItemId,out var file)||file.Path!=op.Path||
                 !remote.TryGetValue(op.ItemId,out var server)||server.Deleted||server.RelativePath!=op.Path||server.Lifecycle!=op.Lifecycle)continue;
             // Old versions preserved both archives before recording an unbased

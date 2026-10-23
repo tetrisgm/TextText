@@ -121,11 +121,9 @@ static class ReadinessAdmissionTests
     {
         public bool Hold;
         public readonly ManualResetEventSlim LateScanRelease = new();
-        public IReadOnlyList<string> Folders { get {
-
-            if (Hold && !LateScanRelease.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Fixture late scan not released");
-            return [];
-        } }
+        // Catalog is a snapshot, inspected before admission. The real later
+        // savedRename policy call above remains held until foreground opens.
+        public IReadOnlyList<string> Folders => [];
         public readonly TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         byte[]? bytes; string? path; string? item;

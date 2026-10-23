@@ -42,6 +42,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     string? lastStatus;
     bool hasSyncIssues;
     string? syncIssueMessage;
+    string lastCatalogIssues="";
     long remoteManifestCount, lastRemoteManifestUtcTicks;
     string? schedulerFailure;
     void RemoteManifestReceived() {
@@ -57,6 +58,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         remoteManifestResponses = Interlocked.Read(ref remoteManifestCount),
         lastRemoteManifestUtc = Interlocked.Read(ref lastRemoteManifestUtcTicks) is var ticks && ticks > 0 ? new DateTimeOffset(ticks, TimeSpan.Zero).ToString("O") : null,
         schedulerFailure,
+        catalogIssues = sync.CatalogIssues.Select(issue=>new{path=issue.Path,reason=issue.Reason}).ToArray(),
         message = schedulerFailure is null ? syncIssueMessage : "Sync is paused. Restart TextText to reconnect.",
         workspaceId = context.WorkspaceId,
         webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri
@@ -172,8 +174,9 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     hasSyncIssues = issue is not null;
                     var status = hasSyncIssues ? "conflict" : "ready";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
-                    if (lastStatus != status || syncIssueMessage != issue || notifiedDurabilityVersion != completedVersion) {
-                        syncIssueMessage = issue;
+                    var catalogIssues=JsonSerializer.Serialize(sync.CatalogIssues);
+                    if (lastStatus != status || syncIssueMessage != issue || lastCatalogIssues!=catalogIssues || notifiedDurabilityVersion != completedVersion) {
+                        syncIssueMessage = issue;lastCatalogIssues=catalogIssues;
                         lastStatus = status; notifiedDurabilityVersion = completedVersion;
                         await context.Emit("texttext:vault-sync-status", ConnectionStatus());
                     }

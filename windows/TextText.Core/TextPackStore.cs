@@ -206,7 +206,8 @@ public sealed partial class TextPackStore
     }
     public IReadOnlyList<PackFile> Scan() => ScanInventory().Files;
     public WorkspaceInventory ScanInventory()=>ScanInventory(null,null);
-    WorkspaceInventory ScanInventory(IReadOnlySet<string>? noRecoveryItems,ProtectedRenameScope? generationScope)
+    internal IReadOnlyList<PackFile> ScanCatalogIndependent(IReadOnlySet<string> candidates,ProtectedRenameScope? scope,IReadOnlySet<string> held,Func<string,bool> heldPath)=>ScanInventory(candidates,scope,held,heldPath).Files;
+    WorkspaceInventory ScanInventory(IReadOnlySet<string>? noRecoveryItems,ProtectedRenameScope? generationScope,IReadOnlySet<string>? held=null,Func<string,bool>? heldPath=null)
     {
         var folders=new List<string>();var found = new Dictionary<string,PackFile>();var duplicated=new HashSet<string>();var errors=new List<ScanError>();
         string Relative(string path)=>System.IO.Path.GetRelativePath(Root,path).Replace('\\','/');
@@ -217,14 +218,16 @@ public sealed partial class TextPackStore
             if(directory!=Root)folders.Add(Relative(directory));
             foreach(var path in entries) {
                 if(System.IO.Path.GetFileName(path).StartsWith('.'))continue;
+                if(heldPath?.Invoke(Relative(path))==true){if(ProviderPaths.IsUnsafeReparse(path))throw new IOException("A held folder aliases another location. Its files remain preserved.");continue;}
                 try {
                     if(ProviderPaths.IsUnsafeReparse(path)){Error(path,"Linked workspace entry is unsupported.");continue;}
                     if(Directory.Exists(path)){Visit(path);continue;}
                     if(!path.EndsWith(".textpack",StringComparison.OrdinalIgnoreCase))continue;
                     PackFile entry;
-                    if(noRecoveryItems is {Count:>0}) {
+                    if(noRecoveryItems is {Count:>0}||held is {Count:>0}) {
                         var discovery=ReadProjection(Resolve(Relative(path)));var id=Identity(discovery);
-                        if(noRecoveryItems.Contains(id)) {
+                        if(held?.Contains(id)==true)continue;
+                        if(noRecoveryItems?.Contains(id)==true) {
                             try {
                                 var bytes=ReadGenerationProjection(Relative(path),id,generationScope??throw new SharedAccountMismatchException());
                                 entry=new(Relative(path),Hash(bytes),id);
@@ -249,7 +252,7 @@ public sealed partial class TextPackStore
                 inventoryReplacements=new(Root,StateDirectory,RemovalObservationForTesting){VerifyProfile=VerifyInventoryProfile,PinnedOwner=verification is not null};
                 InventoryObservationForTesting?.Invoke("profileVerified");
                 FolderCases.VerifyExistingProfile();
-                if(noRecoveryItems is not {Count:>0})AssertFolderRenameReadable();
+                if(noRecoveryItems is not {Count:>0}&&heldPath is null)AssertFolderRenameReadable();
                 // Per-entry recovery remains enabled; the profile chain and the
                 // folder-case outcome are shared within this synchronous,
                 // store-serialized scan and rechecked before it returns.

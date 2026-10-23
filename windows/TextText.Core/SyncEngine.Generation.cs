@@ -26,13 +26,13 @@ public sealed partial class SyncEngine
         return new GenerationInspectionLease(()=>{generationInspectionItems.Remove(id);generationInspectionBlocked.Remove(id);generationInspectionPaths.Remove(id);generationInspectionScope=prior;});
     }
     IReadOnlyList<PackFile> ScanForSync() {
-        if(generationInspectionItems.Count==0)return store.Scan();
+        if(!CatalogQuarantined&&generationInspectionItems.Count==0)return store.Scan();
         var scope=generationInspectionScope;
         if(scope is not null) {
             if(transport.ProtectedRenameBinding!=scope)throw new SharedAccountMismatchException();
         }
-        store.ValidateGenerationFolderHistory(scope);
-        var files=store.ScanGenerationCandidates(generationInspectionItems,scope);
+        if(generationInspectionItems.Count>0)store.ValidateGenerationFolderHistory(scope);
+        var files=CatalogQuarantined?store.ScanCatalogIndependent(generationInspectionItems,scope,catalogHeldIDs,CatalogHolds):store.ScanGenerationCandidates(generationInspectionItems,scope);
         foreach(var error in store.LastScanErrors) {
             if(error.ItemId is {} id&&generationInspectionItems.Contains(id))generationInspectionBlocked.Add(id);
             foreach(var pair in generationInspectionPaths)if(error.Path=="."||pair.Value.Contains(error.Path))generationInspectionBlocked.Add(pair.Key);
@@ -40,12 +40,14 @@ public sealed partial class SyncEngine
         return files;
     }
     bool ReplacementBlockedForSync(string id) {
+        if(catalogHeldIDs.Contains(id))return true;
         if(!generationInspectionItems.Contains(id))return store.ReplacementBlocked(id);
         if(generationInspectionBlocked.Contains(id))return true;
         try{_=store.GenerationProtectionSnapshot(id,generationInspectionScope??throw new SharedAccountMismatchException());return false;}
         catch(Exception error)when(error is IOException or InvalidDataException or JsonException){generationInspectionBlocked.Add(id);return true;}
     }
     void AssertReadableForSync(string id) {
+        if(catalogHeldIDs.Contains(id))throw new FileChangedException();
         if(!generationInspectionItems.Contains(id)){store.AssertReplacementReadable(id);return;}
         if(generationInspectionBlocked.Contains(id))throw new FileChangedException();
         _=store.GenerationProtectionSnapshot(id,generationInspectionScope??throw new SharedAccountMismatchException());
