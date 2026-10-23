@@ -21,7 +21,14 @@ All three already share one editor: the `src/local-vault` React app, served by t
 Status: in progress. The sync npm entry now owns the browser-policy producer and
 local database setup ([focused Mac checks](../verification/2026-10-22-release-sync-entry.md)).
 The combined command is implemented ([checks](../verification/2026-10-22-ship-all-entry.md));
-its release and installed exit checks have not run. Keep the standalone
+its first invocation passed full release and sync gates at `b05a675e`, then stopped
+before delivery when the source changed to include release safety fixes.
+The owner pin was restored exactly and no surface was delivered
+([first-run receipt](../verification/2026-10-22-unified-release-first-gate.md)).
+[Normal-quit checks](../verification/2026-10-22-release-normal-quit.md),
+[Windows session fix](../verification/2026-10-22-windows-normal-quit-session.md),
+and [backup preservation](../verification/2026-10-22-deploy-backup-preservation.md)
+are integrated. A fresh invocation and installed exit checks remain pending. Keep the standalone
 Sparkle resolution in git; preserve the owner's Store resolution around releases.
 
 Problem: each surface ships on its own schedule, so versions drift.

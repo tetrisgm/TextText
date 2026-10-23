@@ -1,61 +1,74 @@
 # TextText handoff
 
-## Objective and active work
+## Current objective
 
-**Active October 22:** execute the [remaining-work plan](plans/remaining-work-2026-10-22.md),
-starting with Phase 1. Mac LAN SSH is working. Sync entry orchestration checks
-pass on the Mac ([receipt](verification/2026-10-22-release-sync-entry.md)); combined
-release and installed acceptance remain pending. The entry is now
-`bash release/ship-all.sh` on the Mac ([checks](verification/2026-10-22-ship-all-entry.md)).
-T21–T27 are obsolete.
+Execute [the October 22 remaining-work plan](plans/remaining-work-2026-10-22.md).
+T21–T27 of the older checklist are obsolete. Do not run or prepare them.
+The owner requests maximum parallel agent work; root owns commits and release,
+with one heavy Mac build lane and independent Windows investigation.
 
-Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master plan](plans/shared-app-durability-execution.md). Continue independent work; source/private actor checks do not replace installed acceptance. No public Mac distribution or new accounts.
+## Active work
 
-For a standalone transfer to Claude, read [the complete Claude handoff](CLAUDE-HANDOFF.md): owner priorities, permissions, delivered identities, T01–T27 status, remaining execution order and evidence references.
+- Phase 1 entry: `bash release/ship-all.sh` on the Mac. Pushed commits
+  `34fd9081` (sync producer/local database), `62a68a49` (checkout/storage
+  preflights), `b05a675e` (combined release).
+  [Sync checks](verification/2026-10-22-release-sync-entry.md),
+  [preflights](verification/2026-10-22-release-preflights.md),
+  [entry checks](verification/2026-10-22-ship-all-entry.md).
+- First combined invocation log: Mac `/private/tmp/texttext-ship-all-b05a675e.log`.
+  Full release and sync gates passed for `b05a675e`. After the held run's child
+  finished, pulling release fixes deliberately invalidated its source receipt.
+  The coordinator exited before delivery, restored the exact owner pin and
+  cleared its lock. Its `delivery.json` records an empty delivered list.
+  [First-run receipt](verification/2026-10-22-unified-release-first-gate.md).
+- Installer review found an existing TERM fallback after refused normal quit and
+  rollback that could move a running app. Focused corrected installer tests pass
+  on the Mac; pushed as `b0463854`. Windows interactive-session normal quit is
+  `ec9215a9`; Oracle backup/unit preservation is `2e43cdd8` and `090ea78d`.
+  Mac artifact preservation is `4fb09aae`. The fresh unified invocation remains
+  pending.
+- Windows installed startup reproduced the timeout/blank workspace. Stack samples
+  distinguish synchronous `SyncEngine.Load` path validation on the UI dispatcher
+  from initial listing inventory work holding the store. Root captured the actual
+  UI; narrow optimizations and causal regressions pass on PC and Mac, preserved
+  in PC stash `bac70feec271069be85f81b980f8e107378f9e94` pending Phase 1 delivery.
+  [Evidence](verification/2026-10-22-windows-startup-native-reads.md).
+  Phase 2 measured targets and installed acceptance are not complete.
+- Batch A review found `Notes/` assumptions in backlinks/link picker and silent
+  backlink read failures. Production-component regressions are being prepared;
+  installed reproduction remains required. Live CLI discovery confirms no feed
+  commands/proposals; assets and template retirement have reviewed proposal paths.
 
-**October19 current:** Mac0.204(1274), source56d144f7, is installed with the matching signed CLI after the [passing candidate](verification/2026-10-19-mac-1274-56d144f7-candidate.md) and fresh complete stopped backup. The exact previously blocked7ba article opens normally, retains its original text/image, and accepts fresh text/image edits. Three actual normal save/Quit/reopen cycles passed across that article and a fresh note; full hosted snapshots and JPEG bytes match. App left open on the healthy article. [Installed acceptance](verification/2026-10-19-mac-1274-installed-acceptance.md). The owner’s immediate Mac installation/save/reopen objective is complete. Wider checklist work below is separate; no six-client endurance campaign was run.
+## Last verified delivered identities
 
-- **Mac rename:**61c3fd1f preserves unacknowledged filenames through clean editor close and narrowly permits reopening exact clean content with naming debt. Main strict9 and affected Kit566/11 explicit skips/zero failures pass; installed1273 known-generation acceptance now passes as above. [Evidence](verification/2026-10-19-mac-clean-checkpoint-naming-debt.md). Known restored owneditemad9bf5f1 has a fresh exact local/server archive and matching generation; refresh before physical rename. Existing mixed5749b5ac reverted to its old local/server path; guarded926668f8 remains new-local/old-server. Both retain exact text/JPEG and stay held; do not retry moves, fabricate lifecycle or use filesystem workarounds. [Fresh-item contract characterization](verification/2026-10-19-fresh-item-lifecycle-contract.md): nonrestored files normally have no marker; native policy currently collapses authoritative absence with unknown, a separate rename-liveness gap. Existing server moves use full revision/path CAS; do not infer a new endpoint is required or relax nil checks without a typed observed-absence contract.
-- **Native asset observation:**4d1328c4 adds readonly private producers and required registered Mac11/actualWK +verifier18 (all pass, no skips). Separate rebased scratch74+2 optional skips/naming9 and actualPC68/earlier unchanged-production WebView8 are source-attributed, not installed evidence. [Receipt](verification/2026-10-19-staged-native-asset-observation.md). Conditional advertisements are now committed as922ce17d after Mac45JS/native11 and actualPC68/WebView8 gates. [Evidence](verification/2026-10-19-conditional-asset-capability-advertisements.md). No runtime activation.
-- **Coordinator:**75f5b4cb default-off proof waves pass main83 +existing91 simulations, zero skips. Prior-wave consistency counterexample is preserved and corrected. [Receipt](verification/2026-10-19-staged-coordinator-asset-waves.md). Soak integration15c513f8 passes main117 and existing91 checks: existing121 correlated30-second samples each require one fresh all-six proof wave; pre/postround still require3 stable waves. [Receipt](verification/2026-10-19-staged-coordinator-asset-soak.md). Conditional capability advertisements are committed and controlled-gated; genuine runtime probes/seals are still required before activation. No physical100-round/hour campaign.
-- **Finite runner:**3575719e derives native task max(22, actorMinutes+2), max120/122, pins captured config/module before Register/Start and checks actual settings. Main22 tests/actualPC40 mocked assertions pass; no tasks launched. [Receipt](verification/2026-10-19-windows-native-task-lifetime.md).
-- **Resource diagnostics:**f446773e logical client/session counters default off (main749+TypeScript+17 checks); f5292d6b pure independently pinned ownership validator passes62; finite sampler00c3f159 has bounded Mac/PC helper proof. Live telemetry export/collector integration and actual resource/idle/performance measurements remain open. Null is not zero. The default-off Windows collector emitter is committed as eefd2568 with main30 controlled checks; genuine collection and coordinator integration remain open.
-- **Fresh owned fixtures:** mixed7ba1c77c and guarded-closed793c399 are private articles, exact seed body, zero assets. Initial generated filenames retained; guarded title alignment makes titles equal actual filename stems. [Preparation receipt](verification/2026-10-19-1273-acceptance-fixture-preparation.md). Actual native image import and fresh per-fixture PC isolation roots/seals remain required. Do not reuse old79 scope, which binds only historicalf52c9a01.
-
-**Current plan:** [remaining work, October 22](plans/remaining-work-2026-10-22.md).
-
-**October22 owner scope change:** the six-client physical runner and matrix (T21–T22), endurance runs (T24), performance measurement (T25), account switching (T23), and final delivery/changelog closure (T26–T27) are obsolete. Do not run, prepare or report them as open work; their historical receipts remain evidence only.
-
-**October22 Windows:** installed67efe404 shares retained-profile verification across sync blocked-item inspection (382 real registry records previously re-verified per entry under the store lock, stalling startup listing). Initial-session close no longer reproduces as a refusal. Follow-ups 680a8581 (shared folder-case/owner checks per scan, 1,100-file inventory 4.7s→2.0s) and the new-note editability fix are installed; three first-session cycles plus hosted CLI readback match exactly. Open: startup can still show the bootstrap timeout notice and restored notes can wait tens of seconds behind repeated `SyncAsync→ScanForSync` scans; Mac `npm test` for the renderer change not run (Mac unreachable). Windows checkouts need repo-local `core.autocrlf=false`; build via the PC's elevated OpenSSH for the symlink test. [Receipt](verification/2026-10-22-windows-first-session-close-blocked-profile.md)
-
-**Owner scope correction:** no security beyond ordinary Notion-style use. Stop expanding measurement ownership/attestation/lifetime machinery. All44 unshipped draft files are preserved outside the repo at `~/.codex/retained-work/texttext-measurement-drafts-20261019`; eight tracked files match committed41a94a5b again. Use the existing committed runner for practical save/sync/multiplayer acceptance. Concrete preparations: `/private/tmp/texttext-practical-six-acceptance-k5a6ljgi/PLAN.md` and `/private/tmp/texttext-pc-practical-f41-preparation-20261019/READY.md`. No campaign has run.
-
-## Actual delivered state
-
-| Surface | Verified installed/served identity |
+| Surface | Identity and evidence |
 | --- | --- |
-| Mac |Canonical `/Applications/TextText.app`,0.204(1274), source56d144f7, EXE60aa171c. Genuine candidate and supported default-health install pass. Exact previously blocked7ba article is usable; fresh native JPEG/text save plus normal note and three normal Quit/reopen cycles pass. Full local/hosted snapshots and JPEG bytes match. App left open, PID82443. [Installed acceptance](verification/2026-10-19-mac-1274-installed-acceptance.md) |
-| Windows |67efe404 (Core `C6A0CBE6`, apphost `B17D9164`). Full `build.ps1` gates and supported install pass; stopped backup `%LOCALAPPDATA%\TextText-backups/before-56d144f7-20261022`. Two actual first-session new-note edits closed normally (4.5s, 5.4s) and reopened with exact title/body. Startup no longer hits the 8s bootstrap timeout. [Receipt](verification/2026-10-22-windows-first-session-close-blocked-profile.md) |
-| CLI |Signed56d144f7, shim `~/.local/share/texttext-cli/source-56d144f7/texttext`, SHA f44b3311. Strict signature/arm64/help and supported install pass before1274 launch; prior4f binary/shim preserved. [Receipt](verification/2026-10-19-mac-1274-installed-acceptance.md) |
-| Oracle |aa8f8a1b, `texttext-oracle-20261023T023701Z-aa8f8a1b`. Full genuine gates, fresh pre-switch backup and 13 authenticated smoke checks pass; previous 4eca8353 retained. Old releases cleaned with owner approval (27 GB free). [Receipt](verification/2026-10-22-web-aa8f8a1b-delivered.md) |
+| Mac | `56d144f7`, 0.204 (1274), canonical `/Applications/TextText.app`; [installed acceptance](verification/2026-10-19-mac-1274-installed-acceptance.md) |
+| Windows | `ca7c5540` content, candidate `0c0c29a8…`; [normal save/reopen evidence and remaining startup failure](verification/2026-10-22-windows-first-session-close-blocked-profile.md) |
+| Web | `aa8f8a1b`, deployment `texttext-oracle-20261023T023701Z-aa8f8a1b`; [13 authenticated smoke checks](verification/2026-10-22-web-aa8f8a1b-delivered.md) |
+| CLI | signed `56d144f7`; [installation evidence](verification/2026-10-19-mac-1274-installed-acceptance.md) |
 
-Latest Mac preinstall backup: `~/Library/Application Support/TextText/PreinstallBackups/20261019-before-1274-56d144f7`, manifestfcad8f1c,284,916,940 bytes, exact complete stopped before/after/copy inventories. [Receipt](verification/2026-10-19-mac-1274-installed-acceptance.md). Previous1273/PC backups remain preserved. Take fresh stable stopped backups before future installs; old clients must not downgrade or reset floor6 state.
+## Preservation and operational references
 
-## Genuine external dependencies
+Mac LAN `ssh mac` works. Use main in the existing PC/Mac checkouts, no worktrees.
+Preserve owner's `mac/Package.resolved` SHA256
+`eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`,
+`mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts`. The last file targets
+localhost and deletes fixtures; it is not installed acceptance. The release entry
+keeps standalone Sparkle pins in git and restores the owner's working pin.
 
-1. **Windows startup recovery resolved:** installed1d1154f2 includes archive-adoption fix f11bbcb6 and scan-scoped profile/registry validation with coalesced inventory reads. Owner-reviewed existing workspace and retained work were preserved. Official gates (Core1778), supplemental checks, normal UI nonempty save with exact hosted readback, natural close, fresh reopen and close from the reopened note pass. The app is left open on that saved note. Earlier initial-session close holds are retained separately; no force-close or reset. [Delivery and acceptance](verification/2026-10-19-windows-inventory-profile-scan.md).
-2. **Oracle deployment smoke:** owner explicitly approved the one-off temporary synthetic account/workspace/expiring token and deployment (October19). Use the mandatory smoke and its cleanup; verify a current artifact before deploying. The old a041 prompt is authorization, not a reason to deploy stale source. No personal-account substitution.
-3. **Existing changelog:** obsolete per October22 owner scope change; no changelog work is required.
-4. **Apple and SSH persistence:** current Chrome/Safari authenticated `/start` navigation passes, but a fresh Apple callback/account transition remains owner-dependent. SSH works with qualified existing account and mitigated Edge/WebView2; observed17 effective features and zero matched4625/4740 in tested window. Historical15h23m overnight observation is recorded in T02; coordinated reboot and fresh current-runtime persistence evidence remain. No surprise reboot or lockout-policy change.
+The first release run preserved owner pins under Mac
+`.texttext/ship-all/20261023055157155-b05a675e/owner-Package.resolved`.
+The run's finally path restored the owner pin with the exact SHA256 above.
+Do not discard its backup or clear release locks blindly.
 
-## Remaining acceptance and exact next actions
+[Oracle operations](../release/oracle/README.md),
+[database operations](DATABASE-OPERATIONS.md), and the plan's operational notes
+cover current builds/deploys. No public Mac update is requested. Fresh stopped
+backups and actual open/edit/save/normal-quit/exact-reopen remain release exit checks.
 
-1. Typed observed-absence rename and both native adapters are committed and pushed through41a94a5b. Required gates pass: shared90, verifier18, packaged Chromium43, default Swift554/12 existing optional skips/zero failures, flagged native18/zero skips; actual Windows Core1767, bridge128, focused87, packaged WebView2 saved-rename43. Genuine old-running Mac and Windows readers refuse floor6 with exact inventories. Receipts: [native contract](verification/2026-10-19-observed-absence-rename-native.md), [old Mac](verification/2026-10-19-old-mac-running-writer-floor-six.md), [Windows](verification/2026-10-19-windows-observed-absence-rename.md). Windows41a94a5b official/supplemental, three private builds, supported installation and Cancel-only normal close pass; see delivered-state receipt. Mac1274 first candidate stopped because the external recipe supplied only31 legacy policy vectors to a test requiring43. Fresh retry2 uses the genuine current packaged-browser producer before all gates; failed archive remains preserved, no product source/check bypass. Mac1274 source56d144f7 is now installed; exact blocked article fresh image/text and normal note save/Quit/reopen passed three normal cycles ([receipt](verification/2026-10-19-mac-1274-installed-acceptance.md)). The image lost-wake fix10e102b3 now has a causal actual-controller RED and coherent46-test GREEN, zero skips; [receipt](verification/2026-10-19-native-postwrite-mirror-wake.md). Windows counterpart128 actual-PC and70 portable checks pass, committed971e445c; [receipt](verification/2026-10-19-windows-external-image-reopen.md). Preserve the exact installed1273 local image pack/journals. The1274 installation and fresh image save/normal reopen acceptance are complete; retain the historical1273 failure evidence separately. No guard bypass, timeout increase or recovery-copy workaround.
-2. Native Mac private4f CLI is sealed; its app attempt correctly failed a required test because the launcher omitted the current policy fixture environment. Exact4f fixture/pins and a fresh retry recipe are prepared, no waiver. [Sealed Mac-web readonly rehearsal](verification/2026-10-19-mac-web-shutdown-readonly-rehearsal.md) passed strict source/server identities and normal shutdown; historical full-campaign failure remains separate. Fresh web-only full-test dry-run recipe is prepared, no server contact. Defer expensive stale-source builds until product fixes settle. Current normal/CLI identities above must not be relabeled. Both PC fixture roots are genuine; positive assets still require actual native import.
-3. T19–20 wider platform light/dark UI, assets/assistant/MCP/permissions/audit/templates/retirement/response-loss remain. Mark only actual exit checks complete.
+Held owner decisions remain in plan Phase 5: retained conflict/rename items
+`5749b5ac` and `926668f8`, scheduled PC reboot, and exact-path cleanup approval.
+No filesystem recovery workarounds or deletions are authorized.
 
-Historical all-six one-round append and independent zero-round reopen passed with real JPEG and strict identities. Separate postproof failed Macweb60-second shutdown before natural exit; preserve it. [Receipt](verification/2026-10-19-six-client-append-reopen.md). This is historical evidence, not current75f or full operation/endurance acceptance. Earlier clean seq0 checkpoint and rapid-input failures remain unresolved with retained diagnostics; see [archived handoff](archive/texttext-handoff-2026-10-19-before-1273.md), [1266](verification/2026-10-18-mac-1266-installed-check.md), [1264](verification/2026-10-18-mac-1264-installed-review.md).
-
-## Work ownership
-
-Main only, no worktrees. Root owns Git index. One heavy Mac compiler/browser/physical lane; independentPC allowed, tiny pureNode gates coordinated. Preserve unrelated `mac/Package.resolved`, assistant attachments, tabs test, `mac/scripts/__pycache__/` and the untracked editor-probe script. Owner Package SHA256eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb exact. No new accounts/keys/profiles/tunnels, public Mac release or Vercel/GHA. [Oracle operations](../release/oracle/README.md), [six-client contract](verification/six-client-sync-acceptance.md), [prior full history](archive/texttext-handoff-2026-10-19-before-1273.md).
+[Archived handoff and historical receipts](archive/texttext-handoff-2026-10-22-before-unified-release.md).
