@@ -26,6 +26,8 @@ final class LocalVaultAgentController {
     var onFilesChanged: (() -> Void)?
     private(set) var status: [String: Any] = ["state": "disconnected"]
     typealias FeedProposal = @MainActor (String, [String: Any], String) async throws -> String
+    typealias WorkspaceProposalTool = @MainActor (String, String, [String: Any], String) async throws -> String
+    private let workspaceProposalTool: WorkspaceProposalTool?
     private let feedProposal: FeedProposal?
     private var hostedTools: [UUID: Task<Void, Never>] = [:]
     private let root: URL
@@ -84,8 +86,10 @@ final class LocalVaultAgentController {
          serverFactory: (() throws -> any LocalVaultAgentServer)? = nil,
          ownsProfile: Bool = false,
          cancellationTimeout: TimeInterval = 15,
-         feedProposal: FeedProposal? = nil) {
+         feedProposal: FeedProposal? = nil,
+         workspaceProposalTool: WorkspaceProposalTool? = nil) {
         self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        self.workspaceProposalTool = workspaceProposalTool
         self.feedProposal = feedProposal
         self.makeServer = serverFactory
         self.ownsProfile = ownsProfile
@@ -635,6 +639,17 @@ final class LocalVaultAgentController {
                     "url": ["type": "string"], "name": ["type": "string"]],
                     "required": ["url"], "additionalProperties": false]])
         }
+        if workspaceProposalTool != nil, case .folder(let folder) = access, folder.isEmpty {
+            tools.append(["type": "function", "name": "describe_workspace_proposals",
+                "description": "Read canonical schemas for reviewed asset and template actions. Call before proposing. Does not mutate anything.",
+                "inputSchema": ["type": "object", "properties": [String: Any](), "additionalProperties": false]])
+            tools.append(["type": "function", "name": "propose_workspace_change",
+                "description": "Stage a discovered asset/template command for explicit owner review. Read current source/hash first. Supply canonical arguments as JSON without idempotency_key, which TextText supplies. Return the review link; do not claim completion. Applying a saved template is a separate proposal.",
+                "inputSchema": ["type": "object", "properties": [
+                    "command": ["type": "string", "enum": LocalVaultFeedProposal.workspaceCommands.sorted()],
+                    "argumentsJSON": ["type": "string"]],
+                    "required": ["command", "argumentsJSON"], "additionalProperties": false]])
+        }
         return tools
     }
 
@@ -653,18 +668,24 @@ final class LocalVaultAgentController {
         // including when its first response was lost after publication.
         let creationRetryKey = "native-agent:\(taskInstanceID):\(params["callId"] ?? requestID)"
         emitTaskEvent(["type": "tool-call", "tool": tool, "path": arguments["path"] ?? ""], taskID: taskID)
-        if tool == "propose_feed" {
-            guard let feedProposal, case .folder(let folder) = access, !folder.isEmpty else {
+        if ["propose_feed", "describe_workspace_proposals", "propose_workspace_change"].contains(tool) {
+            guard case .folder(let folder) = access,
+                  tool == "propose_feed" ? (!folder.isEmpty && feedProposal != nil) : (folder.isEmpty && workspaceProposalTool != nil) else {
                 try? server?.respond(id: requestID, result: CodexAppServerRequests.dynamicToolResult(
-                    text: "Feed proposals require a connected folder task.", success: false))
+                    text: "Choose the connected folder scope required by this proposal tool.", success: false))
                 return
             }
+            let proposal: FeedProposal
+            if tool == "propose_feed", let feedProposal { proposal = feedProposal }
+            else if let workspaceProposalTool {
+                proposal = { folder, arguments, key in try await workspaceProposalTool(tool, folder, arguments, key) }
+            } else { return }
             let operationID = UUID()
             hostedTools[operationID] = Task { [weak self] in
                 let result: Result<String, Error>
                 do {
                     try fence.check(); try Task.checkCancellation()
-                    result = .success(try await feedProposal(folder, arguments, creationRetryKey))
+                    result = .success(try await proposal(folder, arguments, creationRetryKey))
                 } catch { result = .failure(error) }
                 guard let self else { return }
                 defer { self.hostedTools.removeValue(forKey: operationID) }

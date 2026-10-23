@@ -1,0 +1,7 @@
+# Mac reviewed asset and template proposals, 2026-10-23
+
+The native assistant advertised feed staging but had no canonical asset or template proposal route. Workspace-root tasks now discover the server's existing schemas and can stage only asset add, look save, template version, retirement and application. Named-folder tasks cannot cross into the template library; feed staging keeps its existing named-folder scope.
+
+The adapter reuses the canonical proposal endpoint, captured verified account/workspace authority, task cancellation and review receipt validation. The host supplies stable retry identity; model overrides are refused. Server staging deduplication is in commit `790d8de7`. No mutation executor, URL fetcher or approval flow was duplicated.
+
+Actual Mac standalone and Store focused suites each pass 24 tests, including production-controller tool advertisement/dispatch, named-folder refusal, account retirement, command allowlist and stable host keys. Logs: `/private/tmp/texttext-root-proposal-mac.log` and `/private/tmp/texttext-root-proposal-mac-store.log`. Final duplicate-schema hardening also passes all four adapter tests (`/private/tmp/texttext-root-proposal-final.log`); the controller is unchanged from the 24-test runs. Existing feed lifecycle and malformed-receipt tests remain passing. These are code checks, not installed assistant acceptance; release and real reviewed workflows remain required.

@@ -687,6 +687,7 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
             guard let root else { reply(id, result: .failure(VaultBridgeError("Open a folder first."))); return }
             if agent == nil {
                 var feedProposal: LocalVaultAgentController.FeedProposal?
+                var workspaceProposalTool: LocalVaultAgentController.WorkspaceProposalTool?
                 if let owner = profileAccount, owner.accountId != nil,
                    let account = credentials(), owner.sameAccount(as: account),
                    let binding = try? LocalVaultSync.binding(root: root), binding.origin == account.origin {
@@ -699,11 +700,14 @@ final class LocalVaultWindowController: NSWindowController, WKScriptMessageHandl
                               let binding = try LocalVaultSync.binding(root: root) else { return nil }
                         return .init(root: root, account: account, binding: binding)
                     })
+                    workspaceProposalTool = { tool, folder, arguments, retryKey in
+                        try await adapter.workspaceTool(tool, folder: folder, arguments: arguments, retryKey: retryKey)
+                    }
                     feedProposal = { folder, arguments, retryKey in
                         try await adapter.stage(folder: folder, arguments: arguments, retryKey: retryKey)
                     }
                 }
-                agent = LocalVaultAgentController(root: root, feedProposal: feedProposal)
+                agent = LocalVaultAgentController(root: root, feedProposal: feedProposal, workspaceProposalTool: workspaceProposalTool)
                 agent?.onEvent = { [weak self] event in self?.emit("texttext:vault-agent", value: event) }
                 agent?.onFilesChanged = { [weak self] in
                     self?.emit("texttext:vault-changed", value: [:])

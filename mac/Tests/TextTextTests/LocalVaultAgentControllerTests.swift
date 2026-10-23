@@ -199,9 +199,38 @@ final class LocalVaultAgentControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testWorkspaceProposalDiscoveryAndDispatchRequireRootTask() async throws {
+        var calls = 0
+        let (root, controller, server) = try await fixture(workspaceProposalTool: { tool, folder, _, _ in
+            XCTAssertEqual(tool, "describe_workspace_proposals"); XCTAssertEqual(folder, "")
+            calls += 1; return "[]"
+        })
+        defer { controller.stop(); try? FileManager.default.removeItem(at: root) }
+        try await start("root-task", threadID: "root-thread", turnID: "root-turn", controller: controller, server: server)
+        func offered(_ index: Int) -> [String] {
+            let namespaces = server.requests("thread/start")[index].params["dynamicTools"] as? [[String: Any]]
+            return (namespaces?.first?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+        }
+        XCTAssertTrue(offered(0).contains("propose_workspace_change"))
+        server.emitNotification("item/tool/call", params: ["threadId": "root-thread", "turnId": "root-turn",
+            "namespace": "texttext", "tool": "describe_workspace_proposals", "arguments": [String: Any]()], id: AnyHashable(931))
+        try await eventually { calls == 1 }
+        complete(threadID: "root-thread", turnID: "root-turn", server: server)
+        try await eventually { controller.status["state"] as? String == "ready" }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Notes"), withIntermediateDirectories: true)
+        try await start("folder-task", threadID: "folder-thread", turnID: "folder-turn", controller: controller, server: server, folderPath: "Notes")
+        XCTAssertFalse(offered(1).contains("propose_workspace_change"))
+        server.emitNotification("item/tool/call", params: ["threadId": "folder-thread", "turnId": "folder-turn",
+            "namespace": "texttext", "tool": "describe_workspace_proposals", "arguments": [String: Any]()], id: AnyHashable(932))
+        try await eventually { server.responses.contains { $0.id == AnyHashable(932) } }
+        XCTAssertEqual(calls, 1)
+    }
+
+    @MainActor
     private func fixture(ownsProfile: Bool = false, accountEmail: String? = "writer@example.com",
                          cancellationTimeout: TimeInterval = 15,
-                         feedProposal: LocalVaultAgentController.FeedProposal? = nil) async throws
+                         feedProposal: LocalVaultAgentController.FeedProposal? = nil,
+                         workspaceProposalTool: LocalVaultAgentController.WorkspaceProposalTool? = nil) async throws
         -> (URL, LocalVaultAgentController, VaultAgentTestServer) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("texttext-agent-task-\(UUID().uuidString)", isDirectory: true)
@@ -209,7 +238,7 @@ final class LocalVaultAgentControllerTests: XCTestCase {
         let server = VaultAgentTestServer(accountEmail: accountEmail)
         let controller = LocalVaultAgentController(root: root, serverFactory: { server },
             ownsProfile: ownsProfile,
-            cancellationTimeout: cancellationTimeout, feedProposal: feedProposal)
+            cancellationTimeout: cancellationTimeout, feedProposal: feedProposal, workspaceProposalTool: workspaceProposalTool)
         try controller.connect()
         try await eventually { controller.status["state"] as? String == "ready" }
         return (root, controller, server)
