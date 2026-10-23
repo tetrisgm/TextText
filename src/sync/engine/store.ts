@@ -1,3 +1,4 @@
+import { validatePortableFolderPath } from "@/lib/vault/portable-folder-path";
 import { applyFolderMoveIntent, type FolderMoveIntent } from "./folder-move-operation";
 import { snapshotFolderTree, verifyFolderParents } from "./folder-move-filesystem";
 import { folderMovePlanHash, reviewedFolderMoveManifest, type planFolderMove } from "./folder-move-plan";
@@ -298,6 +299,7 @@ async function stableIndexedItem(
 /** Creation must not introduce a spelling that aliases an existing portable parent.
  * Run under the vault lock, before any helper can create directories. */
 async function requirePortableCreationParents(layout: Layout, relativePath: string): Promise<void> {
+  validatePortableFolderPath(relativePath.split("/").slice(0, -1).join("/"));
   let parent = layout.workspace;
   for (const component of packPath(relativePath).split("/").slice(0, -1)) {
     const names = await fs.readdir(parent);

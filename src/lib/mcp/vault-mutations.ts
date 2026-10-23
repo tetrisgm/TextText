@@ -1,3 +1,4 @@
+import { validatePortableFolderPath } from "@/lib/vault/portable-folder-path";
 import { createHash, randomUUID } from "node:crypto";
 import { mutateVaultDocument, writeVaultTextpack } from "@/lib/store";
 import { type DocumentMutation } from "@/lib/collab/document";
@@ -72,7 +73,7 @@ export async function mutateVaultTool(name: string, args: Record<string, unknown
     const seed = digest(operationId);
     const itemId = `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(13, 16)}-8${seed.slice(17, 20)}-${seed.slice(20, 32)}`;
     const folder = typeof args.folder_path === "string" ? args.folder_path : ({ note: "Notes", article: "Blog", bookmark: "Bookmarks", gallery: "Gallery", talk: "Presentations" }[kind]);
-    if (folder && folder.split("/").some((part) => !part || part === "." || part === "..") || /[\\\x00]/.test(folder ?? "")) throw new Error("Invalid folder.");
+    validatePortableFolderPath(folder ?? "");
     const title = document.content.title.replace(/[\/\\:*?"<>|\x00-\x1f]/g, " ").trim().slice(0, 80) || "Untitled";
     const relativePath = `${folder ? `${folder}/` : ""}${title}-${itemId.slice(0, 8)}.textpack`;
     // A selected template may determine the final folder/title under the lock.

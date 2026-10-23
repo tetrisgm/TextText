@@ -44,3 +44,19 @@ test('canonical-equivalent parent spelling refuses before creating a second subt
  await expect(writeVaultTextpack(input(root,'nfc-new',`${composed}/Child/New.textpack`))).rejects.toThrow(/portable folder spelling/i);
  expect(await fs.readdir(path.join(root,'workspace',decomposed))).toEqual(['Existing.textpack']);
 });
+
+async function treeBytes(root:string):Promise<Record<string,string>> {
+ const result:Record<string,string>={};
+ async function visit(folder:string){for(const name of (await fs.readdir(folder)).sort()){const target=path.join(folder,name),info=await fs.lstat(target),key=path.relative(root,target);result[key]=info.isDirectory()?'directory':(await fs.readFile(target)).toString('base64');if(info.isDirectory())await visit(target);}}
+ await visit(root);return result;
+}
+test.each(['Feeds ','Feeds.','CON','aux.txt','Notes/LPT1','Notes/Bad /Child'])('new creation rejects nonportable parent %s without filesystem or audit mutation',async folder=>{
+ const root=await fixture();await writeVaultTextpack(input(root,'seed','Notes/Existing.textpack'));const before=await treeBytes(root);let audits=0;
+ await expect(writeVaultTextpack({...input(root,'invalid',folder+'/New.textpack'),audit:{actorUserId:'actor',actorType:'external_agent'},onReceipt:async()=>{audits++;}})).rejects.toThrow(/portable folder/);
+ expect(audits).toBe(0);expect(await treeBytes(root)).toEqual(before);
+});
+test('template creation refuses an invalid requested parent without mutating the tree',async()=>{
+ const root=await fixture();await writeVaultTextpack(input(root,'seed','Notes/Existing.textpack'));const before=await treeBytes(root);
+ await expect(writeVaultTextpack({...input(root,'invalid-template','Feeds /New.textpack'),templateCreation:{id:'texttext.gallery',folderDefault:true,titleDefault:false,bodyDefault:false,fieldsDefault:false},beforeTemplateRead:async()=>{}})).rejects.toThrow(/portable folder/);
+ expect(await treeBytes(root)).toEqual(before);
+});
