@@ -18,6 +18,13 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+October 23 update: `98b5314a` is delivered on all three surfaces with real
+exact-content normal reopen checks. The invocation delivered web/Mac but stopped
+on Windows PowerShell 5 backup path limits; guarded recovery installed the same
+verified Windows candidate. The next release must exercise the permanent backup
+fix through the complete unified command. [Mac/web receipt](../verification/2026-10-23-mac-web-installed-acceptance.md),
+[Windows receipt](../verification/2026-10-23-windows-98b-installed-acceptance.md).
+
 Status: in progress. The sync npm entry now owns the browser-policy producer and
 local database setup ([focused Mac checks](../verification/2026-10-22-release-sync-entry.md)).
 The combined command is implemented ([checks](../verification/2026-10-22-ship-all-entry.md));
@@ -70,6 +77,10 @@ Exit: one invocation brings web, Mac and Windows to the same commit. Each surfac
 Effort: about 1 day. Mac build time dominates.
 
 ## Phase 2: Windows startup and open responsiveness
+
+October 23 status: checkpoint scheduling/fairness, state reporting, scoped-error,
+listing and initial-construction changes are integrated for required checks.
+No three-second installed target or Windows server-convergence claim yet.
 
 Problem: on a real 1,100-note workspace, launch can still show "The connection is taking longer than expected". A restored note can show "Opening document…" for tens of seconds while `SyncEngine.SyncAsync` runs 10 or more full workspace scans per pass and holds the store. Per-file costs are fixed (`67efe404`, `680a8581`); the number of scans is not.
 
@@ -203,6 +214,15 @@ Not landed:
 
 ## Operational notes learned on October 22
 
+- **October 23 release corrections.** Run `release/ship-all.sh` from the Mac's
+  desktop Terminal session: signing succeeds there while SSH's Background
+  keychain session remains locked. Inspect logs over SSH. The early signing
+  probe retains evidence and pins the actual build identity. Windows stopped
+  backups require PowerShell 7 for long-path reparse inspection and use verified
+  Node copies. Set Mac `TEXTTEXT_WINDOWS_POWERSHELL7` to the existing PC runtime
+  `C:\Users\Shokunin\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe`
+  for this fleet; the coordinator passes it explicitly and checks it before
+  building. Permanent correction: `702c0968`. Preserve failed partial backups.
 - **Windows build privilege.** `windows/scripts/build.ps1` needs the symlink privilege that only an elevated token has. From the PC, run it through the PC's own OpenSSH (`ssh -i ~/.ssh/id_ed25519 Shokunin@127.0.0.1 ...`, which is high integrity), or from the Mac through `ssh pc`. The desktop smoke test still opens its own interactive task.
 - **Windows checkout line endings.** Windows Git's system `core.autocrlf=true` breaks hash-pinned node tests. Set `git config core.autocrlf false` in the checkout before building.
 - **Driving the real Windows app.** Launch the installed app with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`. Read state and focus fields through CDP (`http://127.0.0.1:9333/json`). Type with real `SendKeys` into the foreground window. Close with `CloseMainWindow`, and time it with `WaitForExit`. For stalls, sample native stacks with `dotnet-stack report -p <pid>` (installed under `%LOCALAPPDATA%\TextTextBuild\tools`, with `DOTNET_ROOT=%LOCALAPPDATA%\TextTextBuild\dotnet`).

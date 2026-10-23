@@ -9,6 +9,20 @@ with one heavy Mac build lane and independent Windows investigation.
 
 ## Active work
 
+- All three surfaces delivered `98b5314a` and passed actual exact-content normal
+  reopen checks. The unified command delivered web/Mac, then Windows backup
+  failed on PowerShell 5 long paths. Reviewed stopped-backup recovery installed
+  the same verified candidate through the supported installer. Preserve partial
+  backups. [Mac/web](verification/2026-10-23-mac-web-installed-acceptance.md),
+  [Windows](verification/2026-10-23-windows-98b-installed-acceptance.md).
+  The next unified release must verify the permanent backup correction end to end.
+- Phase 2 changes are integrated but uncommitted: durable-checkpoint foreground
+  yielding with bounded fairness, explicit incomplete-pass retry obligation,
+  consistent connection state and remote-response diagnostics, scoped UI errors,
+  nonblocking listing permissions and staged initial bridge construction. Full
+  native suites and Mac checks are underway. Installed five-launch targets and
+  server round-trip acceptance remain mandatory; Windows hosted convergence is
+  not yet independently established.
 - Latest unified invocation `446784e2`: Mac release/sync gates and Windows
   candidate/desktop smoke passed. Mac signing then failed because the existing
   login keychain is locked. No delivery; original owner pin restored exactly.
@@ -69,9 +83,9 @@ with one heavy Mac build lane and independent Windows investigation.
 
 | Surface | Identity and evidence |
 | --- | --- |
-| Mac | `56d144f7`, 0.204 (1274), canonical `/Applications/TextText.app`; [installed acceptance](verification/2026-10-19-mac-1274-installed-acceptance.md) |
-| Windows | `ca7c5540` content, candidate `0c0c29a8…`; [normal save/reopen evidence and remaining startup failure](verification/2026-10-22-windows-first-session-close-blocked-profile.md) |
-| Web | `aa8f8a1b`, deployment `texttext-oracle-20261023T023701Z-aa8f8a1b`; [13 authenticated smoke checks](verification/2026-10-22-web-aa8f8a1b-delivered.md) |
+| Mac | `98b5314a`, 0.203 (1275), canonical `/Applications/TextText.app`; [installed acceptance](verification/2026-10-23-mac-web-installed-acceptance.md) |
+| Windows | `98b5314a`; [installed acceptance and backup recovery](verification/2026-10-23-windows-98b-installed-acceptance.md) |
+| Web | `98b5314a`; [live acceptance](verification/2026-10-23-mac-web-installed-acceptance.md) |
 | CLI | signed `56d144f7`; [installation evidence](verification/2026-10-19-mac-1274-installed-acceptance.md) |
 
 ## Preservation and operational references
