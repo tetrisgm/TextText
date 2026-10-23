@@ -118,6 +118,9 @@ The old1273 stuck instance required a maintenance TERM after its original, recov
 
 ## Original task status and remaining exits
 
+**October22 owner scope change:** the six-client physical runner and matrix (T21–T22), endurance runs (T24), performance measurement (T25), account switching (T23), and final delivery/changelog closure (T26–T27) are obsolete. Do not run, prepare or report them as open work; their historical receipts remain evidence only.
+
+
 “Source verified” means implementation checks passed; any listed real-device gate is still open. Grouped history in older ledgers must not be counted as27 fully completed tasks.
 
 | Task | Recorded state | Remaining action |
@@ -142,13 +145,13 @@ The old1273 stuck instance required a maintenance TERM after its original, recov
 | T18 seeded faults | Partial existing scheduling/runner checks | Cover missing production-interface schedules; save seeds and reduce failures. No new framework unless a concrete gap requires it. |
 | T19 UI parity | Shared light/dark and permission baseline tested | Complete actual installed Mac/Windows/web flows, keyboard/narrow layouts and capability differences. |
 | T20 templates and agents | Five template CLI flows, selected native gallery/comment/Trash/image workflows pass | Complete UI/assistant/CLI/MCP creation, edit, template version/retirement, audit, permissions and committed-response-loss retries. |
-| T21 physical runner | Historical all-six append and independent reopen passed | Refresh current six real actors using existing runner; require all roles and genuine positive asset evidence. |
-| T22 physical matrix | Partial historical acceptance | Current text/asset/file/folder/offline/lost-ACK/restart/close matrix. Separate Mac-web shutdown timeout remains failed until causally fixed/verified. |
-| T23 two accounts | Real viewer/edit/revoke/regrant and retained offline work passed | Current-source native account switch, sign-out/pending work and authenticated agent/audit/presence identity. |
-| T24 endurance | Runner preparation tested; campaign unrun | At least100 seeded mixed rounds, bounded60-minute soak and independent durable reopen on a stable candidate set. |
-| T25 performance | Preparation and isolated measurements only | Real release distributions, idle writes/request bounds and settled resource measurements. |
-| T26 final delivery | Immediate Mac repair delivered and accepted | Final relevant Windows/web delivery plus wider installed feature/upgrade matrix; depend on remaining acceptance tasks. |
-| T27 closure | Current Mac receipt and compact handoff committed | Existing changelog update, reconciled final ledgers/parity rows and scoped fixture cleanup. Whole-plan completion remains open. |
+| T21 physical runner | Historical all-six append and independent reopen passed | Obsolete (owner, 2026-10-22). Do not run. |
+| T22 physical matrix | Partial historical acceptance | Obsolete (owner, 2026-10-22). Do not run. |
+| T23 two accounts | Real viewer/edit/revoke/regrant and retained offline work passed | Obsolete (owner, 2026-10-22). Do not run. |
+| T24 endurance | Runner preparation tested; campaign unrun | Obsolete (owner, 2026-10-22). Do not run. |
+| T25 performance | Preparation and isolated measurements only | Obsolete (owner, 2026-10-22). Do not run. |
+| T26 final delivery | Immediate Mac repair delivered and accepted | Obsolete (owner, 2026-10-22). Do not run. |
+| T27 closure | Current Mac receipt and compact handoff committed | Obsolete (owner, 2026-10-22). Do not run. |
 
 ## Concrete continuation sequence
 
@@ -159,6 +162,8 @@ Read status/log, fetch/pull, preserve the listed dirty paths. Inspect affected p
 Produce a short per-surface list of changes actually requiring build/install/deploy. Do not rebuild unchanged Mac assets for documentation commits. Use current release scripts and their exact-source required checks; preserve stopped backups and existing content. Verify hosted identity and authenticated smoke after a web rollout. Exit: actual surfaces and relevant fixes are known and delivered, or a precise dependency is recorded.
 
 ### Step 2 Finish the real cross-platform correctness matrix
+
+Obsolete (owner, 2026-10-22). Skip this step; text below is historical.
 
 Read [six-client contract](verification/six-client-sync-acceptance.md), `sync/stress/README.md`, and T21–T22. Existing roles are Mac app, Mac browser, Mac direct-file writer, Windows app, Windows browser and Windows direct-file writer. Direct-file actors must use ordinary filesystem operations. No simulated-role substitute.
 
@@ -178,11 +183,15 @@ Inventory named existing T16–T18 tests before adding any. Use local PostgreSQL
 
 ### Step 5 Run the finite endurance and performance acceptance
 
+Obsolete (owner, 2026-10-22). Skip this step; text below is historical.
+
 Use the existing runner after correctness is green. Original T24 requires at least100 seeded mixed rounds plus60 minutes of bounded observation, then independent durable reopen. It has not run. Define actor deadlines, output bounds, ownership and cleanup before starting. Stop on a correctness failure; retain failed runs separately. Do not extend an incomplete run until it looks successful.
 
 Measure release-mode real clients with hardware/network/dataset/sample counts and p50/p95/p99/max. Original targets: typing p95<50ms; remote text p95<500ms; stable small external write reflection p95<1s; cached workspace usable p95<2s; normal durable close p95<1s. Reconnect and asset budgets must come from a recorded baseline before tuning. Verify zero idle content mutations and finite manifest/listener/queue/document/memory bounds. Exit: measured targets pass or specific shortfalls remain owner-visible. Runner instrumentation preparation is not a measurement result.
 
 ### Step 6 Final delivery and closure
+
+Obsolete (owner, 2026-10-22). Skip this step; text below is historical.
 
 Freeze affected product source after needed fixes, reuse only valid matching artifacts, install/deploy the affected surfaces, and run the remaining T26 ordinary-use flows. Use the existing `texttext:project-changelog` procedure for the actual shipped version in `Shoku's Space/My Notes/TextText Changelog.textpack`; preserve the body and deduplicate by shipped change/version. Do not create a replacement changelog in the repo or another workspace.
 
