@@ -280,7 +280,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     }
 
     static bool IsRead(string method) => method is "files.connection" or "files.recoveryDirectory" or "files.ready" or "files.list" or "files.read" or "files.text"
-        or "collaboration.localHandoffConfig" or "files.savedFileMoveList" or "files.savedFileMoveRead" or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
+        or "collaboration.localHandoffConfig" or "files.savedFileMoveList" or "files.savedFileMoveRead" or "files.pathCollisionList" or "files.pathCollisionInspect" or "files.folderSyncMoveList" or "files.folderSyncMoveRead" or "files.folderRenameList" or "files.folderRenameRead" or "files.replacementList" or "files.replacementRead" or "files.recoveryAssets" or "files.recoveryAssetRead";
 
     static object FolderRenameRow(TextPackStore.FolderRenameRecoveryEntry entry) => new {
         id=entry.Id,fromPath=entry.FromPath,toPath=entry.ToPath,expectedIdentity=entry.ExpectedIdentity,
@@ -324,6 +324,33 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 return Result(restored);
             }
             case "files.recoveryDirectory": return files.GetRecoveryDirectory();
+            case "files.pathCollisionList": {
+                RequireReplacementScope(p,ct);
+                var entries=await sync.ListPathCollisionsAsync(ct);
+                RequireReplacementScope(p,ct);
+                return entries.Select(entry=>new {localItemId=entry.LocalItemId,remoteItemId=entry.RemoteItemId,sourcePath=entry.SourcePath,
+                    localOperationId=entry.LocalOperationId,remoteOperationId=entry.RemoteOperationId,state=entry.State,resolutionId=entry.ResolutionId}).ToArray();
+            }
+            case "files.pathCollisionInspect": {
+                RequireReplacementScope(p,ct);
+                var row=await sync.InspectPathCollisionAsync(Required(p,"localItemId"),Required(p,"remoteItemId"),ct);
+                RequireReplacementScope(p,ct);
+                return new {inspection=row.Inspection,localItemId=row.LocalItemId,remoteItemId=row.RemoteItemId,sourcePath=row.SourcePath,
+                    destinationPath=row.DestinationPath,localHash=row.LocalHash,remoteRevision=row.RemoteRevision,
+                    localOperationId=row.LocalOperationId,remoteOperationId=row.RemoteOperationId};
+            }
+            case "files.pathCollisionKeepBoth": {
+                RequireReplacementScope(p,ct);
+                if(!p.TryGetProperty("consent",out var consent)||consent.ValueKind!=JsonValueKind.True)
+                    throw new InvalidDataException("Inspect both note identities and confirm keeping both before continuing.");
+                var review=new SyncEngine.PathCollisionReview(Required(p,"inspection"),Required(p,"localItemId"),Required(p,"remoteItemId"),
+                    Required(p,"sourcePath"),Required(p,"destinationPath"),Required(p,"localHash"),Required(p,"remoteRevision"),
+                    Required(p,"localOperationId"),Required(p,"remoteOperationId"));
+                var result=await sync.KeepBothPathCollisionAsync(review,Required(p,"operationId"),ct);
+                RequireReplacementScope(p,ct);Changed();
+                return new {operationId=result.OperationId,state=result.State,localItemId=result.LocalItemId,remoteItemId=result.RemoteItemId,
+                    localPath=result.LocalPath,remotePath=result.RemotePath};
+            }
             case "files.savedFileMoveList": {
                 RequireReplacementScope(p,ct);
                 var page=await sync.SavedFileMoveRecoveryListAsync(ct,Optional(p,"path"));

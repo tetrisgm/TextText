@@ -10,6 +10,24 @@ import { readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 afterEach(() => { vi.unstubAllGlobals(); });
+it("binds path-collision inspection and reviewed keep-both requests to the active native account", async () => {
+  vi.stubGlobal("window", new EventTarget());
+  const view = native((method) => {
+    if (method === "native.status") return { available: true, connected: true, workspaceId: "workspace", root: "C:\\Vault", accountId: "person" };
+    if (method === "files.pathCollisionInspect") return { inspection: "a".repeat(64) };
+    if (method === "files.pathCollisionKeepBoth") return { state: "completed" };
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    await transport.request("pathCollisionInspect", { workspaceRoot: "forged", localItemId: "local", remoteItemId: "remote" });
+    await transport.request("pathCollisionKeepBoth", { workspaceRoot: "forged", consent: true, operationId: "operation" });
+    expect(view.messages.slice(-2).map(message => [message.method, message.params])).toEqual([
+      ["files.pathCollisionInspect", { workspaceRoot: "C:\\Vault", workspaceId: "workspace", accountId: "person", localItemId: "local", remoteItemId: "remote" }],
+      ["files.pathCollisionKeepBoth", { workspaceRoot: "C:\\Vault", workspaceId: "workspace", accountId: "person", consent: true, operationId: "operation" }],
+    ]);
+  } finally { transport.destroy(); }
+});
 it("releases native initial admission when status fails before terminal listeners exist", async () => {
   vi.stubGlobal("window", new EventTarget());
   const view = native(method => {

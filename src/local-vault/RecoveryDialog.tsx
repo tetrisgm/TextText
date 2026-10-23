@@ -7,11 +7,12 @@ import { FolderSyncMoveRecovery, type FolderSyncMoveRecoveryEntry } from "./Fold
 import { FolderRenameRecovery, type FolderRenameRecoveryEntry } from "./FolderRenameRecovery";
 import { ReplacementRecovery, type ReplacementRecoveryEntry } from "./ReplacementRecovery";
 import { SavedFileMoveRecovery, type SavedFileMoveRecoveryEntry } from "./SavedFileMoveRecovery";
+import { PathCollisionRecovery, type PathCollisionEntry } from "./PathCollisionRecovery";
 
 export type TrashItem = { itemId: string; relativePath: string; revision: string };
 export type TrashRestore = TrashItem & { operationId: string; basePath: string; baseRevision: string };
 type RecoveryEntry = { id: string; path: string; kind: "deleted" | "revision" | "conflict"; savedAt: string; hash: string };
-type RecoveryPage = { entries: RecoveryEntry[]; truncated: boolean; replacements?: ReplacementRecoveryEntry[]; folderRenames?: FolderRenameRecoveryEntry[]; folderSyncMoves?: FolderSyncMoveRecoveryEntry[]; savedFileMoves?: SavedFileMoveRecoveryEntry[]; savedFileMovesTruncated?: boolean; warning?: string; assets?: RecoveryAssetEntry[]; assetsTruncated?: boolean };
+type RecoveryPage = { entries: RecoveryEntry[]; truncated: boolean; replacements?: ReplacementRecoveryEntry[]; folderRenames?: FolderRenameRecoveryEntry[]; folderSyncMoves?: FolderSyncMoveRecoveryEntry[]; savedFileMoves?: SavedFileMoveRecoveryEntry[]; savedFileMovesTruncated?: boolean; pathCollisions?: PathCollisionEntry[]; warning?: string; assets?: RecoveryAssetEntry[]; assetsTruncated?: boolean };
 type RecoveryFile = VaultFile & { data: string };
 const labels = { deleted: "Deleted file", revision: "Saved revision", conflict: "Conflict copy" };
 
@@ -82,9 +83,16 @@ export function RecoveryDialog({ path, workspaceRoot = "", onClose, onRestore, o
     {trashError && <p role="status">Trash is unavailable. {trashError}</p>}
     {error && <p role="alert">{error}</p>}
     {!page && !error && <p role="status">Loading recovery files…</p>}
-    {page && !page.entries.length && !page.replacements?.length && !page.folderRenames?.length && !page.folderSyncMoves?.length && !page.savedFileMoves?.length && !page.savedFileMovesTruncated && !page.assets?.length && !trash?.items.length && <p>No retained {path ? "versions for this file" : "deleted files or conflict copies"}.</p>}
+    {page && !page.entries.length && !page.replacements?.length && !page.folderRenames?.length && !page.folderSyncMoves?.length && !page.savedFileMoves?.length && !page.savedFileMovesTruncated && !page.pathCollisions?.length && !page.assets?.length && !trash?.items.length && <p>No retained {path ? "versions for this file" : "deleted files or conflict copies"}.</p>}
     {page?.warning && <p role="status">{page.warning}</p>}
     {page?.truncated && <p role="status">Recovery reached its scan limit. More copies may exist in the workspace’s .texttext folder.</p>}
+    {!!page?.pathCollisions?.length && <PathCollisionRecovery entries={page.pathCollisions} workspaceRoot={workspaceRoot} disabled={restoring} onResolved={() => {
+      const captured = ++sequence.current, generation = lifetime.current;
+      setFile(null); setChosen(null); setDeleted(null);
+      void request<RecoveryPage>("recoveryList", { ...(path ? { path } : {}), workspaceRoot }).then(value => {
+        if (active.current && lifetime.current === generation && sequence.current === captured) setPage(value);
+      }).catch(() => { if (active.current && lifetime.current === generation && sequence.current === captured) setError("Recovery could not be refreshed. Close and reopen it to inspect the current files."); });
+    }} />}
     {(!!page?.savedFileMoves?.length || page?.savedFileMovesTruncated) && <SavedFileMoveRecovery entries={page.savedFileMoves ?? []} truncated={page.savedFileMovesTruncated} workspaceRoot={workspaceRoot} disabled={restoring} onResolved={() => {
       const captured = ++sequence.current, generation = lifetime.current;
       void request<RecoveryPage>("recoveryList", { ...(path ? { path } : {}), workspaceRoot }).then(value => {

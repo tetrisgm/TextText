@@ -1,0 +1,7 @@
+# Windows path-collision recovery UI source check
+
+The installed `044e5441` Windows note UUID `080a76d5-f83d-456f-b893-67b869d27af2` and the Mac/web note UUID `ee455de6-5640-453c-8632-7984a370688c` both claim `Notes/Untitled 31.textpack`. Windows retained both payloads and conflict operations but could not materialize the shared note. This is the observed trigger, not a synthetic performance stall.
+
+The Windows bridge now lists and inspects that exact two-ID pair through the account- and workspace-bound recovery channel. The recovery dialog shows the original and proposed unique paths and both IDs, then requires an explicit Keep both action. The native engine owns the durable move and queue; the UI never rewrites files or clears journals. A prepared recovery reuses its saved operation ID after dialog/app restart, so an interrupted action can resume. Native errors are shown as bounded recovery guidance, not raw paths or stacks.
+
+Focused checks: path-collision browser UI PASS (inspection before action, consent, same-ID retry and prepared restart, changed pair refusal, error redaction); Windows transport 25 PASS (including scope override); TypeScript no-emit PASS; Windows WPF build PASS with one pre-existing NU1510 package warning. Installed acceptance is **pending** the next same-commit unified release: resolve the actual retained pair in the installed Windows app, then verify both UUIDs and exact bodies locally and on the live site after normal close/reopen. No installed success is claimed from these source checks.
