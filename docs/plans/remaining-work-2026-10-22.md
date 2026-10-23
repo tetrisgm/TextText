@@ -18,6 +18,16 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+October 23 current: one human-invoked `release/ship-all.sh` run exited 0
+at full commit `ec300bb388126631edb73a491faf80bad14fb776`, installing it on
+Oracle web, Mac 0.203 build 1279, and Windows. Post-repair installed
+exact-content checks are still in progress; build success is not acceptance.
+The owner authorized removal of three exact malformed, empty Oracle folders.
+The empty-directory-only repair preserved all 1,480 TextPack path/content
+hashes, receipts, and journals ([receipt](../verification/2026-10-23-empty-catalog-folders.md)).
+Native clients still need scoped catalog-error handling so the next malformed
+folder does not pause healthy-item sync.
+
 October 23 latest: one human-invoked `release/ship-all.sh` run exited 0 at
 `d7a06af4` and installed that full commit on Oracle web, Mac 0.203 build 1278,
 and Windows. All three passed a real exact-content edit, save, normal close,
@@ -109,6 +119,14 @@ Exit: one invocation brings web, Mac and Windows to the same commit. Each surfac
 Effort: about 1 day. Mac build time dominates.
 
 ## Phase 2: Windows startup and open responsiveness
+
+October 23 current: installed `ec300bb3` still showed `about:blank` at
++8.86 s on one launch. A single native stack sample at +9.85 s points to
+`SyncPass` → `ScanForSync` → `ScanInventory` → recovery indexed paths and
+reparse checks, while the main dispatcher was idle. This is a decisive
+miss; work now targets the inventory/recovery scan path and its bridge
+gating, with a focused regression before another release. Do not run a
+five-launch loop on this known failing build.
 
 October 23 latest: installed `d7a06af4` failed the target on its first
 uninstrumented launch: workspace still absent at +8.53 s, restored note visible
