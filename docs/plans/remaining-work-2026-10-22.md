@@ -150,3 +150,40 @@ Effort: several weeks. Decide after Phase 3.
 - Phases 3 and 4 run in batches; each batch ends with one Phase 1 release.
 - Phase 5 items happen whenever the owner is available.
 - Phase 6 is a later decision.
+
+## Done on October 22 (for context)
+
+Commits, oldest first:
+- `67efe404`, `680a8581`: Windows native. Share the profile, folder-case and owner checks across blocked-item and inventory passes. The 1,100-file inventory dropped from 4.7 s to 2.0 s, and the "startup listing timeout" cause is fixed.
+- `ca7c5540`: shared editor. A just-created note stays editable until its listing row arrives.
+- `aa8f8a1b`: the owner's variable renames in `attachments.ts` and `tabs.test.ts`.
+- `fae7a2d8`: retired T21–T27.
+
+Delivered:
+- Windows installed and verified with three real first-session cycles plus hosted readback.
+- Web deployed as `aa8f8a1b`, with 13 smoke checks passing.
+- Oracle cleaned up with approval: 22 old TextText releases, one non-current Algorave release, and a journal vacuum. 27 GB free; every service still active.
+
+Receipts: [Windows](../verification/2026-10-22-windows-first-session-close-blocked-profile.md), [web](../verification/2026-10-22-web-aa8f8a1b-delivered.md).
+
+Not landed:
+- a `ProtectedPathDecision` rescan patch: low value, fragile test;
+- the Mac rebuild: Phase 1.
+
+## Operational notes learned on October 22
+
+- **Windows build privilege.** `windows/scripts/build.ps1` needs the symlink privilege that only an elevated token has. From the PC, run it through the PC's own OpenSSH (`ssh -i ~/.ssh/id_ed25519 Shokunin@127.0.0.1 ...`, which is high integrity), or from the Mac through `ssh pc`. The desktop smoke test still opens its own interactive task.
+- **Windows checkout line endings.** Windows Git's system `core.autocrlf=true` breaks hash-pinned node tests. Set `git config core.autocrlf false` in the checkout before building.
+- **Driving the real Windows app.** Launch the installed app with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`. Read state and focus fields through CDP (`http://127.0.0.1:9333/json`). Type with real `SendKeys` into the foreground window. Close with `CloseMainWindow`, and time it with `WaitForExit`. For stalls, sample native stacks with `dotnet-stack report -p <pid>` (installed under `%LOCALAPPDATA%\TextTextBuild\tools`, with `DOTNET_ROOT=%LOCALAPPDATA%\TextTextBuild\dotnet`).
+- **Reaching the Mac.** Off the home LAN, `ssh -o HostName=10.6.0.3 mac` (WireGuard) may work when `ssh mac` (192.168.1.216) times out. The Mac cannot `git push` over HTTPS non-interactively. Fetch its commits to the PC over SSH and push from there.
+- **Web deploy, the sequence that passed.** On the Mac:
+  1. stash only `mac/Package.resolved`;
+  2. `export TEXTTEXT_MIRROR_POLICY_BUNDLE=$(mktemp -d)` and run `node src/local-vault/__tests__/mirror-policy.browser.mjs`;
+  3. run `node scripts/with-local-database.mjs npm run test:sync`;
+  4. run `npm run deploy:web -- --skip-tests`, which validates that sync receipt; `npm test` and `test:db` had passed for the same commit;
+  5. restore the stash.
+- **Mac checkout state.** It may be behind `origin/main`, so run `git pull --ff-only` there first. The owner's `mac/Package.resolved` edit (SHA256 `eea669ec…`) stays uncommitted until Phase 1 decides it.
+
+## Prompt to continue (Codex or Claude)
+
+> Work in the TextText repository on `main` (Mac: `~/dev/TextText`; PC: `%USERPROFILE%\dev\texttext`). Pull first; preserve the owner's uncommitted `mac/Package.resolved`. Read `AGENTS.md`, `docs/HANDOFF.md`, and `docs/plans/remaining-work-2026-10-22.md`, which is the authoritative plan. Tasks T21–T27 of the older checklist are obsolete; do not run or prepare them. Execute the plan in order, starting with Phase 1: one human-invoked release step that builds and installs web, Mac and Windows from the same commit, which also brings the Mac up to `ca7c5540` or later. Then Phase 2 (Windows startup and open responsiveness, with measured targets), then Phases 3–4 in batches, each ending with one release. Follow the plan's "Operational notes learned on October 22" for builds, deploys, and driving the real Windows app. For every change: find the cause from real evidence first, add a focused regression, run the required checks, verify on the real installed app or the live site (open, edit, save, quit normally, reopen with exact content), commit small, push, and add a short receipt under `docs/verification/`. Never hide errors, bypass durability guards, reset journals, or count simulations as installed acceptance. Ask before deleting anything on servers or machines. Stop only when the plan's exit checks pass or an owner decision is required, and update `docs/HANDOFF.md` and the plan's status as you go.
