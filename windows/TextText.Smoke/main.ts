@@ -110,8 +110,12 @@ Object.assign(window, { runDesktopSmoke: async () => {
       assert(image.naturalWidth===16&&image.naturalHeight===16,'gallery: reopened native image decodes with original dimensions');
     }
     window.dispatchEvent(new CustomEvent('texttext:vault-changed'));
-    // Open the saved item through the application's normal file-open event.
-    window.dispatchEvent(new CustomEvent('texttext:vault-open',{detail:{path:again.path}}));
+    // A title can already be visible before an asynchronous open finishes.
+    // Await the native acknowledgement and the committed idle controls so the
+    // next overview click cannot be discarded by an in-flight navigation.
+    await waitFor('.vault-context-menu button:not(:disabled)');
+    assert(await nativeOpen(again.path)==='opened',`${kind}: saved item open is acknowledged before further navigation`);
+    await buttonNamed('Rename or move');
     for(let attempt=0;attempt<50&&!document.body.innerText.includes(snapshot.content.title);attempt++)await delay(100);
     assert(document.body.innerText.includes(snapshot.content.title),`${kind}: saved item opens in shared desktop UI`);
     } catch(error) { throw new Error(`${kind} template workflow: ${error instanceof Error ? error.message : String(error)}`); }
