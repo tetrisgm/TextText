@@ -90,6 +90,22 @@ export function readFolderItemDefault(view: FolderView | null): FolderItemDefaul
   if (value.authoringSource !== undefined && !authoringSource) throw new Error("Invalid folder template source");
   return { version: 1, template, ...(authoringSource ? { authoringSource } : {}) };
 }
+
+/** Pin a future-item default without changing the folder's collection design. */
+export function folderDefaultPayload(file: VaultFile, view: FolderView, template: TemplateDefinition | null) {
+  if (file.path !== view.path || file.hash !== view.hash) throw new Error("The folder view changed. Reload it before saving a default.");
+  const current = readFolderView(file);
+  if (!current || current.path !== view.path) throw new Error("The folder view changed. Reload it before saving a default.");
+  // Preserve exact authored Markdown and the rest of the snapshot. A folder
+  // default changes future creation, not this file's writing or collection look.
+  const stored = JSON.parse(file.documentJSON!);
+  const fields = { ...stored.content.fields };
+  if (template) fields[FOLDER_DEFAULT_FIELD] = JSON.stringify({ version: 1, template: validateTemplateDefinition(template) });
+  else delete fields[FOLDER_DEFAULT_FIELD];
+  return { path: file.path, hash: file.hash, markdown: file.markdown,
+    documentJSON: JSON.stringify({ ...stored, content: { ...stored.content, fields } }),
+    templateJSON: file.templateJSON, templateAuthoringSourceJSON: file.templateAuthoringSourceJSON ?? null };
+}
 export function folderCollectionTemplate(view: FolderView | null): TemplateDefinition | undefined {
   return view?.document.content.fields[FOLDER_STANDARD_LAYOUT_FIELD] === "v1" ? undefined : view?.template;
 }

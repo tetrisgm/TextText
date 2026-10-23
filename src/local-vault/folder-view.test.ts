@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_TEMPLATES } from "@/lib/presentation/templates";
 import { emptyDocumentSnapshot } from "@/lib/documents/model";
-import { createFolderViewPack, readFolderView, resolveFolderView, folderViewMembers, updateFolderViewPack, folderViewPath } from "./folder-view";
+import { createFolderViewPack, readFolderView, resolveFolderView, folderViewMembers, updateFolderViewPack, folderViewPath, folderDefaultPayload, readFolderItemDefault } from "./folder-view";
 import { openPack } from "./pack";
 
 const template = BUILTIN_TEMPLATES.find((entry) => entry.id === "texttext.gallery")!;
@@ -79,5 +79,23 @@ describe("file-backed folder views", () => {
   it("rejects paths outside an ordinary folder", () => {
     for (const path of ["../Other", "/absolute", "A//B", "A/./B", "A\\B", "A\u0000B"]) expect(() => folderViewPath(path)).toThrow();
     expect(folderViewPath("")).toBe("Folder view.textpack");
+  });
+  it("changes only the future-item default in the folder definition and rejects a stale revision", () => {
+    const pack = fixture();
+    pack.file.markdown += "\nAuthor-maintained appendix.  \n";
+    const view = readFolderView(pack.file)!;
+    const note = BUILTIN_TEMPLATES.find((entry) => entry.id === "texttext.note")!;
+    const proposal = folderDefaultPayload(pack.file, view, note);
+    const updated = readFolderView({ ...pack.file, ...proposal, hash: "revision-2" })!;
+    expect(updated.template).toEqual(view.template);
+    expect(updated.document.content.body).toBe(view.document.content.body);
+    expect(readFolderItemDefault(updated)?.template).toEqual(note);
+    expect(proposal.path).toBe(pack.file.path);
+    expect(proposal.hash).toBe("revision-1");
+    expect(proposal.markdown).toBe(pack.file.markdown);
+    expect(proposal.templateJSON).toBe(pack.file.templateJSON);
+    const removed = folderDefaultPayload({ ...pack.file, ...proposal, hash: "revision-2" }, updated, null);
+    expect(readFolderItemDefault(readFolderView({ ...pack.file, ...removed, hash: "revision-3" })!)).toBeNull();
+    expect(() => folderDefaultPayload({ ...pack.file, hash: "other" }, view, note)).toThrow("changed");
   });
 });
