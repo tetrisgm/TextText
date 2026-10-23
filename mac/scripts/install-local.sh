@@ -9,6 +9,7 @@ APP="${TEXTTEXT_APPLICATIONS_APP:-/Applications/TextText.app}"
 SOURCE="${TEXTTEXT_SOURCE_APP:-$ROOT/mac/build/TextText.app}"
 PB="${TEXTTEXT_PLIST_BUDDY:-/usr/libexec/PlistBuddy}"
 TRASH="${TEXTTEXT_TRASH_DIR:-$HOME/.Trash}"
+PRESERVE_INSTALL_ARTIFACTS="${TEXTTEXT_PRESERVE_INSTALL_ARTIFACTS:-0}"
 EXPECTED_VERSION="${TEXTTEXT_EXPECTED_VERSION:-}"
 EXPECTED_BUILD="${TEXTTEXT_EXPECTED_BUILD:-}"
 REQUIRE_RUNTIME_HEALTH="${TEXTTEXT_REQUIRE_RUNTIME_HEALTH:-1}"
@@ -24,6 +25,40 @@ OLD="$PARENT/.TextText.app.previous.$$"
 FAILED="$PARENT/.TextText.app.failed.$$"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 BUNDLE_ID="app.texttext.mac"
+
+[[ "$PRESERVE_INSTALL_ARTIFACTS" == "0" || "$PRESERVE_INSTALL_ARTIFACTS" == "1" ]] || {
+  echo "TEXTTEXT_PRESERVE_INSTALL_ARTIFACTS must be 0 or 1." >&2
+  exit 1
+}
+if [[ "$PRESERVE_INSTALL_ARTIFACTS" == "1" && ( -z "${TEXTTEXT_TRASH_DIR:-}" || "$TRASH" == "$HOME/.Trash" ) ]]; then
+  echo "Preserving installs requires an explicit retained-app directory outside Trash." >&2
+  exit 1
+fi
+
+cleanup_install_artifacts() {
+  if [[ "$PRESERVE_INSTALL_ARTIFACTS" == "1" ]]; then
+    local path
+    for path in "$@"; do
+      [[ ! -e "$path" && ! -L "$path" ]] || echo "Retained installer artifact: $path" >&2
+    done
+  else
+    rm -rf "$@"
+  fi
+}
+
+prepare_install_scratch() {
+  local path
+  if [[ "$PRESERVE_INSTALL_ARTIFACTS" == "1" ]]; then
+    for path in "$@"; do
+      if [[ -e "$path" || -L "$path" ]]; then
+        echo "Refusing to overwrite existing installer scratch: $path" >&2
+        return 1
+      fi
+    done
+  else
+    cleanup_install_artifacts "$@"
+  fi
+}
 
 [[ -d "$SOURCE" ]] || { echo "Missing built app: $SOURCE" >&2; exit 1; }
 
@@ -109,7 +144,7 @@ if [[ "$SKIP_BINARY_VERIFICATION" != "1" ]]; then
 fi
 
 mkdir -p "$PARENT"
-rm -rf "$STAGE" "$OLD" "$FAILED"
+prepare_install_scratch "$STAGE" "$OLD" "$FAILED"
 ditto "$SOURCE" "$STAGE"
 
 shopt -s nullglob
@@ -146,7 +181,7 @@ verified_apps=()
 for candidate in "${candidate_apps[@]-}"; do
   candidate_id="$(bundle_id "$candidate")"
   if [[ "$candidate" == "$APP" && "$candidate_id" != "$BUNDLE_ID" ]]; then
-    rm -rf "$STAGE"
+    cleanup_install_artifacts "$STAGE"
     echo "Refusing: $APP is not the TextText bundle ($BUNDLE_ID)." >&2
     exit 1
   fi
@@ -160,7 +195,7 @@ done
 if [[ "$APP" == "/Applications/TextText.app" && -e "$APP" &&
       "$(entitlement_shape "$APP")" == "native-store" &&
       "$SOURCE_ENTITLEMENT_SHAPE" != "native-store" ]]; then
-  rm -rf "$STAGE"
+  cleanup_install_artifacts "$STAGE"
   echo "Refusing to replace native Apple sign-in with a browser-only build." >&2
   exit 1
 fi
@@ -220,6 +255,10 @@ trash_destination() {
   if [[ -e "$destination" ]]; then
     destination="$TRASH/TextText $version ($build) $label $(date +%Y%m%d-%H%M%S)-$$.app"
   fi
+  if [[ "$PRESERVE_INSTALL_ARTIFACTS" == "1" && ( -e "$destination" || -L "$destination" ) ]]; then
+    echo "Refusing to overwrite retained app: $destination" >&2
+    return 1
+  fi
   printf '%s\n' "$destination"
 }
 
@@ -248,7 +287,7 @@ rollback() {
     fi
   done
   if [[ "$HAD_CANONICAL" == "0" || -e "$OLD" ]]; then
-    rm -rf "$FAILED"
+    prepare_install_scratch "$FAILED" || return 1
     [[ ! -e "$APP" ]] || mv "$APP" "$FAILED"
     if [[ -e "$OLD" ]] && ! mv "$OLD" "$APP"; then
       echo "Rollback could not restore the previous canonical app; keeping the new app recoverable." >&2
@@ -270,9 +309,9 @@ rollback() {
     launch_canonical || true
   fi
   if [[ "$rollback_incomplete" == "0" ]]; then
-    rm -rf "$FAILED" "$STAGE" "$OLD"
+    cleanup_install_artifacts "$FAILED" "$STAGE" "$OLD"
   else
-    rm -rf "$STAGE"
+    cleanup_install_artifacts "$STAGE"
   fi
 }
 
@@ -286,7 +325,7 @@ fail_install() {
     fi
     SWAP_ACTIVE=0
   else
-    rm -rf "$STAGE"
+    cleanup_install_artifacts "$STAGE"
   fi
   exit 1
 }
@@ -298,13 +337,13 @@ abort_install() {
     if ! rollback; then exit 1; fi
     [[ "$status" != "0" ]] || status=1
   fi
-  rm -rf "$STAGE"
+  cleanup_install_artifacts "$STAGE"
   exit "$status"
 }
 trap abort_install EXIT INT TERM HUP
 
 if ! stop_apps "${verified_apps[@]-}"; then
-  rm -rf "$STAGE"
+  cleanup_install_artifacts "$STAGE"
   echo "TextText did not quit. Nothing was replaced." >&2
   exit 1
 fi
@@ -319,7 +358,7 @@ for candidate in "${verified_apps[@]-}"; do
   [[ "$candidate" != "$APP" ]] || continue
   duplicate_index=$((duplicate_index + 1))
   duplicate_hold="$(dirname "$candidate")/.TextText.duplicate.$$.${duplicate_index}.app"
-  rm -rf "$duplicate_hold"
+  prepare_install_scratch "$duplicate_hold"
   if ! mv "$candidate" "$duplicate_hold"; then
     fail_install "Could not stage duplicate TextText bundle: $candidate"
   fi

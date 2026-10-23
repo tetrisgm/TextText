@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { lstatSync, mkdirSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,14 @@ function windows(mode, commit, runId, onSuccess) {
   run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pc', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], {}, onSuccess);
 }
 function plist(path, key) { return output('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, path]); }
+
+export function preserveBuildCandidate(candidate, evidence) {
+  if (!lstatSync(candidate, { throwIfNoEntry: false })) return;
+  const retained = join(evidence, 'previous-mac-candidate.app');
+  if (lstatSync(retained, { throwIfNoEntry: false })) throw new Error(`Retained candidate already exists: ${retained}`);
+  renameSync(candidate, retained);
+  console.log(`Previous Mac build candidate retained: ${retained}`);
+}
 
 export function deployVerifiedWeb(runStage, onSuccess) {
   // This invocation already ran the full release and sync suites. Validate their
@@ -75,6 +83,8 @@ async function main() {
       run('npm', ['run', 'test:sync']);
       run('bash', ['mac/scripts/verify-workflow-capabilities.sh', process.env.TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT]);
       run('bash', ['mac/scripts/texttext-build-attestation.sh', process.env.TEXTTEXT_BUILD_ATTESTATION, version, build]);
+      checkpoint();
+      preserveBuildCandidate(join(root, 'mac/build/TextText.app'), evidence);
       run('bash', ['mac/scripts/build-store.sh']);
       run('bash', ['mac/scripts/verify-app-health.sh', 'mac/build/TextText.app', version, build]);
       windows('Build', commit, runId);
@@ -93,7 +103,10 @@ async function main() {
       }
       const backup = join(homedir(), 'Library/Application Support/TextText/PreinstallBackups', `ship-all-${runId}`);
       run('python3', ['release/stopped-backup.py', backup]);
-      run('bash', ['mac/scripts/install-local.sh'], { TEXTTEXT_EXPECTED_VERSION: version, TEXTTEXT_EXPECTED_BUILD: build }, () => delivered.push({ surface: 'mac', commit, version, build, backup }));
+      run('bash', ['mac/scripts/install-local.sh'], {
+        TEXTTEXT_EXPECTED_VERSION: version, TEXTTEXT_EXPECTED_BUILD: build,
+        TEXTTEXT_PRESERVE_INSTALL_ARTIFACTS: '1', TEXTTEXT_TRASH_DIR: join(backup, 'previous-apps'),
+      }, () => delivered.push({ surface: 'mac', commit, version, build, backup }));
       windows('Install', commit, runId, () => delivered.push({ surface: 'windows', commit }));
       console.log(JSON.stringify({ status: 'delivered', commit, delivered, acceptance: 'Real open/edit/save/normal-quit/reopen checks still required.' }, null, 2));
     });

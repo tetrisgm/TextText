@@ -25,7 +25,7 @@ run_installer() {
   HOME="$FIXTURE/Home" \
   TEXTTEXT_APPLICATIONS_APP="$FIXTURE/Applications/TextText.app" \
   TEXTTEXT_SOURCE_APP="$FIXTURE/Source/TextText.app" \
-  TEXTTEXT_TRASH_DIR="$FIXTURE/Trash" \
+  TEXTTEXT_TRASH_DIR="${TEXTTEXT_TRASH_DIR:-$FIXTURE/Trash}" \
   TEXTTEXT_ADDITIONAL_APPLICATIONS_DIRS="$FIXTURE/Home/Applications" \
   TEXTTEXT_SKIP_BINARY_VERIFICATION=1 \
   TEXTTEXT_SKIP_LAUNCH=1 \
@@ -210,5 +210,67 @@ fi
   fi
   [[ ! -s "$FIXTURE/abort-mutations" ]]
 )
+
+# Preserve mode installs normally but retains prior and failed candidates.
+(
+  FIXTURE="$FIXTURE/Preserve"
+  mkdir -p "$FIXTURE/Applications" "$FIXTURE/Home/Applications" "$FIXTURE/Source" "$FIXTURE/Backup" "$FIXTURE/Health"
+  make_app "$FIXTURE/Source/TextText.app" app.texttext.mac 0.181 185
+  make_app "$FIXTURE/Applications/TextText.app" app.texttext.mac 0.181 184
+  export TEXTTEXT_PRESERVE_INSTALL_ARTIFACTS=1
+  export TEXTTEXT_TRASH_DIR="$FIXTURE/Backup/previous-apps"
+  run_installer >/dev/null
+  [[ ! -e "$FIXTURE/Home/.Trash" ]]
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TEXTTEXT_TRASH_DIR/TextText 0.181 (184) previous.app/Contents/Info.plist")" == "184" ]]
+  cat > "$FIXTURE/Health/fail.json" <<'EOF'
+{"schemaVersion":1,"appVersion":"0.181","buildNumber":"185","generatedAt":"2099-01-01T00:00:00Z","status":"fail","checks":[]}
+EOF
+  make_app "$FIXTURE/Applications/TextText.app" app.texttext.mac 0.181 184
+  if TEXTTEXT_REQUIRE_RUNTIME_HEALTH=1 TEXTTEXT_HEALTH_WAIT_SECONDS=1 \
+      TEXTTEXT_RUNTIME_HEALTH_PATH="$FIXTURE/Health/fail.json" run_installer >/dev/null 2>&1; then
+    echo "Preserve mode accepted failing app health" >&2
+    exit 1
+  fi
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$FIXTURE/Applications/TextText.app/Contents/Info.plist")" == "184" ]]
+  failed_apps=("$FIXTURE/Applications"/.TextText.app.failed.*)
+  [[ "${#failed_apps[@]}" == "1" && -d "${failed_apps[0]}" ]] || {
+    echo "Preserve mode deleted the failed candidate" >&2
+    exit 1
+  }
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${failed_apps[0]}/Contents/Info.plist")" == "185" ]]
+  eval "$(sed -n '/^cleanup_install_artifacts() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  eval "$(sed -n '/^prepare_install_scratch() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  PRESERVE_INSTALL_ARTIFACTS=1
+  printf 'existing evidence' > "$FIXTURE/collision"
+  if prepare_install_scratch "$FIXTURE/collision"; then
+    echo "Preserve mode accepted existing scratch" >&2
+    exit 1
+  fi
+  cleanup_install_artifacts "$FIXTURE/collision"
+  [[ "$(cat "$FIXTURE/collision")" == 'existing evidence' ]]
+)
+
+# The combined release preserves an existing build output before the builder
+# assembles its new candidate, and refuses a retained destination collision.
+node --input-type=module - "$ROOT/release/ship-all.mjs" "$FIXTURE" <<'JS'
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const { preserveBuildCandidate } = await import(pathToFileURL(process.argv[2]));
+const candidate = join(process.argv[3], 'old-build.app');
+const evidence = join(process.argv[3], 'build-evidence');
+mkdirSync(evidence);
+preserveBuildCandidate(candidate, evidence);
+mkdirSync(candidate);
+writeFileSync(join(candidate, 'marker'), 'previous build');
+preserveBuildCandidate(candidate, evidence);
+assert.equal(existsSync(candidate), false);
+assert.equal(readFileSync(join(evidence, 'previous-mac-candidate.app/marker'), 'utf8'), 'previous build');
+mkdirSync(candidate);
+writeFileSync(join(candidate, 'marker'), 'another candidate');
+assert.throws(() => preserveBuildCandidate(candidate, evidence), /already exists/);
+assert.equal(readFileSync(join(candidate, 'marker'), 'utf8'), 'another candidate');
+JS
 
 echo "install-local: ok"
