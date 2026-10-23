@@ -228,7 +228,7 @@ if [ -n "$previous" ]; then
     --property=CPUQuota=50% \
     --property=TasksMax=128 \
     --property=TimeoutStartSec=15min \
-    /usr/bin/node "$release/release/oracle/backup.mjs" </dev/null
+    /usr/bin/env TEXTTEXT_BACKUP_PRESERVE_EXISTING=1 /usr/bin/node "$release/release/oracle/backup.mjs" </dev/null
 fi
 if [ "$bootstrap" = 1 ]; then
   [ -z "$previous" ] || { echo "Refusing to bootstrap an existing application release." >&2; exit 1; }

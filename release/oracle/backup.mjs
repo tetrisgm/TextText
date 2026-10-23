@@ -55,6 +55,8 @@ export function retainedArchives(directory, { keep, maxBytes, requiredPath }) {
 }
 
 export async function createBackup(environment, { syncDirectoryImpl = syncDirectory } = {}) {
+  const preserveExisting = environment.TEXTTEXT_BACKUP_PRESERVE_EXISTING ?? "0";
+  if (preserveExisting !== "0" && preserveExisting !== "1") throw new Error("TEXTTEXT_BACKUP_PRESERVE_EXISTING must be 0 or 1.");
   const childEnvironment = backupConnection(environment);
   const directory = backupDirectory(environment);
   const keep = Number(environment.TEXTTEXT_BACKUP_KEEP || "7");
@@ -103,7 +105,8 @@ export async function createBackup(environment, { syncDirectoryImpl = syncDirect
     // Commit the new directory entry before removing any known-good archive.
     syncDirectoryImpl(directory);
     let removed = false;
-    for (const archive of retainedArchives(directory, { keep, maxBytes, requiredPath: final })) {
+    // A deploy preserves rollback archives; scheduled backups retain their usual policy.
+    for (const archive of preserveExisting === "1" ? [] : retainedArchives(directory, { keep, maxBytes, requiredPath: final })) {
       if (archive.remove) {
         rmSync(archive.path);
         removed = true;
