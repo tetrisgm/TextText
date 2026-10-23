@@ -330,6 +330,20 @@ async function targetPath(layout: Layout, relativePath: string): Promise<string>
   return target;
 }
 
+/** Resolve a read without provisioning missing parents; retain every path guard. */
+async function existingTargetPath(layout: Layout, relativePath: string): Promise<string> {
+  const parts = packPath(relativePath).split("/");
+  const parent = await existingFolder(layout, parts.slice(0, -1).join("/"));
+  const target = path.join(parent, parts.at(-1)!);
+  try {
+    const info = await fs.lstat(target);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error("Vault path is not a regular file");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return target;
+}
+
 interface Contender { pid: number; host: string; choosing: boolean; ticket: string }
 
 /** Lamport bakery mutex over atomic per-contender files on one server host.
@@ -1534,14 +1548,16 @@ export async function retireVaultTemplate(input: VaultLocation & {
 const folderMetadataCache = new FolderViewMetadataCache();
 /** Scan all siblings, retaining only bounded metadata and negative results, never archive bytes. */
 async function scanFolderViews(layout: Layout, folder: string) {
-  const canonical = await targetPath(layout, folderViewPath(folder));
+  let canonical: string;
+  try { canonical = await existingTargetPath(layout, folderViewPath(folder)); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
   const directoryPath = path.dirname(canonical);
   const names = await fs.readdir(directoryPath).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error; });
   const files: NonNullable<ReturnType<typeof extractFolderViewMetadata>>[] = [];
   let returnedBytes = 0;
   for (const name of names.filter(name => name.toLowerCase().endsWith(".textpack"))) {
     const relativePath = folder ? `${folder}/${name}` : name;
-    const target = await targetPath(layout, relativePath);
+    const target = await existingTargetPath(layout, relativePath);
     const signature = await fingerprint(target);
     if (!signature) continue;
     let metadata = folderMetadataCache.get(target, signature);
@@ -1567,7 +1583,7 @@ async function folderViewLocked(layout: Layout, folder: string) {
   if (views.length > 1) throw new Error("This folder contains multiple folder views");
   const selected = views[0];
   if (!selected) return null;
-  const bytes = await maybeRead(await targetPath(layout, selected.file.path));
+  const bytes = await maybeRead(await existingTargetPath(layout, selected.file.path));
   if (!bytes || hash(bytes) !== selected.file.hash) throw new Error("The folder view changed. Try again.");
   const pack = openPack(bytes, selected.file.path, selected.file.hash);
   return { itemId: packIdentity(pack.file.markdown), relativePath: selected.file.path, revision: selected.file.hash, bytes, view: selected.view! };
