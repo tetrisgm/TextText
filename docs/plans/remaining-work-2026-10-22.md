@@ -18,6 +18,11 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+Status: in progress. The sync npm entry now owns the browser-policy producer and
+local database setup ([focused Mac checks](../verification/2026-10-22-release-sync-entry.md)).
+The combined release and installed exit checks have not run. Keep the standalone
+Sparkle resolution in git; preserve the owner's Store resolution around releases.
+
 Problem: each surface ships on its own schedule, so versions drift.
 
 Work:

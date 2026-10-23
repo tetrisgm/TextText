@@ -2,6 +2,11 @@
 
 ## Objective and active work
 
+**Active October 22:** execute the [remaining-work plan](plans/remaining-work-2026-10-22.md),
+starting with Phase 1. Mac LAN SSH is working. Sync entry orchestration checks
+pass on the Mac ([receipt](verification/2026-10-22-release-sync-entry.md)); combined
+release and installed acceptance remain pending. T21–T27 are obsolete.
+
 Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master plan](plans/shared-app-durability-execution.md). Continue independent work; source/private actor checks do not replace installed acceptance. No public Mac distribution or new accounts.
 
 For a standalone transfer to Claude, read [the complete Claude handoff](CLAUDE-HANDOFF.md): owner priorities, permissions, delivered identities, T01–T27 status, remaining execution order and evidence references.

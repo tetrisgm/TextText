@@ -12,7 +12,7 @@ export const inputs = ['src', 'sync', 'presets/builtin', 'scripts/generate-built
   'windows/TextText.Windows', 'windows/TextText.Windows.Tests', 'windows/TextText.Smoke', 'windows/TextText.LiveAcceptance', 'windows/TextText.LiveAcceptance.Tests', 'windows/TextText.Core', 'windows/TextText.Core.Tests', 'windows/scripts/build.ps1', 'windows/scripts/handoff-publication-proof.test.mjs',
   'mac/scripts/stress-native.py',
   'mac/Package.swift', 'mac/Package.resolved', 'package.json', 'package-lock.json',
-  'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
+  'tsconfig.json', 'vitest.config.ts', 'scripts/test-sync.sh', 'scripts/verify-sync.sh', 'release/ship.sh', 'mac/scripts/build-app.sh', 'mac/scripts/build-store.sh'];
 
 export async function fingerprint(base, paths = inputs) {
   const hash = createHash('sha256');
