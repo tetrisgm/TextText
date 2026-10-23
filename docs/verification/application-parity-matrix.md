@@ -32,6 +32,12 @@ Status: per-flow source inventory refreshed October 17, 2026 (T10). This identif
 
 ## Per-flow ownership and evidence
 
+October 23 current-release Batch A evidence: [Mac and web Home, List/Cards,
+and Command-K in light and dark](2026-10-23-batch-a-safe-navigation.md) pass as
+real interactions on `24104475`. Windows and visual contrast checks remain open;
+folder, move, defaults, backlinks, and multiplayer remain open. The native sync
+pause is documented separately and is not counted as parity.
+
 Paths below are relative to `src/local-vault/` unless qualified. **V** means `vaultRequest` through `web-transport.ts`, Mac `LocalVaultWindowController`/native collaboration, or Windows `windows-transport.ts`/`WindowsBridge`. V is a transport boundary, not an assertion that every action has already been consolidated into one command implementation. **Installed pending** means the current-source Mac/PC/web flow must run in T19/T20/T26, even when an older receipt exists.
 
 | Flow and UI entry | Shared behavior / command owner | Adapter and alternate path | Regression reference | Physical evidence / remaining difference |
