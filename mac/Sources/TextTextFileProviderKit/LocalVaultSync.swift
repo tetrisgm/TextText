@@ -42,7 +42,14 @@ public struct LocalVaultSyncBinding: Codable, Sendable, Equatable {
     }
 }
 
+public struct LocalVaultCatalogIssue: Sendable, Equatable {
+    public let path: String
+    public let reason: String
+    public init(path: String, reason: String = "nonportable-name") { self.path = path; self.reason = reason }
+}
+
 public struct LocalVaultSyncReport: Sendable {
+    public var catalogIssues: [LocalVaultCatalogIssue] = []
     public var uploaded = 0
     public var downloaded = 0
     public var conflicts: [String] = []
@@ -148,6 +155,101 @@ public actor LocalVaultSync {
     private let mirrorPolicy: LocalVaultMirrorPolicy?
     private let editOrigins: LocalVaultEditOriginJournal
     private var state: State
+    // Per-pass observations only. Raw server authority and durable journals are never filtered.
+    private var catalogHeldPrefixes: Set<String> = []
+    private var catalogHeldIDs: Set<String> = []
+    private var catalogObservedFolders: Set<String> = []
+    private func readSyncManifest() async throws -> [LocalVaultRemoteItem] {
+        let manifest = try await transport.manifest()
+        if !catalogHeldPrefixes.isEmpty {
+            let folders = await transport.folders()
+            let authoritative = await transport.authoritativeFolders()
+            guard Set(folders + (authoritative ?? [])) == catalogObservedFolders else { throw LocalVaultSyncFailure.changed }
+            var ids = Set<String>(), paths = Set<String>()
+            for item in manifest {
+                guard ids.insert(item.itemId).inserted else { throw LocalVaultSyncFailure.invalidResponse }
+                if !item.isDeleted, !paths.insert(item.relativePath).inserted { throw LocalVaultSyncFailure.invalidResponse }
+                // A newly affected identity requires a new complete scope observation.
+                if catalogHolds(item.relativePath), !catalogHeldIDs.contains(item.itemId) { throw LocalVaultSyncFailure.changed }
+                if !catalogHeldIDs.contains(item.itemId) { _ = try LocalVaultDocumentStore(root: root).url(for: item.relativePath) }
+            }
+        }
+        return manifest
+    }
+    private static func portableCatalogKey(_ path: String) -> String {
+        path.split(separator: "/", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ")).precomposedStringWithCanonicalMapping.lowercased() }.joined(separator: "/")
+    }
+    private func catalogHolds(_ path: String) -> Bool {
+        let key = Self.portableCatalogKey(path)
+        return catalogHeldPrefixes.contains { key == $0 || key.hasPrefix($0 + "/") }
+    }
+    private func observeCatalog(_ manifest: [LocalVaultRemoteItem], report: inout LocalVaultSyncReport) async throws -> [String] {
+        let folders = await transport.folders()
+        let authoritative = await transport.authoritativeFolders()
+        let raw = Array(Set(folders + (authoritative ?? []))).sorted()
+        guard folders.count <= 20_000, (authoritative?.count ?? 0) <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
+        catalogObservedFolders = Set(raw)
+        let store = LocalVaultDocumentStore(root: root)
+        var valid: [String] = []
+        for path in raw {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+            if parts.contains(where: { $0.hasSuffix(" ") }) {
+                // Only a structurally ordinary suffix-space name is localizable. Traversal,
+                // hidden/recovery paths, reserved package ancestors and other errors still stop.
+                guard !parts.isEmpty, path.utf8.count <= 1024,
+                    parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") && !$0.contains("\\") && !$0.contains(":") && !$0.hasSuffix(".") && !$0.lowercased().hasSuffix(".textpack") }) else { throw LocalVaultDocumentStore.Failure.invalidPath }
+                let key = Self.portableCatalogKey(path)
+                try store.validateFolderCatalog([key])
+                let firstInvalid = parts.firstIndex(where: { $0.hasSuffix(" ") })!
+                catalogHeldPrefixes.insert(key.split(separator: "/").prefix(firstInvalid + 1).joined(separator: "/"))
+                let warning = "Folder \(String(reflecting: path)) has a nonportable name. Its files are held; unrelated files continue syncing."
+                if !report.errors.contains(warning) { report.errors.append(warning) }
+                let issue = LocalVaultCatalogIssue(path: path)
+                if !report.catalogIssues.contains(issue) { report.catalogIssues.append(issue) }
+            } else { valid.append(path) }
+        }
+        try store.validateFolderCatalog(valid)
+        var ids = Set<String>(), paths = Set<String>()
+        for item in manifest {
+            guard ids.insert(item.itemId).inserted else { throw LocalVaultSyncFailure.invalidResponse }
+            if !item.isDeleted, !paths.insert(item.relativePath).inserted { throw LocalVaultSyncFailure.invalidResponse }
+            if catalogHolds(item.relativePath) { catalogHeldIDs.insert(item.itemId) }
+            else { _ = try store.url(for: item.relativePath) }
+        }
+        if !catalogHeldPrefixes.isEmpty {
+            // A deferred topology command still owns every item in its transaction.
+            // Also fence locally changed folder identities until the complete catalog
+            // can safely authorize their propagation; do not turn them into item moves.
+            if state.folderCaseBaseline != nil || state.folderCaseCommand != nil { try verifyFolderCaseOwner() }
+            for item in state.folderCaseCommand?.request.items ?? [] { catalogHeldIDs.insert(item.itemId) }
+            for identity in state.folderCaseBaseline?.identities ?? [] {
+                if let destination = try LocalVaultFolderCaseSync.changed(root: root, identity: identity) {
+                    catalogHeldPrefixes.insert(Self.portableCatalogKey(identity.path))
+                    catalogHeldPrefixes.insert(Self.portableCatalogKey(destination))
+                }
+            }
+            for item in manifest where catalogHolds(item.relativePath) { catalogHeldIDs.insert(item.itemId) }
+            func hold(_ id: String, _ paths: [String]) { if paths.contains(where: catalogHolds) { catalogHeldIDs.insert(id) } }
+            for (id, value) in state.baselines { hold(id, [value.path]) }
+            for (id, value) in state.outbox { hold(id, [value.path] + (value.newPath.map { [$0] } ?? [])) }
+            for (id, value) in state.binaryOutbox ?? [:] { hold(id, [value.path]) }
+            for (id, value) in state.conflicts { hold(id, value.paths + (value.remotePath.map { [$0] } ?? [])) }
+            for (path, id) in state.identities ?? [:] { hold(id, [path]) }
+            for (id, value) in state.sharedRenames ?? [:] {
+                hold(id, [value.request.source, value.request.destination] + (value.resolution.map { [$0.localPath, $0.remotePath] } ?? []))
+            }
+            // Unknown local identity cannot be guessed from an old path cache. The
+            // metadata reader does not recover work; invalid/unreadable paths refuse.
+            for path in try store.generationPaths() where catalogHolds(path) {
+                let document = try store.generationMetadata(path: path)
+                guard let id = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId else { throw LocalVaultSyncFailure.invalidResponse }
+                catalogHeldIDs.insert(id)
+            }
+        }
+        generationHeldIDs.formUnion(catalogHeldIDs)
+        return folders.filter { !catalogHolds($0) }
+    }
     private var running = false
     private var deferredQueuedUploads: Set<String> = []
     private var generationReadonlyIDs: Set<String> = []
@@ -624,7 +726,7 @@ public actor LocalVaultSync {
         guard context.scope == record.scope, context.rootHash == record.rootHash, transport.protectedRenameBinding == context.scope else { throw LocalVaultSharedFailure.account }
         func current() throws { try requireSavedMoveLocalInspection(value, record: record) }
         try current()
-        let items = try await transport.manifest().filter { $0.itemId == record.request.itemId }; try current()
+        let items = try await readSyncManifest().filter { $0.itemId == record.request.itemId }; try current()
         guard items.count <= 1, items.first == value.remote else { throw LocalVaultSyncFailure.changed }
         let permission = await transport.canOrganize(); try current()
         guard permission == value.permission else { throw LocalVaultSyncFailure.changed }
@@ -660,7 +762,7 @@ public actor LocalVaultSync {
         let protection = try namingProtection(record.request.itemId)
         let checkpoint = try namingCheckpoint(record.request.itemId)
         let manifest: [LocalVaultRemoteItem]
-        do { manifest = try await transport.manifest().filter { $0.itemId == record.request.itemId } }
+        do { manifest = try await readSyncManifest().filter { $0.itemId == record.request.itemId } }
         catch {
             try Task.checkCancellation()
             if error is CancellationError { throw error }
@@ -824,7 +926,7 @@ public actor LocalVaultSync {
         // independently fenced asset CAS can run. It never admits a rename.
         if binaryContinuationOnly && decision.action != "suppress-stopped" { return "review" }
         if decision.action == "suppress-stopped" {
-            let fresh = try await transport.manifest().filter { $0.itemId == id }; try current(saved)
+            let fresh = try await readSyncManifest().filter { $0.itemId == id }; try current(saved)
             guard fresh.count == 1, fresh.first == remote else { throw LocalVaultSyncFailure.changed }
             return decision.action
         }
@@ -832,7 +934,7 @@ public actor LocalVaultSync {
             if decision.action == "review" { report.errors.append("A saved file move needs review. The file and editing journal are retained.") }
             return saved == nil ? nil : decision.action
         }
-        let fresh = try await transport.manifest().filter { $0.itemId == id }; try current(saved)
+        let fresh = try await readSyncManifest().filter { $0.itemId == id }; try current(saved)
         guard fresh.count == 1, fresh.first == remote else { throw LocalVaultSyncFailure.changed }
         let freshPermitted = await transport.canOrganize(); try current(saved)
         guard freshPermitted == permitted, freshPermitted else { throw LocalVaultSyncFailure.changed }
@@ -891,7 +993,7 @@ public actor LocalVaultSync {
         // A receipt proves its historical command, not the current content or
         // current name. A later peer path is allowed only in the same known
         // generation; deletion/reincarnation leaves the exact request retained.
-        let after = try await transport.manifest().filter { $0.itemId == id }; try current(command)
+        let after = try await readSyncManifest().filter { $0.itemId == id }; try current(command)
         guard after.count == 1, !after[0].isDeleted else { throw LocalVaultSyncFailure.changed }
         let afterGenerations = try await generationFacts(itemId: id, remote: after[0], baseline: baseline, path: path,
             checkpoint: checkpoint, retained: command.generation, current: { try current(command) })
@@ -1012,7 +1114,7 @@ public actor LocalVaultSync {
             blocked: pending != nil || conflict != nil, organizePermitted: permitted, pendingRename: "none", generations: .init(local: generations.local, remote: generations.remote))
         let decision = try await mirrorPolicy.sharedPath(observed); try current()
         if !["hold", "unchanged"].contains(decision.action) {
-            let fresh = try await transport.manifest().filter { $0.itemId == id }
+            let fresh = try await readSyncManifest().filter { $0.itemId == id }
             try current()
             guard fresh.count == 1, let before = remote, fresh[0].relativePath == before.relativePath,
                   fresh[0].revision == before.revision, fresh[0].lifecycle == before.lifecycle, fresh[0].isDeleted == before.isDeleted else { throw LocalVaultSyncFailure.changed }
@@ -1052,7 +1154,7 @@ public actor LocalVaultSync {
             baselineRevision: baseline?.revision, remoteRevision: remote.revision, localLifecycle: baseline == nil ? nil : lifecycle, remoteLifecycle: remote.lifecycle)
         let decision = try await mirrorPolicy.tombstone(observation); try current()
         if decision.action == "remove-local" || decision.action == "retain-conflict" {
-            let fresh = try await transport.manifest().filter { $0.itemId == id }; try current()
+            let fresh = try await readSyncManifest().filter { $0.itemId == id }; try current()
             guard fresh.count == 1, fresh[0] == remote else { throw LocalVaultSyncFailure.changed }
         }
         return decision
@@ -1086,6 +1188,7 @@ public actor LocalVaultSync {
     }
     /// Rechecked immediately before local install/staging as actor reentrancy can activate editing during network awaits.
     private func assertReplacementReadable(itemId: String) throws {
+        if catalogHeldIDs.contains(itemId) { throw LocalVaultSharedFailure.protected }
         if requiresGenerationInspection(itemId) { _ = try generationInspection(itemId); return }
         try ReplacementRecoveryRegistry(root: root).assertReadable(itemId: itemId)
     }
@@ -1324,7 +1427,7 @@ public actor LocalVaultSync {
         if let stopped {
             guard let expectedRemote, remote.relativePath == expectedRemote.relativePath else { throw LocalVaultSyncFailure.changed }
             try await revalidateStoppedBinaryBinding(stopped, itemId: pending.itemId, path: pending.path)
-            let fresh = try await transport.manifest().filter { $0.itemId == pending.itemId }
+            let fresh = try await readSyncManifest().filter { $0.itemId == pending.itemId }
             guard fresh.count == 1, fresh[0].relativePath == remote.relativePath, fresh[0].revision == remote.revision else { throw LocalVaultSyncFailure.changed }
             try await revalidateStoppedBinaryBinding(stopped, itemId: pending.itemId, path: pending.path)
         }
@@ -1443,7 +1546,7 @@ public actor LocalVaultSync {
                   try namingCheckpoint(itemId).map({ try encoder.encode($0) }) == checkpointBytes,
                   try namingMetadata(path, itemId: itemId).hash == metadata.hash else { throw LocalVaultSyncFailure.changed }
         }
-        let items = try await transport.manifest().filter { $0.itemId == itemId }; try current()
+        let items = try await readSyncManifest().filter { $0.itemId == itemId }; try current()
         guard items.count == 1, let fresh = items.first else { throw LocalVaultSyncFailure.changed }
         let facts = try await generationFacts(itemId: itemId, remote: fresh, baseline: baseline, path: path, checkpoint: checkpoint,
             retained: record.generation, pendingBinaryRecord: record, current: current)
@@ -1869,7 +1972,7 @@ public actor LocalVaultSync {
                 permitted: permitted && authorityVerified, intentKind: deletion != nil ? "delete" : intentPresent ? "other" : "none", intentPath: deletionPath, intentDestination: nil)
             let decision = try await mirrorPolicy.queuedUploadPath(observed); try current()
             guard decision.action == "reissue-at-remote-path" else { return nil }
-            let fresh = try await transport.manifest().filter { $0.itemId == id }; try current()
+            let fresh = try await readSyncManifest().filter { $0.itemId == id }; try current()
             guard fresh.count == 1, fresh[0] == remote else { throw LocalVaultSyncFailure.changed }
             let finalPermission = await transport.canWrite(itemId: id, path: remote.relativePath, existing: true)
             try current()
@@ -1965,7 +2068,7 @@ public actor LocalVaultSync {
             state.conflicts.removeValue(forKey: pending.itemId)
             report.uploaded += 1
         } catch LocalVaultSyncFailure.conflict {
-            let records = try await transport.manifest()
+            let records = try await readSyncManifest()
             try assertReplacementReadable(itemId: pending.itemId)
             if let tombstone = records.first(where: { $0.itemId == pending.itemId && $0.isDeleted }) {
                 report.conflicts += try preserveDeletedConflict(pending, tombstone: tombstone)
@@ -2045,7 +2148,7 @@ public actor LocalVaultSync {
     private func reconcileLifecycles(manifest: [LocalVaultRemoteItem], report: inout LocalVaultSyncReport) async throws {
         guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
         var plans: [LifecyclePlan] = []
-        for remote in manifest where !remote.isDeleted && remote.lifecycle != nil {
+        for remote in manifest where !remote.isDeleted && remote.lifecycle != nil && !catalogHeldIDs.contains(remote.itemId) {
             let id = remote.itemId
             do { try assertReplacementReadable(itemId: id) }
             catch { try report.failed(error, message: "\(remote.relativePath): retained save recovery is required"); continue }
@@ -2078,7 +2181,7 @@ public actor LocalVaultSync {
             }
             return result
         }
-        var current = try indexed(await transport.manifest())
+        var current = try indexed(await readSyncManifest())
         try await mirrorPolicy.ready()
         for plan in plans { try requireCurrentLifecycle(plan, remote: current) }
         for plan in plans {
@@ -2093,7 +2196,7 @@ public actor LocalVaultSync {
                 try validate(pack, itemId: id, path: plan.remote.relativePath)
                 guard pack.revision == plan.remote.revision, pack.relativePath == plan.remote.relativePath else { throw LocalVaultSyncFailure.changed }
                 remotePack = pack
-                current = try indexed(await transport.manifest())
+                current = try indexed(await readSyncManifest())
                 try await mirrorPolicy.ready()
             }
             // Recheck even a later metadata-only plan after a prior recovery download suspended this actor.
@@ -2240,7 +2343,7 @@ public actor LocalVaultSync {
         try Task.checkCancellation(); try verifyFolderCaseOwner()
         try LocalVaultFolderCaseSync.verifyMovedTree(root: root, command: command)
         try adoptFolderCaseReceipt(receipt, command: command)
-        return try await transport.manifest()
+        return try await readSyncManifest()
     }
 
     private func requireFolderCaseCommand(_ command: LocalVaultFolderCaseSync.Command) throws {
@@ -2357,12 +2460,13 @@ public actor LocalVaultSync {
         let lease = try workspaceOwnership(); defer { withExtendedLifetime(lease) {} }
         running = true
         deferredQueuedUploads.removeAll()
-        defer { running = false; deferredQueuedUploads.removeAll(); generationReadonlyIDs.removeAll(); generationHeldIDs.removeAll() }
+        defer { running = false; deferredQueuedUploads.removeAll(); generationReadonlyIDs.removeAll(); generationHeldIDs.removeAll(); catalogHeldPrefixes.removeAll(); catalogHeldIDs.removeAll(); catalogObservedFolders.removeAll() }
         guard let mirrorPolicy else { throw LocalVaultMirrorPolicy.Failure.stale }
         try await mirrorPolicy.ready()
         var report = LocalVaultSyncReport()
         let budget = max(1, min(maxItems, 512))
-        var manifest = try await transport.manifest()
+        var manifest = try await readSyncManifest()
+        var folders = try await observeCatalog(manifest, report: &report)
         // Discover actual path debt without entering any recovering reader.
         // Discovery supplies candidates only; fresh authenticated proof still admits work.
         generationReadonlyIDs = Set((state.sharedRenames ?? [:]).filter { $0.value.version == 2 }.map(\.key))
@@ -2375,7 +2479,7 @@ public actor LocalVaultSync {
         if newAbsenceAuthority || !generationReadonlyIDs.isEmpty {
             let discoveryStore = LocalVaultDocumentStore(root: root)
             var discovered: [String: [String]] = [:]
-            for path in try discoveryStore.generationPaths() {
+            for path in try discoveryStore.generationPaths() where !catalogHolds(path) {
                 let document = try discoveryStore.generationMetadata(path: path)
                 guard let id = MarkdownIdentityCodec.extract(from: document.contents.markdown)?.itemId else { throw LocalVaultSyncFailure.invalidResponse }
                 discovered[id, default: []].append(path)
@@ -2393,37 +2497,39 @@ public actor LocalVaultSync {
         // Refuse an incomplete topology before entering any such reader, even
         // when the retained v2 operation currently has no transport binding.
         if !generationReadonlyIDs.isEmpty { _ = try generationStructuralInspection() }
-        generationHeldIDs.removeAll()
-        for id in generationReadonlyIDs {
+        generationHeldIDs = catalogHeldIDs
+        for id in generationReadonlyIDs where !catalogHeldIDs.contains(id) {
             do { _ = try generationInspection(id) }
             catch {
                 generationHeldIDs.insert(id)
                 try report.failed(error, message: "A file move is held while its retained editing work cannot be inspected safely.")
             }
         }
-        if generationHeldIDs.isEmpty { manifest = try await reconcileFolderCase(manifest) }
-        let folders = await transport.folders()
-        guard folders.count <= 20_000 else { throw LocalVaultSyncFailure.invalidResponse }
-        try LocalVaultDocumentStore(root: root).validateFolderCatalog(folders)
-        if let catalog = await transport.authoritativeFolders() {
+        if generationHeldIDs.isEmpty && catalogHeldPrefixes.isEmpty {
+            manifest = try await reconcileFolderCase(manifest)
+            // A successful folder command changes the authoritative spelling. Never
+            // materialize the pre-command catalog or rename its projection back.
+            folders = try await observeCatalog(manifest, report: &report)
+        }
+        if catalogHeldPrefixes.isEmpty, let catalog = await transport.authoritativeFolders() {
             try LocalVaultDocumentStore(root: root).validateFolderCatalog(catalog)
             let updated = Array(Set(state.managedFolders ?? []).union(catalog)).sorted()
             guard updated.count <= 40_000 else { throw LocalVaultSyncFailure.invalidResponse }
             if state.managedFolders != updated { state.managedFolders = updated; try persist() }
         }
-        for folder in folders where generationHeldIDs.isEmpty {
+        for folder in folders where generationHeldIDs.isEmpty && catalogHeldPrefixes.isEmpty {
             do { try LocalVaultDocumentStore(root: root).ensureFolders([folder]) }
             catch { try report.failed(error, message: "A workspace folder could not be opened. Other files continue syncing.") }
         }
         var remoteByID: [String: LocalVaultRemoteItem] = [:]
         var remotePaths = Set<String>()
         for item in manifest {
-            _ = try LocalVaultDocumentStore(root: root).url(for: item.relativePath)
+            if !catalogHeldIDs.contains(item.itemId) { _ = try LocalVaultDocumentStore(root: root).url(for: item.relativePath) }
             guard remoteByID[item.itemId] == nil else { throw LocalVaultSyncFailure.invalidResponse }
             if !item.isDeleted, !remotePaths.insert(item.relativePath).inserted { throw LocalVaultSyncFailure.invalidResponse }
             remoteByID[item.itemId] = item
         }
-        if generationHeldIDs.isEmpty { try await captureFolderCaseBaseline(manifest) }
+        if generationHeldIDs.isEmpty && catalogHeldPrefixes.isEmpty { try await captureFolderCaseBaseline(manifest) }
         // A lost reply can outlive the editor and the process. Replay the exact
         // durable binary operation before ordinary file reconciliation.
         for pending in (state.binaryOutbox ?? [:]).values.sorted(by: { $0.path < $1.path }) where !pending.conflicted {
@@ -2471,7 +2577,7 @@ public actor LocalVaultSync {
             } catch { try report.failed(error, message: "\(pending.path): \(error.localizedDescription)") }
         }
         if report.uploaded > 0 {
-            manifest = try await transport.manifest(); remoteByID.removeAll()
+            manifest = try await readSyncManifest(); _ = try await observeCatalog(manifest, report: &report); remoteByID.removeAll()
             for item in manifest {
                 guard remoteByID[item.itemId] == nil else { throw LocalVaultSyncFailure.invalidResponse }
                 remoteByID[item.itemId] = item
@@ -2496,7 +2602,7 @@ public actor LocalVaultSync {
         var localByID: [String: [String]] = [:]
         for (path, id) in identities { localByID[id, default: []].append(path) }
         let ids = Array(Set(localByID.keys).union(remoteByID.keys).union(state.baselines.keys).union(state.sharedRenames?.keys ?? Dictionary<String, LocalVaultSharedRename.Record>().keys)).sorted()
-        guard !ids.isEmpty else { if generationHeldIDs.isEmpty { try await reconcileManagedFolders() }; return report }
+        guard !ids.isEmpty else { if generationHeldIDs.isEmpty && catalogHeldPrefixes.isEmpty { try await reconcileManagedFolders() }; return report }
         let start = min(state.cursor, ids.count - 1)
         let count = min(budget, ids.count - start)
         for id in ids[start..<(start + count)] {
@@ -2739,8 +2845,8 @@ public actor LocalVaultSync {
             } catch LocalVaultSharedFailure.protected { continue }
             catch { try report.failed(error, message: "\(activePath): \(error.localizedDescription)") }
         }
-        if report.downloaded > 0 { manifest = try await transport.manifest() }
-        for remote in manifest where !remote.isDeleted {
+        if report.downloaded > 0 { manifest = try await readSyncManifest(); _ = try await observeCatalog(manifest, report: &report) }
+        for remote in manifest where !remote.isDeleted && !catalogHeldIDs.contains(remote.itemId) {
             if let pending = state.outbox[remote.itemId], deferredQueuedUploads.contains(pending.operationId) { continue }
             if state.baselines[remote.itemId]?.revision == remote.revision, let lifecycle = remote.lifecycle {
                 if state.lifecycles == nil { state.lifecycles = [:] }
@@ -2763,7 +2869,7 @@ public actor LocalVaultSync {
             let remainingSelection = try await mirrorPolicy.queue(.init(candidates: remainingCandidates, budget: 0))
             report.hasMore = report.hasMore || remainingSelection.hasMore
         } catch { try report.failed(error, message: "The shared sync policy is unavailable. Reopen the workspace to retry.") }
-        if generationHeldIDs.isEmpty {
+        if generationHeldIDs.isEmpty && catalogHeldPrefixes.isEmpty {
             try await reconcileManagedFolders()
             try await captureFolderCaseBaseline(manifest)
         }

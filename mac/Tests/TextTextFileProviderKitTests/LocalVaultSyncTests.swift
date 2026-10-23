@@ -49,6 +49,92 @@ final class LocalVaultSyncTests: XCTestCase {
         XCTAssertEqual(retried, [first[0], first[0]], "Authenticated restart replays the exact durable operation")
     }
 
+    func testInvalidCatalogFolderHoldsItsScopeWithoutStoppingIndependentItems() async throws {
+        let transport = FakeVaultTransport()
+        let remoteId = "e2222222-2222-4222-8222-222222222222"
+        let remotePath = "Research/Remote.textpack"
+        let localBytes = try pack("independent local")
+        let remoteBytes = try pack("independent remote", id: remoteId)
+        try putLocal(localBytes)
+        await transport.setFolders(["Notes", "Research", "Bad "], authoritative: true)
+        await transport.set(itemId: remoteId, path: remotePath, data: remoteBytes)
+        let report = try await engine(transport).sync()
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(report.downloaded, 1)
+        XCTAssertTrue(report.errors.contains { $0.contains("Bad ") })
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(remotePath)), remoteBytes)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Bad ").path))
+        let restarted = try await engine(transport).sync()
+        XCTAssertEqual(restarted.uploaded, 0)
+        XCTAssertTrue(restarted.errors.contains { $0.contains("Bad ") })
+        let uploads = await transport.operations()
+        XCTAssertEqual(uploads.count, 1)
+    }
+
+    func testCatalogQuarantinePreservesAliasBytesAndManagedTopology() async throws {
+        let transport = FakeVaultTransport()
+        await transport.setFolders(["Managed"], authoritative: true)
+        _ = try await engine(transport).sync()
+        let aliasID = "e3333333-3333-4333-8333-333333333333"
+        let aliasPath = "Bad/Local.textpack"
+        let aliasBytes = try pack("held alias work", id: aliasID)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Bad"), withIntermediateDirectories: true)
+        try aliasBytes.write(to: root.appendingPathComponent(aliasPath))
+        try putLocal(pack("independent local"))
+        let remoteID = "e4444444-4444-4444-8444-444444444444"
+        await transport.set(itemId: remoteID, path: "Bad /Remote.textpack", data: try pack("held remote", id: remoteID))
+        await transport.setFolders(["Notes", "Bad", "Bad /Child"], authoritative: true)
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let report = try await engine(transport).sync()
+        XCTAssertEqual(report.uploaded, 1)
+        XCTAssertEqual(report.downloaded, 0)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(aliasPath)), aliasBytes)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Managed").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Bad ").path))
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertEqual(before["managedFolders"] as? [String], after["managedFolders"] as? [String])
+        _ = try await engine(transport).sync()
+        let uploads = await transport.operations()
+        XCTAssertEqual(uploads.count, 1)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(aliasPath)), aliasBytes)
+    }
+
+    func testCatalogQuarantineRetainsExactPendingOperationAcrossRestart() async throws {
+        let transport = FakeVaultTransport()
+        try putLocal(pack("pending note"))
+        await transport.failNextUploadBeforeCommit()
+        _ = try await engine(transport).sync()
+        let stateURL = LocalVaultDeviceState.directory(root: root).appendingPathComponent("sync/state.json")
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let pending = try XCTUnwrap(before["outbox"] as? NSDictionary)
+        XCTAssertEqual(pending.count, 1)
+        let callsBefore = await transport.operations()
+        await transport.setFolders(["Notes", "Notes ", "Research"], authoritative: true)
+        let remoteID = "e5555555-5555-4555-8555-555555555555"
+        await transport.set(itemId: remoteID, path: "Research/Other.textpack", data: try pack("other remote", id: remoteID))
+        let report = try await engine(transport).sync()
+        XCTAssertEqual(report.downloaded, 1)
+        XCTAssertEqual(report.uploaded, 0)
+        XCTAssertEqual(report.catalogIssues, [.init(path: "Notes ")])
+        _ = try await engine(transport).sync()
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertEqual(pending, after["outbox"] as? NSDictionary)
+        let callsAfter = await transport.operations()
+        XCTAssertEqual(callsBefore, callsAfter)
+    }
+
+    func testNonlocalizableCatalogStillRefusesBeforeIndependentMutation() async throws {
+        let transport = FakeVaultTransport()
+        let bytes = try pack("must remain local")
+        try putLocal(bytes)
+        await transport.setFolders(["Notes", "../Bad "], authoritative: true)
+        do { _ = try await engine(transport).sync(); XCTFail("Traversal is not a quarantinable ordinary name") } catch {}
+        let operations = await transport.operations()
+        XCTAssertTrue(operations.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), bytes)
+    }
+
     func testAuthoritativeFolderCatalogPrunesOnlyEmptyTrackedTreesAcrossRestart() async throws {
         let transport = FakeVaultTransport()
         await transport.setFolders(["Before", "Before/Empty", "Keep", "Placeholder", "UnknownParent"], authoritative: true)

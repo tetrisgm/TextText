@@ -23,6 +23,43 @@ final class LocalVaultFolderCaseSyncTests: XCTestCase {
     }
     private func engine(_ f: Fixture) throws -> LocalVaultSync { try makeTestSync(root: f.root, binding: f.binding, transport: f.remote, accountId: "account-a") }
     private func externalMove(_ root: URL) throws { guard rename(root.appendingPathComponent("Case").path, root.appendingPathComponent("CASE").path) == 0 else { throw POSIXError(.init(rawValue: errno)!) } }
+    func testQuarantinedCatalogHoldsChangedFolderTopologyWithoutItemFallback() async throws {
+        let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+        _ = try await engine(f).sync(); try externalMove(f.root)
+        await f.remote.addInvalidFolder()
+        let report = try await engine(f).sync()
+        XCTAssertEqual(report.catalogIssues, [.init(path: "Bad ")])
+        let commands = await f.remote.commands(), writes = await f.remote.fileWrites()
+        XCTAssertTrue(commands.isEmpty)
+        XCTAssertEqual(writes, 0)
+        XCTAssertTrue(try RetainedFileMove.exactRelativeExists(root: f.root, path: "CASE/one.textpack"))
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("CASE/one.textpack")), f.bytes)
+    }
+
+    func testQuarantinedCatalogRetainsPendingFolderCommandExactly() async throws {
+        let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
+        _ = try await engine(f).sync(); try externalMove(f.root)
+        await f.remote.rejectBeforeCommit()
+        do { _ = try await engine(f).sync(); XCTFail("Expected retained folder command") } catch LocalVaultSyncFailure.conflict {}
+        let stateURL = LocalVaultDeviceState.directory(root: f.root).appendingPathComponent("sync/state.json")
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        let command = try XCTUnwrap(before["folderCaseCommand"] as? NSDictionary)
+        let callsBefore = await f.remote.commands()
+        await f.remote.addInvalidFolder()
+        _ = try await engine(f).sync()
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as? [String: Any])
+        XCTAssertEqual(command, after["folderCaseCommand"] as? NSDictionary)
+        let callsAfter = await f.remote.commands(), writes = await f.remote.fileWrites()
+        XCTAssertEqual(callsBefore, callsAfter)
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(try Data(contentsOf: f.root.appendingPathComponent("CASE/one.textpack")), f.bytes)
+        await f.remote.clearInvalidFolder()
+        _ = try await engine(f).sync()
+        let replayed = await f.remote.commands()
+        XCTAssertEqual(replayed.count, callsBefore.count + 1)
+        XCTAssertEqual(replayed.last?.operationId, callsBefore.last?.operationId)
+    }
+
     func testFolderPolicyAwaitRetainsChangedDurableStateWithoutDispatch() async throws {
         let f = try await fixture(empty: true); defer { try? FileManager.default.removeItem(at: f.root) }
         _ = try await engine(f).sync(); try externalMove(f.root)
@@ -207,6 +244,8 @@ private actor FolderCaseTransport: LocalVaultSyncTransport {
         }
         if lose { lose = false; throw Failure.lostReply }; if conflict { conflict = false; throw LocalVaultSyncFailure.conflict }; return receipt!
     }
+    func addInvalidFolder() { catalog.append("Bad ") }
+    func clearInvalidFolder() { catalog.removeAll { $0 == "Bad " } }
     func rejectBeforeCommit() { reject = true }
     func recoveryOffline(_ value: Bool) { offline = value }
     func cancellations() -> Int { cancelCount }

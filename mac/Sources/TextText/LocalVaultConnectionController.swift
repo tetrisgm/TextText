@@ -45,6 +45,7 @@ final class LocalVaultConnectionController {
     private var stopped = false
     private var connectingTask: Task<Void, Never>?
     private(set) var capabilities: LocalVaultSyncCapabilities?
+    private var catalogIssues: [LocalVaultCatalogIssue] = []
     private var onlineReady = false
     private var connectRetry: Task<Void, Never>?
     private var connectFailures = 0
@@ -112,6 +113,7 @@ final class LocalVaultConnectionController {
             scheduled?.cancel(); scheduled = nil
             connectRetry?.cancel(); connectRetry = nil
             transport = nil; engine = nil; binding = nil; capabilities = nil
+            catalogIssues = []
             onlineReady = false; connecting = false; remoteVerified = false
             message = "Return to the original account to continue this folder's saved work."
             onChange?(status, false)
@@ -128,6 +130,7 @@ final class LocalVaultConnectionController {
         var value: [String: Any] = ["connected": binding != nil, "available": credentials() != nil,
                                     "hasConflicts": hasConflicts, "connecting": connecting,
                                     "onlineReady": onlineReady,
+                                    "catalogIssues": catalogIssues.map { ["path": $0.path, "reason": $0.reason] },
                                     "authenticationRequired": schedulingWait == .authRequired,
                                     "requiresRebind": previousBinding != nil && binding == nil, "requiresAccountReview": requiresAccountReview]
         if let binding {
@@ -458,6 +461,7 @@ final class LocalVaultConnectionController {
                     self.capabilities = value
                     if let binding = self.binding { try? LocalVaultCapabilityCache.write(value, root: self.root, binding: binding, accountId: owner.accountId) }
                 }
+                self.catalogIssues = report.catalogIssues
                 self.hasConflicts = !report.conflicts.isEmpty
                 self.onlineReady = report.errors.isEmpty && report.conflicts.isEmpty
                 if !report.conflicts.isEmpty { self.recordSyncMessage("Conflicting edits were kept in this folder's recovery copies.") }

@@ -14,6 +14,37 @@ final class LocalVaultConnectionControllerTests: XCTestCase {
             mirrorPolicyFactory: { binding, account in makeTestMirrorPolicy(workspaceId: binding.workspaceId, accountId: account.accountId) }, syncPass: syncPass)
     }
     @MainActor
+    func testCatalogIssuesRemainVisibleWithoutClaimingHealthyAndClearOnAccountChange() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CredentialRefreshProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        CredentialRefreshProtocol.setExpectedToken("Bearer fixture-before")
+        var credential = LocalVaultAccountCredential(origin: URL(string: "https://texttext.test")!, token: "fixture-before", accountId: "account-a")
+        let completed = expectation(description: "scoped warning delivered")
+        completed.assertForOverFulfill = false
+        let connection = testConnection(root: root, session: session, verifiedCredentials: { credential }, syncPass: { _ in
+            var report = LocalVaultSyncReport()
+            report.catalogIssues = [.init(path: "Bad ")]
+            report.errors = ["A folder needs attention"]
+            return report
+        })
+        defer { connection.stop() }
+        _ = try await connection.connect(startSync: false)
+        connection.onChange = { status, _ in
+            if (status["catalogIssues"] as? [[String: String]])?.first?["path"] == "Bad " { completed.fulfill() }
+        }
+        connection.schedule()
+        await fulfillment(of: [completed], timeout: 3)
+        XCTAssertFalse(connection.status["onlineReady"] as? Bool ?? true)
+        XCTAssertEqual((connection.status["catalogIssues"] as? [[String: String]])?.first?["reason"], "nonportable-name")
+        credential = LocalVaultAccountCredential(origin: credential.origin, token: "fixture-other", accountId: "account-b")
+        connection.credentialsChanged()
+        XCTAssertEqual((connection.status["catalogIssues"] as? [[String: String]])?.count, 0)
+    }
+
+    @MainActor
     func testCancelledPassCannotClearReplacementAfterTokenRefresh() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
