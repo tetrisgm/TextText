@@ -25,8 +25,14 @@ with one heavy Mac build lane and independent Windows investigation.
   rollback that could move a running app. Focused corrected installer tests pass
   on the Mac; pushed as `b0463854`. Windows interactive-session normal quit is
   `ec9215a9`; Oracle backup/unit preservation is `2e43cdd8` and `090ea78d`.
-  Mac artifact preservation is `4fb09aae`. The fresh unified invocation remains
-  pending.
+  Mac artifact preservation is `4fb09aae`. The `b9eb96fb` invocation passed full
+  gates but stopped during packaging: the installed sandbox-inheriting Codex
+  helper traps when the build shell invokes `--version`. The signed bundle
+  records its version; metadata reuse and parallel candidate builds are fixed in
+  `84e40a53`. No delivery occurred,
+  the owner pin was restored exactly, and the release lock was cleared.
+  Log: Mac `/private/tmp/texttext-ship-all-b9eb96fb.log`.
+  The owner explicitly reaffirmed same-commit release first after this failure.
 - Windows installed startup reproduced the timeout/blank workspace. Stack samples
   distinguish synchronous `SyncEngine.Load` path validation on the UI dispatcher
   from initial listing inventory work holding the store. Root captured the actual
@@ -34,6 +40,12 @@ with one heavy Mac build lane and independent Windows investigation.
   in PC stash `bac70feec271069be85f81b980f8e107378f9e94` pending Phase 1 delivery.
   [Evidence](verification/2026-10-22-windows-startup-native-reads.md).
   Phase 2 measured targets and installed acceptance are not complete.
+- The visible timeout also has a proven stale-warning path: a successful listing
+  or access retry never clears its old top-level error. The actual installed UIA
+  tree shows that alert above the loaded C3 note. A reviewed renderer fix with PC
+  and Mac regressions is prepared outside the checkout at PC
+  `%TEMP%/texttext-bootstrap-notice-48220e7ddaff4820b8ab5ae8f55d0e20/bootstrap-notice.patch`.
+  Apply only after Phase 1; it does not establish startup timing targets.
 - Batch A review found `Notes/` assumptions in backlinks/link picker and silent
   backlink read failures. Production-component regressions are being prepared;
   installed reproduction remains required. Live CLI discovery confirms no feed

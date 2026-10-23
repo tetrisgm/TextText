@@ -31,6 +31,14 @@ and [backup preservation](../verification/2026-10-22-deploy-backup-preservation.
 are integrated. A fresh invocation and installed exit checks remain pending. Keep the standalone
 Sparkle resolution in git; preserve the owner's Store resolution around releases.
 
+The `b9eb96fb` invocation passed full release and sync gates, then failed packaging
+when the build shell ran the installed sandbox-inheriting Codex helper for its
+version. No surfaces were delivered; the original owner pin was restored.
+The owner explicitly reaffirmed same-commit release first. `84e40a53` fixes
+packaging using verified same-bundle version metadata, retaining sandbox settings,
+and overlaps Windows candidate building with the Mac checks. A fresh invocation
+and all installed exit checks remain required.
+
 Problem: each surface ships on its own schedule, so versions drift.
 
 Work:
