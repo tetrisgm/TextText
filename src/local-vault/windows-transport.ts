@@ -203,7 +203,7 @@ export async function createWindowsVaultTransport(view: NativeView) {
     if (["settings", "signOut", "openWeb", "openFolder"].includes(method)) return rpc.request(`native.${method}`, params, signal);
     if (method === "list" || method === "open") {
       const value = await shared.request("list", params, signal) as VaultListing;
-      const local = await list(); return { ...value, root: status.root, folders: local.folders };
+      return { ...value, root: status.root };
     }
     if (method === "keptFeedEntries" || method === "readFeedEntries") {
       const history = method === "readFeedEntries";

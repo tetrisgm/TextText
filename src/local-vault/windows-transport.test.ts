@@ -10,6 +10,27 @@ import { readDocument, writePayload } from "./model";
 import type { VaultFile } from "./bridge";
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 afterEach(() => { vi.unstubAllGlobals(); });
+it.each(["list", "open"])("uses one native snapshot for %s items, folders and permissions", async method => {
+  vi.stubGlobal("window", new EventTarget());
+  let reads = 0;
+  const view = native(method => {
+    if (method === "native.status") return { available: true, connected: true, workspaceId: "workspace", root: "C:\\Vault", accountId: "person" };
+    if (method === "files.list") {
+      reads++;
+      return { revision: String(reads), folders: [reads === 1 ? "Before" : "After"], fullAccess: false,
+        canCreateContent: false, writableFolders: ["Before"],
+        items: [{ itemId: "item", relativePath: "Before/Note.textpack", revision: "one", canEditContent: false }] };
+    }
+    throw new Error(`Unexpected ${method}`);
+  });
+  const transport = await createWindowsVaultTransport(view);
+  try {
+    expect(await transport.request(method, {})).toMatchObject({ root: "C:\\Vault", folders: ["Before"],
+      fullAccess: false, canCreateContent: false, writableFolders: ["Before"],
+      items: [{ itemId: "item", path: "Before/Note.textpack", canEditContent: false }] });
+    expect(reads).toBe(1);
+  } finally { transport.destroy(); }
+});
 it("preserves the active native connection origin without guessing a production web address", async () => {
   vi.stubGlobal("window", new EventTarget());
   const webURL = "https://staging.example:8443/vault/workspace";
