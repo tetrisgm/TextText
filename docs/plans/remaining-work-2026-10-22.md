@@ -25,7 +25,15 @@ verified Windows candidate. The next release must exercise the permanent backup
 fix through the complete unified command. [Mac/web receipt](../verification/2026-10-23-mac-web-installed-acceptance.md),
 [Windows receipt](../verification/2026-10-23-windows-98b-installed-acceptance.md).
 
-Status: in progress. The sync npm entry now owns the browser-policy producer and
+Status: complete for the unified release step. The October 23 `24104475`
+invocation exited successfully and delivered the same full commit to Oracle web,
+the canonical Mac app (0.203 build 1276), and the Windows installed app. Real
+create/edit/normal-quit/reopen checks passed on each surface; see the [Mac/web
+receipt](../verification/2026-10-23-mac-web-241-installed.md) and [Windows
+receipt](../verification/2026-10-23-windows-241-installed-launch.md). This establishes Phase 1 delivery, while cross-client sync
+and the Phase 2 latency targets remain open.
+
+The sync npm entry now owns the browser-policy producer and
 local database setup ([focused Mac checks](../verification/2026-10-22-release-sync-entry.md)).
 The combined command is implemented ([checks](../verification/2026-10-22-ship-all-entry.md));
 its first invocation passed full release and sync gates at `b05a675e`, then stopped
@@ -82,7 +90,16 @@ October 23 status: checkpoint scheduling/fairness, state reporting, scoped-error
 listing and initial-construction changes are committed as `41959359` and
 `317aab3c`. Full PC/Mac native suites, WPF compilation and renderer regressions
 pass ([receipt](../verification/2026-10-23-sync-foreground-checkpoints.md)).
-No three-second installed target or Windows server-convergence claim yet.
+Installed `24104475` missed the target on the second measured real launch:
+listing first appeared at 4.457 s and the restored note at 6.701 s. Exact
+content survived normal quit and reopen, without a timeout banner. Further
+launch repetitions stopped after that clear failure. A separate live sync
+failure now blocks multiplayer: three trailing-space folders created by a web
+metadata GET appear in the server catalog, which both native clients reject
+before ordinary item reconciliation. The read-side creation cause is fixed in
+`9aeb8f79`; retained folders and native recovery remain open. [Windows launch
+receipt](../verification/2026-10-23-windows-241-installed-launch.md), [folder
+read correction](../verification/2026-10-23-folder-view-read-only.md).
 
 Problem: on a real 1,100-note workspace, launch can still show "The connection is taking longer than expected". A restored note can show "Opening document…" for tens of seconds while `SyncEngine.SyncAsync` runs 10 or more full workspace scans per pass and holds the store. Per-file costs are fixed (`67efe404`, `680a8581`); the number of scans is not.
 

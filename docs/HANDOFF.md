@@ -2,115 +2,17 @@
 
 ## Current objective
 
-Execute [the October 22 remaining-work plan](plans/remaining-work-2026-10-22.md).
-T21–T27 of the older checklist are obsolete. Do not run or prepare them.
-The owner requests maximum parallel agent work; root owns commits and release,
-with one heavy Mac build lane and independent Windows investigation.
+Complete the [October 22 remaining-work plan](plans/remaining-work-2026-10-22.md) on `main`. T21–T27 of the older checklist are obsolete. The owner requests parallel agents, finite evidence-based checks, and no repeated testing after a clear result.
 
-## Active work
+## Delivered and current blockers
 
-- All three surfaces delivered `98b5314a` and passed actual exact-content normal
-  reopen checks. The unified command delivered web/Mac, then Windows backup
-  failed on PowerShell 5 long paths. Reviewed stopped-backup recovery installed
-  the same verified candidate through the supported installer. Preserve partial
-  backups. [Mac/web](verification/2026-10-23-mac-web-installed-acceptance.md),
-  [Windows](verification/2026-10-23-windows-98b-installed-acceptance.md).
-  The next unified release must verify the permanent backup correction end to end.
-- Phase 2 changes are committed (`41959359`, `317aab3c`): durable-checkpoint foreground
-  yielding with bounded fairness, explicit incomplete-pass retry obligation,
-  consistent connection state and remote-response diagnostics, scoped UI errors,
-  nonblocking listing permissions and staged initial bridge construction. Full
-  native suites, WPF compilation, Mac checks and renderer regressions pass.
-  [Checks](verification/2026-10-23-sync-foreground-checkpoints.md).
-  Installed five-launch targets and
-  server round-trip acceptance remain mandatory; Windows hosted convergence is
-  not yet independently established.
-- Latest unified invocation `446784e2`: Mac release/sync gates and Windows
-  candidate/desktop smoke passed. Mac signing then failed because the existing
-  login keychain is locked. No delivery; original owner pin restored exactly.
-  Desktop Terminal signing subsequently passed; SSH signing remains blocked.
-  Run the next human-invoked release from that desktop session. No further owner
-  keychain action is needed. [Receipt](verification/2026-10-23-unified-release-signing-blocker.md).
-  An early signing probe now precedes expensive gates and pins the build identity.
-- Phase 1 entry: `bash release/ship-all.sh` on the Mac. Pushed commits
-  `34fd9081` (sync producer/local database), `62a68a49` (checkout/storage
-  preflights), `b05a675e` (combined release).
-  [Sync checks](verification/2026-10-22-release-sync-entry.md),
-  [preflights](verification/2026-10-22-release-preflights.md),
-  [entry checks](verification/2026-10-22-ship-all-entry.md).
-- First combined invocation log: Mac `/private/tmp/texttext-ship-all-b05a675e.log`.
-  Full release and sync gates passed for `b05a675e`. After the held run's child
-  finished, pulling release fixes deliberately invalidated its source receipt.
-  The coordinator exited before delivery, restored the exact owner pin and
-  cleared its lock. Its `delivery.json` records an empty delivered list.
-  [First-run receipt](verification/2026-10-22-unified-release-first-gate.md).
-- Installer review found an existing TERM fallback after refused normal quit and
-  rollback that could move a running app. Focused corrected installer tests pass
-  on the Mac; pushed as `b0463854`. Windows interactive-session normal quit is
-  `ec9215a9`; Oracle backup/unit preservation is `2e43cdd8` and `090ea78d`.
-  Mac artifact preservation is `4fb09aae`. The `b9eb96fb` invocation passed full
-  gates but stopped during packaging: the installed sandbox-inheriting Codex
-  helper traps when the build shell invokes `--version`. The signed bundle
-  records its version; metadata reuse and parallel candidate builds are fixed in
-  `84e40a53`. No delivery occurred,
-  the owner pin was restored exactly, and the release lock was cleared.
-  Log: Mac `/private/tmp/texttext-ship-all-b9eb96fb.log`.
-  The owner explicitly reaffirmed same-commit release first after this failure.
-- Windows installed startup reproduced the timeout/blank workspace. Stack samples
-  distinguish synchronous `SyncEngine.Load` path validation on the UI dispatcher
-  from initial listing inventory work holding the store. Root captured the actual
-  UI; narrow optimizations and causal regressions pass on PC and Mac, preserved
-  in PC stash `bac70feec271069be85f81b980f8e107378f9e94` pending Phase 1 delivery.
-  [Evidence](verification/2026-10-22-windows-startup-native-reads.md).
-  Phase 2 measured targets and installed acceptance are not complete.
-- The visible timeout also has a proven stale-warning path: a successful listing
-  or access retry never clears its old top-level error. The actual installed UIA
-  tree shows that alert above the loaded C3 note. A reviewed renderer fix with PC
-  and Mac regressions is prepared outside the checkout at PC
-  `%TEMP%/texttext-bootstrap-notice-48220e7ddaff4820b8ab5ae8f55d0e20/bootstrap-notice.patch`.
-  Apply only after Phase 1; it does not establish startup timing targets.
-- Additional sync-state corrections and repository-ready regressions are held
-  outside main: PC `%TEMP%/texttext-native-status-cb0621462332456b9e376ee950def155/native-status-with-test.patch`
-  and `%TEMP%/texttext-native-connection-c0a2c1ac272f477188283d7f4cd6924d/native-connection-with-test.patch`.
-  They compose with the Phase 2 stash and bootstrap patch; actual bridge checks
-  pass 16 assertions and renderer checks pass five cases. Mac checks and installed
-  acceptance remain. Preserve the real retained conflict; status repair is not
-  conflict resolution or proof of remote sync health.
-- Batch A review found `Notes/` assumptions in backlinks/link picker and silent
-  backlink read failures. Production-component regressions are being prepared;
-  installed reproduction remains required. Live CLI discovery confirms no feed
-  commands/proposals; assets and template retirement have reviewed proposal paths.
+- One human-invoked `release/ship-all.sh` run exited 0 and delivered full commit `2410447543bd883cd23abd305ade14e183e6f5d7` to Oracle web, Mac 0.203 build 1276, and Windows. Each installed/live surface passed one real create/edit/save/normal-quit/reopen exact-content check. The Mac owner pin was restored. See the [plan](plans/remaining-work-2026-10-22.md) and the October 23 installed receipts under `verification/`.
+- Phase 2 is open. A measured installed Windows launch showed listing at 4.457 s and restored exact note at 6.701 s, over the 3 s targets. The note survived normal quit and reopen without a timeout notice. Stop launch repetitions until a causal fix is ready. [Receipt](verification/2026-10-23-windows-241-installed-launch.md).
+- Cross-client sync is currently blocked. A live web folder-view metadata GET created three trailing-space folder names in the remote catalog. Both native full passes reject this catalog before normal item reconciliation; a Windows installed-assembly validation of the actual 38-folder/217-item manifest isolated exactly these three names, and every item path passed. The Mac UI reports sync paused. No journal or folder has been reset, deleted, or filtered to hide this. The causal GET correction is committed and pushed as `9aeb8f79`, with [regression evidence](verification/2026-10-23-folder-view-read-only.md). Its live verification and a safe repair of the retained catalog remain open. The folder names are `Phase3 `, `Phase3 A `, and `Phase3 A 98b5314a `.
+- Phase 3 batch A and Phase 4 feed parity are in progress. A feed command patch is prepared outside the checkout at PC `%TEMP%/texttext-feed-command-9f54c838667f4b08bb576d4f0bc382a4/feed-parity.patch`; it has focused durable retry, viewer refusal, audit and proposal checks but no real acceptance. The 24-row matrix still needs installed light/dark results, and multiplayer is blocked by the catalog issue. Batch A ends with one release after its fixes.
 
-## Last verified delivered identities
+## Preservation and next decisions
 
-| Surface | Identity and evidence |
-| --- | --- |
-| Mac | `98b5314a`, 0.203 (1275), canonical `/Applications/TextText.app`; [installed acceptance](verification/2026-10-23-mac-web-installed-acceptance.md) |
-| Windows | `98b5314a`; [installed acceptance and backup recovery](verification/2026-10-23-windows-98b-installed-acceptance.md) |
-| Web | `98b5314a`; [live acceptance](verification/2026-10-23-mac-web-installed-acceptance.md) |
-| CLI | signed `56d144f7`; [installation evidence](verification/2026-10-19-mac-1274-installed-acceptance.md) |
+Use `main` in the existing PC and Mac checkouts; no worktrees. Mac `ssh mac` works on the LAN. Preserve the owner's uncommitted `mac/Package.resolved` SHA256 `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`, retained release backups, native journals, and old conflicts. Read the plan's operational notes before the next human-invoked release. Do not delete the three malformed server folders without the owner's approval; first inspect their exact contents and choose a repair that preserves identities and unrelated sync. Phase 5 owner decisions and Phase 6 consolidation remain as stated in the plan.
 
-## Preservation and operational references
-
-Mac LAN `ssh mac` works. Use main in the existing PC/Mac checkouts, no worktrees.
-Preserve owner's `mac/Package.resolved` SHA256
-`eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`,
-`mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts`. The last file targets
-localhost and deletes fixtures; it is not installed acceptance. The release entry
-keeps standalone Sparkle pins in git and restores the owner's working pin.
-
-The first release run preserved owner pins under Mac
-`.texttext/ship-all/20261023055157155-b05a675e/owner-Package.resolved`.
-The run's finally path restored the owner pin with the exact SHA256 above.
-Do not discard its backup or clear release locks blindly.
-
-[Oracle operations](../release/oracle/README.md),
-[database operations](DATABASE-OPERATIONS.md), and the plan's operational notes
-cover current builds/deploys. No public Mac update is requested. Fresh stopped
-backups and actual open/edit/save/normal-quit/exact-reopen remain release exit checks.
-
-Held owner decisions remain in plan Phase 5: retained conflict/rename items
-`5749b5ac` and `926668f8`, scheduled PC reboot, and exact-path cleanup approval.
-No filesystem recovery workarounds or deletions are authorized.
-
-[Archived handoff and historical receipts](archive/texttext-handoff-2026-10-22-before-unified-release.md).
+[Archived history](archive/texttext-handoff-2026-10-22-before-unified-release.md).
