@@ -5,7 +5,9 @@
 **Active October 22:** execute the [remaining-work plan](plans/remaining-work-2026-10-22.md),
 starting with Phase 1. Mac LAN SSH is working. Sync entry orchestration checks
 pass on the Mac ([receipt](verification/2026-10-22-release-sync-entry.md)); combined
-release and installed acceptance remain pending. T21–T27 are obsolete.
+release and installed acceptance remain pending. The entry is now
+`bash release/ship-all.sh` on the Mac ([checks](verification/2026-10-22-ship-all-entry.md)).
+T21–T27 are obsolete.
 
 Finish the [27-task checklist](plans/shared-app-finish-checklist.md) and [master plan](plans/shared-app-durability-execution.md). Continue independent work; source/private actor checks do not replace installed acceptance. No public Mac distribution or new accounts.
 
