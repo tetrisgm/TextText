@@ -10,19 +10,21 @@ export function NativeConnection({ root }: { root: string }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
+  const [connectionFailure, setConnectionFailure] = useState("");
 
   useEffect(() => {
-    let active = true;
+    let active = true, receivedStatus = false;
+    setConnection(null); setFailure(""); setConnectionFailure("");
     const update = (event: Event) => {
       const next = (event as CustomEvent<Connection>).detail;
-      if (next && typeof next.connected === "boolean" && typeof next.available === "boolean") {
-        setConnection(next); setFailure("");
+      if (active && next && typeof next.connected === "boolean" && typeof next.available === "boolean") {
+        receivedStatus = true; setConnection(next); setConnectionFailure("");
       }
     };
     window.addEventListener("texttext:vault-sync-status", update);
     void vaultRequest<Connection>("connection").then((next) => {
-      if (active) setConnection(next);
-    }).catch((error: Error) => { if (active) setFailure(error.message); });
+      if (active && !receivedStatus) { setConnection(next); setConnectionFailure(""); }
+    }).catch((error: Error) => { if (active && !receivedStatus) setConnectionFailure(error.message); });
     return () => { active = false; window.removeEventListener("texttext:vault-sync-status", update); };
   }, [root]);
 
@@ -46,6 +48,7 @@ export function NativeConnection({ root }: { root: string }) {
       </div>}
       {connection?.onlineReady && <button type="button" disabled={busy || !connection.webURL} onClick={() => void perform("openWeb")}>Open workspace on web</button>}
       {connection?.hasConflicts && <button type="button" disabled={busy} onClick={() => void perform("recovery")}>View recovery copies</button>}
+      {connectionFailure && <div className="vault-account-message" role="alert"><p>{connectionFailure}</p></div>}
       {failure && <div className="vault-account-message" role="alert"><p>{failure}</p></div>}
     </>} />;
 }

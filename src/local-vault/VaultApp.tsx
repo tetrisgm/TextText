@@ -902,6 +902,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
   const noteDraftActive = useRef(false);
   const [noteEditPath, setNoteEditPath] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [listingError, setListingError] = useState("");
+  const [accessError, setAccessError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingNativeOpen, setPendingNativeOpen] = useState<string | null>(null);
   const nativeOpenRequested = useRef(false);
@@ -1125,16 +1127,18 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
           setLiveTitle(title => title?.path === opened.path ? { ...title, path: next.path } : title);
         }
         setListing(value);
+        setListingError("");
       })
-      .catch((error: Error) => { if (request === listingRequest.current) setError(error.message); });
+      .catch((error: Error) => { if (request === listingRequest.current) setListingError(error.message); });
   }, []);
   useEffect(() => { refresh(); window.addEventListener("texttext:vault-changed", refresh); return () => window.removeEventListener("texttext:vault-changed", refresh); }, [refresh]);
   useEffect(() => {
+    setAccessError("");
     if (!accessScope) return;
     return watchWorkspaceAccess({ events: window,
       read: signal => vaultRequest("workspaceAccess", {}, signal),
-      changed: value => setWorkspaceAccess(value ? { scope: accessScope, value } : null),
-      failed: reason => setError(reason instanceof Error ? reason.message : "Workspace permissions could not be loaded."),
+      changed: value => { setWorkspaceAccess(value ? { scope: accessScope, value } : null); if (value) setAccessError(""); },
+      failed: reason => setAccessError(reason instanceof Error ? reason.message : "Workspace permissions could not be loaded."),
     });
   }, [accessScope]);
   useEffect(() => {
@@ -1847,6 +1851,8 @@ export function VaultApp({ allowFolderPicker = true, accountMenu, templateIntent
         setSelected(created); setDestinationFolder(folder); setTemplatePicker(false); refresh();
       })} />}
       {error && <div className="vault-notice" role="alert">{error}</div>}
+      {listingError && <div className="vault-notice" role="alert">{listingError}</div>}
+      {accessError && <div className="vault-notice" role="alert">{accessError}</div>}
       {listing && <ArticleEnrichmentWorker listing={listing} enabled={canManageFiles} skipPath={selected?.path} onChanged={refresh} />}
       {selected && listing ? <DocumentBoundary key={`${listing.root}:${selectedItemId ?? selected.path}`} revision={selected.hash}
         reload={async signal => {
