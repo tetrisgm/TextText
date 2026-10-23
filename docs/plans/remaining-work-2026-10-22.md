@@ -39,6 +39,16 @@ packaging using verified same-bundle version metadata, retaining sandbox setting
 and overlaps Windows candidate building with the Mac checks. A fresh invocation
 and all installed exit checks remain required.
 
+The `446784e2` invocation passed Mac release/sync gates and Windows candidate
+checks, including desktop smoke, then stopped at Mac signing: the existing login
+keychain is locked. No surface was delivered and the owner pin was restored.
+The same signing probe subsequently passed from desktop Terminal; use that session
+for the human-invoked release. No further owner keychain action is required.
+An early signing probe now runs before expensive gates and pins the build identity.
+[Signing blocker receipt](../verification/2026-10-23-unified-release-signing-blocker.md).
+The owner approved cleanup of this release's temporary Oracle smoke-test data
+only; existing content, workspaces, backups and releases are excluded.
+
 Problem: each surface ships on its own schedule, so versions drift.
 
 Work:

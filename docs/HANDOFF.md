@@ -9,6 +9,13 @@ with one heavy Mac build lane and independent Windows investigation.
 
 ## Active work
 
+- Latest unified invocation `446784e2`: Mac release/sync gates and Windows
+  candidate/desktop smoke passed. Mac signing then failed because the existing
+  login keychain is locked. No delivery; original owner pin restored exactly.
+  Desktop Terminal signing subsequently passed; SSH signing remains blocked.
+  Run the next human-invoked release from that desktop session. No further owner
+  keychain action is needed. [Receipt](verification/2026-10-23-unified-release-signing-blocker.md).
+  An early signing probe now precedes expensive gates and pins the build identity.
 - Phase 1 entry: `bash release/ship-all.sh` on the Mac. Pushed commits
   `34fd9081` (sync producer/local database), `62a68a49` (checkout/storage
   preflights), `b05a675e` (combined release).
@@ -46,6 +53,13 @@ with one heavy Mac build lane and independent Windows investigation.
   and Mac regressions is prepared outside the checkout at PC
   `%TEMP%/texttext-bootstrap-notice-48220e7ddaff4820b8ab5ae8f55d0e20/bootstrap-notice.patch`.
   Apply only after Phase 1; it does not establish startup timing targets.
+- Additional sync-state corrections and repository-ready regressions are held
+  outside main: PC `%TEMP%/texttext-native-status-cb0621462332456b9e376ee950def155/native-status-with-test.patch`
+  and `%TEMP%/texttext-native-connection-c0a2c1ac272f477188283d7f4cd6924d/native-connection-with-test.patch`.
+  They compose with the Phase 2 stash and bootstrap patch; actual bridge checks
+  pass 16 assertions and renderer checks pass five cases. Mac checks and installed
+  acceptance remain. Preserve the real retained conflict; status repair is not
+  conflict resolution or proof of remote sync health.
 - Batch A review found `Notes/` assumptions in backlinks/link picker and silent
   backlink read failures. Production-component regressions are being prepared;
   installed reproduction remains required. Live CLI discovery confirms no feed

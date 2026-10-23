@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { withCommittedPin } from './committed-pin.mjs';
 import { assertReleaseCheckpoint, runReleaseStage } from './stage-checkpoint.mjs';
 import { withParallelStage } from './parallel-stage.mjs';
+import { signingPreflight } from './signing-preflight.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 let checkpoint = () => {};
@@ -61,7 +62,9 @@ async function main() {
       checkpoint = () => assertReleaseCheckpoint(root, commit, cancelFile);
       console.log(`To cancel safely after the current stage, create: ${cancelFile}`);
       checkpoint();
-      run('node', ['--test', 'release/committed-pin.test.mjs', 'release/stage-checkpoint.test.mjs', 'release/parallel-stage.test.mjs', 'scripts/verify-sync.test.mjs', 'release/oracle/storage-preflight.test.mjs', 'windows/scripts/check-checkout.test.mjs']);
+      process.env.TEXTTEXT_SIGN_ID = signingPreflight(evidence, process.env.TEXTTEXT_SIGN_ID);
+      checkpoint();
+      run('node', ['--test', 'release/committed-pin.test.mjs', 'release/stage-checkpoint.test.mjs', 'release/parallel-stage.test.mjs', 'release/signing-preflight.test.mjs', 'scripts/verify-sync.test.mjs', 'release/oracle/storage-preflight.test.mjs', 'windows/scripts/check-checkout.test.mjs']);
       run('python3', ['release/test_stopped_backup.py']);
       run('bash', ['mac/scripts/test-embedded-codex-version.sh']);
       windows('Preflight', commit, runId);
