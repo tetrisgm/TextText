@@ -18,3 +18,9 @@ and removed its own release lock. The run's `delivery.json` records
 Mac evidence: `/private/tmp/texttext-ship-all-b05a675e.log` and
 `~/dev/TextText/.texttext/ship-all/20261023055157155-b05a675e/`.
 The next invocation must produce fresh source-bound receipts.
+
+The next invocation at `c2bd3a3c` stopped at `docs.no_rot`: the newly archived
+handoff lacked its required ARCHIVED banner. Adding the banner and replacement
+links made the actual Mac `npx tsx scripts/verify-docs.ts` gate pass (534 docs,
+232 scripts, 12 archives). No surfaces were delivered; the owner pin was again
+restored exactly. Log: `/private/tmp/texttext-ship-all-c2bd3a3c.log`.

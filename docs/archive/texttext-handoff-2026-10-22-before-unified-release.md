@@ -1,5 +1,8 @@
 # TextText handoff
 
+ARCHIVED: replaced by [the current handoff](../HANDOFF.md) and
+[the October 22 remaining-work plan](../plans/remaining-work-2026-10-22.md).
+
 ## Objective and active work
 
 **Active October 22:** execute the [remaining-work plan](../plans/remaining-work-2026-10-22.md),
