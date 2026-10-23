@@ -17,8 +17,8 @@ async function extractOfficeAttachmentText(
     typeof import("./office-attachment-text")["extractOfficeAttachmentText"]
   >[0],
 ): Promise<string> {
-  const module = await import("./office-attachment-text");
-  return module.extractOfficeAttachmentText(file);
+  const office = await import("./office-attachment-text");
+  return office.extractOfficeAttachmentText(file);
 }
 
 const ASSISTANT_ATTACHMENT_ACCEPT =
