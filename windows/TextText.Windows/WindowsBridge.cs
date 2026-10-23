@@ -41,6 +41,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     long inventoryVersion;
     string? lastStatus;
     bool hasSyncIssues;
+    string? syncIssueMessage;
     long remoteManifestCount, lastRemoteManifestUtcTicks;
     string? schedulerFailure;
     void RemoteManifestReceived() {
@@ -56,7 +57,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         remoteManifestResponses = Interlocked.Read(ref remoteManifestCount),
         lastRemoteManifestUtc = Interlocked.Read(ref lastRemoteManifestUtcTicks) is var ticks && ticks > 0 ? new DateTimeOffset(ticks, TimeSpan.Zero).ToString("O") : null,
         schedulerFailure,
-        message = schedulerFailure is null ? null : "Sync is paused. Restart TextText to reconnect.",
+        message = schedulerFailure is null ? syncIssueMessage : "Sync is paused. Restart TextText to reconnect.",
         workspaceId = context.WorkspaceId,
         webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri
     };
@@ -155,7 +156,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     // policy owns all retry and local-change debounce timing.
                     var localOnly = localWake && failures == 0 && DateTimeOffset.UtcNow - lastRemotePass < TimeSpan.FromSeconds(30);
                     SyncEngine.PassOutcome pass;
-                    try { pass = await sync.SyncPassAsync(lifetime.Token, localChangesOnly: localOnly); }
+                    try { pass = await sync.SyncPassAsync(lifetime.Token, localChangesOnly: localOnly, waitForGate: rerunRequired); }
                     finally {
                         if(Interlocked.Exchange(ref permissionsChanged,0)!=0 && !lifetime.IsCancellationRequested) await context.Emit("texttext:vault-changed",new { });
                     }
@@ -164,10 +165,12 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                     if(rerunRequired) lastRemotePass=DateTimeOffset.MinValue;
                     else if(pass==SyncEngine.PassOutcome.Completed && !localOnly) lastRemotePass=DateTimeOffset.UtcNow;
                     if(pass==SyncEngine.PassOutcome.Completed) {
-                    hasSyncIssues = sync.Status.Error is not null;
+                    var issue = sync.Status.Error;
+                    hasSyncIssues = issue is not null;
                     var status = hasSyncIssues ? "conflict" : "ready";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
-                    if (lastStatus != status || notifiedDurabilityVersion != completedVersion) {
+                    if (lastStatus != status || syncIssueMessage != issue || notifiedDurabilityVersion != completedVersion) {
+                        syncIssueMessage = issue;
                         lastStatus = status; notifiedDurabilityVersion = completedVersion;
                         await context.Emit("texttext:vault-sync-status", ConnectionStatus());
                     }

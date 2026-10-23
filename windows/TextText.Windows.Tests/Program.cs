@@ -131,6 +131,7 @@ try {
     Assert(refusedAfter,"a retired bridge rejects later calls");
     await ReadinessAdmissionTests.Run(temp,Assert);
     await ReadinessAdmissionTests.RunFlood(temp,Assert);
+    await ReadinessAdmissionTests.Arbitration(Path.Combine(temp,"arbitration"),Assert);
 } finally { try { Directory.Delete(temp, true); } catch { /* best effort */ } }
 Console.WriteLine(failures == 0 ? "All Windows bridge startup tests passed." : failures + " failure(s).");
 return failures == 0 ? 0 : 1;

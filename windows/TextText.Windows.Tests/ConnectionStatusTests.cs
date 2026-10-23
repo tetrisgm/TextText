@@ -7,10 +7,16 @@ static class ConnectionStatusTests
 {
     public static async Task Run(string temporary, Action<bool, string> check)
     {
-        foreach (var kind in new[] { "ready", "conflict", "auth-required", "offline" }) {
+        foreach (var kind in new[] { "ready", "conflict", "retained-conflict", "auth-required", "offline" }) {
             var root = Path.Combine(temporary, "connection-" + kind);
             var state = Path.Combine(temporary, "connection-state-" + kind);
             Directory.CreateDirectory(root);
+            if (kind == "retained-conflict") {
+                Directory.CreateDirectory(state);
+                var retained = new SyncEngine.State();
+                retained.Outbox.Add(new SyncEngine.Operation("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "conflict", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Notes/Retained.textpack", null, null, new string('a',64), null, true));
+                File.WriteAllText(Path.Combine(state,"sync.json"), JsonSerializer.Serialize(retained));
+            }
             // Preserve the existing broad conflict contract, including scan issues.
             if (kind == "conflict") File.WriteAllText(Path.Combine(root, "invalid.textpack"), "invalid fixture pack");
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -52,18 +58,20 @@ static class ConnectionStatusTests
                     kind + ": status retains workspace identity and web URL");
                 var semantics = kind switch {
                     "ready" => snapshot.GetProperty("onlineReady").GetBoolean() && !snapshot.GetProperty("hasConflicts").GetBoolean(),
-                    "conflict" => !snapshot.GetProperty("onlineReady").GetBoolean() && snapshot.GetProperty("hasConflicts").GetBoolean(),
+                    "conflict" or "retained-conflict" => !snapshot.GetProperty("onlineReady").GetBoolean() && snapshot.GetProperty("hasConflicts").GetBoolean(),
                     "auth-required" => snapshot.TryGetProperty("authenticationRequired", out var auth) && auth.GetBoolean(),
                     _ => !snapshot.GetProperty("onlineReady").GetBoolean() && !snapshot.GetProperty("hasConflicts").GetBoolean()
                 };
+                if (kind == "retained-conflict") check(snapshot.GetProperty("message").GetString() == "Some documents have conflicting changes. Both copies are retained.", "retained conflict explanation preserved in snapshot and event");
+                if (kind == "conflict") check(snapshot.GetProperty("message").GetString() == "Some files are temporarily unavailable or invalid. Other files continue syncing.", "scan error retains its distinct explanation");
                 check(semantics, kind + ": conservative readiness and explicit authentication retained");
-                var contacted = kind is "ready" or "conflict";
+                var contacted = kind is "ready" or "conflict" or "retained-conflict";
                 check(snapshot.GetProperty("remoteManifestResponses").GetInt64() == (contacted ? 1 : 0), kind + ": only successful manifest response counts");
                 check(contacted ? DateTimeOffset.TryParse(snapshot.GetProperty("lastRemoteManifestUtc").GetString(), out _) : snapshot.GetProperty("lastRemoteManifestUtc").ValueKind == JsonValueKind.Null, kind + ": remote timestamp reflects actual response");
                 finishSchedule.TrySetResult();
                 var stopped = await paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 check(!stopped.GetProperty("onlineReady").GetBoolean() && stopped.GetProperty("message").GetString() == "Sync is paused. Restart TextText to reconnect.", kind + ": scheduler failure exposed as paused");
-                check(stopped.GetProperty("hasConflicts").GetBoolean() == (kind == "conflict"), kind + ": scheduler failure preserves known conflict");
+                check(stopped.GetProperty("hasConflicts").GetBoolean() == (kind is "conflict" or "retained-conflict"), kind + ": scheduler failure preserves known conflict");
                 check(stopped.GetProperty("authenticationRequired").GetBoolean() == (kind == "auth-required"), kind + ": scheduler failure preserves authentication requirement");
             } finally {
                 release.TrySetResult();

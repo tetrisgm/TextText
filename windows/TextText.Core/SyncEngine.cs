@@ -449,9 +449,11 @@ public sealed partial class SyncEngine
         Report(false,StateError(state),state.Outbox.Count);
         return true;
     }
-    public async Task<PassOutcome> SyncPassAsync(CancellationToken cancellation=default,bool localChangesOnly=false)
+    public async Task<PassOutcome> SyncPassAsync(CancellationToken cancellation=default,bool localChangesOnly=false,bool waitForGate=false)
     {
-        if(!await gate.WaitAsync(0,cancellation)) return PassOutcome.Busy;
+        // An owed background pass queues once behind existing readers. Repeated zero-time retries can collide with every readiness wave indefinitely.
+        if(waitForGate)await gate.WaitAsync(cancellation);
+        else if(!await gate.WaitAsync(0,cancellation)) return PassOutcome.Busy;
         State? state=null;
         generationSyncPass=true;HasEligiblePending=false;remainingQueueBudget=128;deferredQueuedUploadPaths.Clear();generationInspectionItems.Clear();generationInspectionBlocked.Clear();generationInspectionPaths.Clear();generationInspectionScope=null;
         try {

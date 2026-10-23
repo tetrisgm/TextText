@@ -34,3 +34,9 @@ describe("native account sync notice", () => {
     expect(nativeSyncNotice({ ...connected, connecting: true, hasConflicts: true })?.kind).toBe("attention");
   });
 });
+
+it("preserves the specific retained document conflict while remote contact is healthy", () => {
+ const message = "Some documents have conflicting changes. Both copies are retained.";
+ expect(nativeSyncNotice({ ...connected, onlineReady: false, hasConflicts: true, remoteManifestResponses: 3, message })).toEqual({kind:"attention",message});
+ expect(nativeSyncNotice({ ...connected, onlineReady: true, hasConflicts: true, message })?.message).toBe(message);
+});

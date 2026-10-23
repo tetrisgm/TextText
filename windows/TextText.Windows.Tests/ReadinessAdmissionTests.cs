@@ -6,6 +6,35 @@ using TextText.Windows;
 
 static class ReadinessAdmissionTests
 {
+    public static async Task Arbitration(string temporary,Action<bool,string> check) {
+        var store=new TextPackStore(Path.Combine(temporary,"files"),Path.Combine(temporary,"state"));
+        using var bytes=new MemoryStream();
+        using(var zip=new ZipArchive(bytes,ZipArchiveMode.Create,true))
+        using(var writer=new StreamWriter(zip.CreateEntry("text.md").Open()))writer.Write("---\ntextTextId: arbitration-item\n---\nexact pending bytes");
+        var data=bytes.ToArray(); var file=store.Write("Notes/a.textpack",data);
+        var remote=new Remote(); remote.LateScanRelease.Set();
+        var engine=new SyncEngine(store,remote,mirrorPolicy:NativePolicyTestHost.Create());
+        await engine.SyncAsync(); remote.Uploads=0;
+        // A durable queued update, then a real foreground admission causes yield.
+        var state=JsonSerializer.Deserialize<SyncEngine.State>(File.ReadAllText(Path.Combine(store.StateDirectory,"sync.json")))!;
+        state.Outbox.Add(new(Guid.NewGuid().ToString(),"upload",file.ItemId,file.Path,null,file.Hash,file.Hash,Convert.ToBase64String(data)));
+        File.WriteAllText(Path.Combine(store.StateDirectory,"sync.json"),JsonSerializer.Serialize(state));
+        remote.Hold=true; var first=engine.SyncPassAsync(); await remote.Entered.Task;
+        var ready=engine.IsReadyAsync(file.ItemId); remote.Release.TrySetResult();
+        check(await first==SyncEngine.PassOutcome.ForegroundYield,"fixture establishes actual yielded pass debt"); await ready;
+        var gate=(SemaphoreSlim)typeof(SyncEngine).GetField("gate",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.GetValue(engine)!;
+        await gate.WaitAsync();
+        var method=typeof(SyncEngine).GetMethod("SyncPassAsync")!;
+        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task<SyncEngine.PassOutcome> Retry(CancellationToken ct)=>(Task<SyncEngine.PassOutcome>)method.Invoke(engine,method.GetParameters().Length==3?new object[]{ct,false,true}:new object[]{ct,false})!;
+        var retry=Retry(deadline.Token);
+        check(!retry.IsCompleted,"owed retry queues behind current foreground holder rather than losing arbitration");
+        gate.Release();
+        check(await retry==SyncEngine.PassOutcome.Completed&&remote.Uploads==1&&remote.Bytes!.SequenceEqual(data),"owed retry uploads exact queued bytes once after holder releases");
+        await gate.WaitAsync(); using var cancel=new CancellationTokenSource(); var cancelled=Retry(cancel.Token);cancel.Cancel();
+        bool observed=false;try{await cancelled;}catch(OperationCanceledException){observed=true;}
+        gate.Release();check(observed&&await engine.SyncPassAsync()==SyncEngine.PassOutcome.Completed,"cancelled queued retry does not leak sync gate");
+    }
     public static async Task RunFlood(string temporary, Action<bool, string> check)
     {
         var root = Path.Combine(temporary, "pressure-vault");
