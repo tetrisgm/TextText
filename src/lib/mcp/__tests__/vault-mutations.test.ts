@@ -157,7 +157,7 @@ describe("durable file MCP commands through public input schemas", () => {
   });
   it("fails closed on unsupported metadata and unsafe folders", async () => {
     await expect(mutateVaultTool("update_item", { id: itemId, status: "published" }, context())).rejects.toThrow("Unsupported");
-    await expect(mutateVaultTool("create_item", { folder_path: "../private" }, context())).rejects.toThrow("Invalid folder");
+    await expect(mutateVaultTool("create_item", { folder_path: "../private" }, context())).rejects.toThrow("portable folder path");
   });
 });
 
