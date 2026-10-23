@@ -176,7 +176,7 @@ app_pids() {
 apps_are_running() { [[ -n "$(app_pids "$@")" ]]; }
 
 stop_apps() {
-  local pids attempt
+  local attempt
   [[ "$SKIP_LAUNCH" != "1" ]] || return 0
   apps_are_running "$@" || return 0
   osascript -e 'tell application id "app.texttext.mac" to quit' </dev/null >/dev/null 2>&1 || true
@@ -184,12 +184,7 @@ stop_apps() {
     apps_are_running "$@" || return 0
     sleep 0.25
   done
-  pids="$(app_pids "$@")"
-  [[ -z "$pids" ]] || kill -TERM $pids 2>/dev/null || true
-  for attempt in {1..20}; do
-    apps_are_running "$@" || return 0
-    sleep 0.25
-  done
+  echo "TextText did not quit normally; leaving it running." >&2
   return 1
 }
 
@@ -241,7 +236,10 @@ fi
 
 rollback() {
   local index rollback_incomplete=0
-  stop_apps "$APP" || true
+  if ! stop_apps "$APP"; then
+    echo "Rollback paused: TextText is still running. Current, prior and staged bundles are preserved." >&2
+    return 1
+  fi
   for (( index=${#cleanup_sources[@]}-1; index>=0; index-- )); do
     if [[ -e "${cleanup_destinations[$index]}" ]] && \
       ! mv "${cleanup_destinations[$index]}" "${cleanup_sources[$index]}"; then
@@ -281,7 +279,11 @@ rollback() {
 fail_install() {
   echo "$1" >&2
   if [[ "$SWAP_ACTIVE" == "1" ]]; then
-    rollback
+    if ! rollback; then
+      echo "Installation failed; normal quit is required before rollback can continue." >&2
+      trap - EXIT INT TERM HUP
+      exit 1
+    fi
     SWAP_ACTIVE=0
   else
     rm -rf "$STAGE"
@@ -293,7 +295,7 @@ abort_install() {
   local status=$?
   trap - EXIT INT TERM HUP
   if [[ "$SWAP_ACTIVE" == "1" ]]; then
-    rollback
+    if ! rollback; then exit 1; fi
     [[ "$status" != "0" ]] || status=1
   fi
   rm -rf "$STAGE"

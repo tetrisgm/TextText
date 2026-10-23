@@ -127,4 +127,88 @@ if TEXTTEXT_EXPECTED_BUILD=999 run_installer >/dev/null 2>&1; then
 fi
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$FIXTURE/Applications/TextText.app/Contents/Info.plist")" == "184" ]]
 
+# Exercise the real stop/rollback functions without sending input or signals.
+# Refused normal quit must never escalate or move a running application's bundle.
+(
+  eval "$(sed -n '/^stop_apps() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  SKIP_LAUNCH=0
+  quit_calls=0
+  signal_calls=0
+  apps_are_running() { return 0; }
+  osascript() { quit_calls=$((quit_calls + 1)); }
+  sleep() { :; }
+  app_pids() { echo 999999; }
+  kill() { signal_calls=$((signal_calls + 1)); }
+  if stop_apps "$FIXTURE/Applications/TextText.app"; then
+    echo "install-local accepted a refused normal quit" >&2
+    exit 1
+  fi
+  [[ "$quit_calls" == "1" && "$signal_calls" == "0" ]]
+  # A normal quit that completes during polling still succeeds.
+  running_checks=0
+  apps_are_running() {
+    running_checks=$((running_checks + 1))
+    [[ "$running_checks" -lt 3 ]]
+  }
+  stop_apps "$FIXTURE/Applications/TextText.app"
+  [[ "$quit_calls" == "2" && "$signal_calls" == "0" ]]
+)
+(
+  eval "$(sed -n '/^rollback() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  APP="$FIXTURE/Applications/TextText.app"
+  OLD="$FIXTURE/previous.app"
+  FAILED="$FIXTURE/failed.app"
+  STAGE="$FIXTURE/stage.app"
+  HAD_CANONICAL=0
+  INSTALL_WAS_RUNNING=0
+  cleanup_sources=()
+  cleanup_destinations=()
+  duplicate_originals=()
+  duplicate_staged=()
+  mutations=0
+  stop_apps() { return 1; }
+  mv() { mutations=$((mutations + 1)); }
+  rm() { mutations=$((mutations + 1)); }
+  launch_canonical() { mutations=$((mutations + 1)); }
+  if rollback; then
+    echo "install-local accepted rollback while the app refused quit" >&2
+    exit 1
+  fi
+  [[ "$mutations" == "0" ]]
+)
+
+# The EXIT/signal handler must also preserve STAGE after refused rollback.
+# Run the actual handler in a child because it intentionally exits the shell.
+(
+  eval "$(sed -n '/^rollback() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  eval "$(sed -n '/^abort_install() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  eval "$(sed -n '/^fail_install() {/,/^}/p' "$ROOT/mac/scripts/install-local.sh")"
+  APP="$FIXTURE/Applications/TextText.app"
+  OLD="$FIXTURE/previous.app"
+  FAILED="$FIXTURE/failed.app"
+  STAGE="$FIXTURE/stage.app"
+  HAD_CANONICAL=0
+  INSTALL_WAS_RUNNING=0
+  SWAP_ACTIVE=1
+  cleanup_sources=()
+  cleanup_destinations=()
+  duplicate_originals=()
+  duplicate_staged=()
+  stop_apps() { return 1; }
+  mv() { echo move >> "$FIXTURE/abort-mutations"; }
+  rm() { echo remove >> "$FIXTURE/abort-mutations"; }
+  launch_canonical() { echo launch >> "$FIXTURE/abort-mutations"; }
+  : > "$FIXTURE/abort-mutations"
+  if ( abort_install ); then
+    echo "install-local abort accepted refused rollback" >&2
+    exit 1
+  fi
+  [[ ! -s "$FIXTURE/abort-mutations" ]]
+  if ( trap abort_install EXIT; fail_install "Fixture health failure" ); then
+    echo "install-local failure accepted refused rollback" >&2
+    exit 1
+  fi
+  [[ ! -s "$FIXTURE/abort-mutations" ]]
+)
+
 echo "install-local: ok"
