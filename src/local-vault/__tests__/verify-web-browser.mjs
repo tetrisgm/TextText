@@ -231,7 +231,11 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.waitForFunction(() => document.querySelector('[aria-label="Document body"]')?.textContent === "Agent edited the file");
   await page.getByRole("button", { name: "New note", exact: true }).click();
-  await page.locator('.vault-context-header h2[title*="Untitled.textpack"]').waitFor();
+  await waitFor(() => files.size === 2);
+  const [createdId, createdFile] = [...files.entries()].find(([itemId]) => itemId !== id);
+  assert.equal(createdFile.path, `Notes/Untitled ${createdId}.textpack`);
+  assert.equal(JSON.parse(strFromU8(unzipSync(createdFile.bytes)[prefix + "document.json"])).content.title, "");
+  await page.waitForFunction((createdPath) => document.querySelector(".vault-context-header h2")?.getAttribute("title") === createdPath, createdFile.path);
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("New web item");
   await page.getByRole("textbox", { name: "Document body", exact: true }).fill("New file bytes");
   await page.waitForFunction(() => Object.keys(localStorage).filter((key) => key.startsWith("texttext:vault-draft:")).length === 0);
