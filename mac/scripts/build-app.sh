@@ -162,11 +162,28 @@ fi
 # Local WIP builds may carry the official Codex runtime used by the in-app
 # assistant. Keep this opt-in: the ordinary release artifact must not silently
 # acquire a large, separately versioned executable.
+embedded_codex_version() {
+  local version pattern='^codex-cli [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+  if [[ "${TEXTTEXT_EMBEDDED_CODEX_VERSION+x}" == "x" ]]; then
+    # An installed Store helper inherits its parent's sandbox and cannot run
+    # from a build shell. The caller supplies its verified bundle metadata.
+    version="$TEXTTEXT_EMBEDDED_CODEX_VERSION"
+  else
+    version="$("$1" --version)" || return $?
+  fi
+  if ! [[ "$version" =~ $pattern ]]; then
+    echo "Invalid embedded Codex version; expected a single codex-cli version." >&2
+    return 1
+  fi
+  printf '%s\n' "$version"
+}
+
 EMBEDDED_CODEX="${TEXTTEXT_EMBEDDED_CODEX_RUNTIME:-}"
 if [ -n "$EMBEDDED_CODEX" ]; then
   case "$EMBEDDED_CODEX" in /*) ;; *) echo "TEXTTEXT_EMBEDDED_CODEX_RUNTIME must be an absolute path." >&2; exit 1 ;; esac
   [ -x "$EMBEDDED_CODEX" ] || { echo "Codex runtime is not executable: $EMBEDDED_CODEX" >&2; exit 1; }
   codesign --verify --strict "$EMBEDDED_CODEX"
+  EMBEDDED_CODEX_VERSION="$(embedded_codex_version "$EMBEDDED_CODEX")"
   mkdir -p "$APP/Contents/Helpers"
   cp -L "$EMBEDDED_CODEX" "$APP/Contents/Helpers/codex"
 fi
@@ -251,7 +268,6 @@ if [ "$LOCAL_DEVELOPMENT_BUILD" = "1" ]; then
   "$PB" -c 'Add :TextTextLocalDevelopmentBuild bool true' "$STAGED"
 fi
 if [ -n "$EMBEDDED_CODEX" ]; then
-  EMBEDDED_CODEX_VERSION="$("$EMBEDDED_CODEX" --version)"
   "$PB" -c 'Add :TextTextEmbeddedAgentRuntime bool true' "$STAGED" 2>/dev/null \
     || "$PB" -c 'Set :TextTextEmbeddedAgentRuntime true' "$STAGED"
   "$PB" -c "Add :TextTextEmbeddedAgentVersion string $EMBEDDED_CODEX_VERSION" "$STAGED" 2>/dev/null \

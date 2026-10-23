@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { withCommittedPin } from './committed-pin.mjs';
 import { assertReleaseCheckpoint, runReleaseStage } from './stage-checkpoint.mjs';
+import { withParallelStage } from './parallel-stage.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 let checkpoint = () => {};
@@ -13,9 +14,12 @@ function run(command, args, env = {}, onSuccess) {
 }
 function output(command, args) { return execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trim(); }
 const git = (...args) => output('git', args);
-function windows(mode, commit, runId, onSuccess) {
+function windowsArgs(mode, commit, runId) {
   const command = `& "$env:USERPROFILE/dev/texttext/windows/scripts/ship-all.ps1" -Mode ${mode} -Commit ${commit} -RunId ${runId}`;
-  run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pc', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], {}, onSuccess);
+  return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pc', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')];
+}
+function windows(mode, commit, runId, onSuccess) {
+  run('ssh', windowsArgs(mode, commit, runId), {}, onSuccess);
 }
 function plist(path, key) { return output('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, path]); }
 
@@ -57,15 +61,18 @@ async function main() {
       checkpoint = () => assertReleaseCheckpoint(root, commit, cancelFile);
       console.log(`To cancel safely after the current stage, create: ${cancelFile}`);
       checkpoint();
-      run('node', ['--test', 'release/committed-pin.test.mjs', 'release/stage-checkpoint.test.mjs', 'scripts/verify-sync.test.mjs', 'release/oracle/storage-preflight.test.mjs', 'windows/scripts/check-checkout.test.mjs']);
+      run('node', ['--test', 'release/committed-pin.test.mjs', 'release/stage-checkpoint.test.mjs', 'release/parallel-stage.test.mjs', 'scripts/verify-sync.test.mjs', 'release/oracle/storage-preflight.test.mjs', 'windows/scripts/check-checkout.test.mjs']);
       run('python3', ['release/test_stopped_backup.py']);
+      run('bash', ['mac/scripts/test-embedded-codex-version.sh']);
       windows('Preflight', commit, runId);
       const installed = '/Applications/TextText.app';
       const version = plist('mac/Info.plist', 'CFBundleShortVersionString');
       const build = String(Math.max(Number(plist('mac/Info.plist', 'CFBundleVersion')), Number(plist(`${installed}/Contents/Info.plist`, 'CFBundleVersion'))) + 1);
       if (!/^[1-9][0-9]*$/.test(build)) throw new Error('Cannot allocate a fresh Mac build number.');
       const runtime = join(installed, 'Contents/Helpers/codex');
+      run('codesign', ['--verify', '--strict', installed]);
       run('codesign', ['--verify', '--strict', runtime]);
+      const runtimeVersion = plist(`${installed}/Contents/Info.plist`, 'TextTextEmbeddedAgentVersion');
       // Prepare both native candidates before changing any installed surface.
       const bundle = join(evidence, 'mirror-policy');
       mkdirSync(bundle);
@@ -75,19 +82,23 @@ async function main() {
         TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT: join(evidence, 'workflow-capability.json'),
         TEXTTEXT_BUILD_ATTESTATION: join(evidence, 'AppHealthBuildAttestation.json'),
         TEXTTEXT_EMBEDDED_CODEX_RUNTIME: runtime,
+        TEXTTEXT_EMBEDDED_CODEX_VERSION: runtimeVersion,
         TEXTTEXT_STORE_LOCAL: '1', APP_VERSION: version, APP_BUILD_NUMBER: build,
         NEXT_DEPLOYMENT_ID: `texttext-all-${runId}`,
       });
-      run('node', ['src/local-vault/__tests__/mirror-policy.browser.mjs']);
-      run('node', ['scripts/with-local-database.mjs', 'npx', 'tsx', 'scripts/verify-release.ts']);
-      run('npm', ['run', 'test:sync']);
-      run('bash', ['mac/scripts/verify-workflow-capabilities.sh', process.env.TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT]);
-      run('bash', ['mac/scripts/texttext-build-attestation.sh', process.env.TEXTTEXT_BUILD_ATTESTATION, version, build]);
-      checkpoint();
-      preserveBuildCandidate(join(root, 'mac/build/TextText.app'), evidence);
-      run('bash', ['mac/scripts/build-store.sh']);
-      run('bash', ['mac/scripts/verify-app-health.sh', 'mac/build/TextText.app', version, build]);
-      windows('Build', commit, runId);
+      // Join the Windows build before pin restoration or delivery, even when a
+      // Mac gate fails. This joins local SSH, not an independently lost remote job.
+      await withParallelStage(checkpoint, 'ssh', windowsArgs('Build', commit, runId), { cwd: root, env: { ...process.env } }, () => {
+        run('node', ['src/local-vault/__tests__/mirror-policy.browser.mjs']);
+        run('node', ['scripts/with-local-database.mjs', 'npx', 'tsx', 'scripts/verify-release.ts']);
+        run('npm', ['run', 'test:sync']);
+        run('bash', ['mac/scripts/verify-workflow-capabilities.sh', process.env.TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT]);
+        run('bash', ['mac/scripts/texttext-build-attestation.sh', process.env.TEXTTEXT_BUILD_ATTESTATION, version, build]);
+        checkpoint();
+        preserveBuildCandidate(join(root, 'mac/build/TextText.app'), evidence);
+        run('bash', ['mac/scripts/build-store.sh']);
+        run('bash', ['mac/scripts/verify-app-health.sh', 'mac/build/TextText.app', version, build]);
+      });
       // Build a fresh archive after revalidating the genuine gate receipts.
       process.env.TEXTTEXT_ORACLE_ARTIFACT = '';
       deployVerifiedWeb(run, () => delivered.push({ surface: 'web', commit, buildId: process.env.NEXT_DEPLOYMENT_ID }));
