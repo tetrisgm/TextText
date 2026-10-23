@@ -2365,7 +2365,10 @@ export async function createVaultFolder(input: VaultLocation & { operationId: st
 /** Provision ordinary empty directories without replacing existing content. */
 export async function ensureVaultFolders(input: VaultLocation, folders: readonly string[]): Promise<void> {
   if (folders.length > 1000) throw new Error("Too many workspace folders");
-  for (const folder of folders) packPath(`${folder}/placeholder.textpack`);
+  for (const folder of folders) {
+    validatePortableFolderPath(folder);
+    packPath(`${folder}/placeholder.textpack`);
+  }
   const layout = await setup(input);
   await locked(layout, async () => {
     await recover(layout);
