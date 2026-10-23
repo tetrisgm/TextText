@@ -23,6 +23,20 @@ foreach(var scenario in new[]{"folder-feed","folder-feed-disabled","folder-feed-
  else {await Until(()=>events.Any(e=>S(e,"type")=="turn-completed"));Check(stages==(scenario=="folder-feed"?1:0),"runtime proposal scope failed");Check(events.Any(e=>S(e,"text")== (scenario=="folder-feed"?"tool-accepted":"tool-denied")),"runtime acknowledgement scope");}
  await agent.DispatchAsync("agentDisconnect",JsonSerializer.SerializeToElement(new{}),default);Console.WriteLine("PASS native runtime "+scenario);
 }
+foreach(var scenario in new[]{"workspace-proposal-root","workspace-proposal-folder","workspace-proposal-item","workspace-proposal-disabled","workspace-proposal-cancel"}) {
+ var events=new ConcurrentQueue<JsonElement>();var stages=0;var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+ using var agent=new WindowsAgent(scratch,"captured-workspace",(_,value)=>{events.Enqueue(JsonSerializer.SerializeToElement(value));return Task.CompletedTask;},async(path,folder,tool,input,operation,ct)=>{
+  if(tool!="propose_workspace_change")return "read fixture";
+  Check(folder&&path==""&&Guid.TryParse(operation,out _),"workspace proposal lost root or native retry identity");entered.TrySetResult();
+  if(scenario=="workspace-proposal-cancel")await Task.Delay(1000,ct);
+  ct.ThrowIfCancellationRequested();Interlocked.Increment(ref stages);return "Review proposal https://fixture.test/proposals/1";
+ },executable,Prefix(),allowFeedProposals:scenario!="workspace-proposal-disabled");
+ await agent.DispatchAsync("agentStatus",JsonSerializer.SerializeToElement(new{}),default);
+ await agent.DispatchAsync("agentSend",JsonSerializer.SerializeToElement(new{taskId=scenario,scope=scenario=="workspace-proposal-item"?"item":"folder",path=scenario=="workspace-proposal-item"?"Note.textpack":"",folderPath=scenario=="workspace-proposal-folder"?"Notes":"",prompt=scenario}),default);
+ if(scenario=="workspace-proposal-cancel"){await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));await agent.DispatchAsync("agentCancel",JsonSerializer.SerializeToElement(new{taskId=scenario}),default);await Task.Delay(50);Check(stages==0,"cancelled workspace proposal completed");}
+ else {await Until(()=>events.Any(e=>S(e,"type")=="turn-completed"));Check(stages==(scenario=="workspace-proposal-root"?1:0),"workspace runtime scope failed");Check(events.Any(e=>S(e,"text")==(scenario=="workspace-proposal-root"?"tool-accepted":"tool-denied")),"workspace runtime acknowledgement scope");}
+ await agent.DispatchAsync("agentDisconnect",JsonSerializer.SerializeToElement(new{}),default);Console.WriteLine("PASS native runtime "+scenario);
+}
 Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+scratch);
 }
 }

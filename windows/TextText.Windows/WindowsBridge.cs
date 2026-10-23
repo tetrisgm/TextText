@@ -511,6 +511,11 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
             using var proposalLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
             return await new WindowsFeedProposal(context,http,()=>!lifetime.IsCancellationRequested).StageAsync(path,args,operationId,proposalLifetime.Token);
         }
+        if(tool is "describe_workspace_proposals" or "propose_workspace_change") {
+            if(!folder || path.Length!=0)throw new InvalidDataException("Workspace proposals require a connected root task.");
+            using var proposalLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct,lifetime.Token);
+            return await new WindowsFeedProposal(context,http,()=>!lifetime.IsCancellationRequested).WorkspaceToolAsync(tool,path,args,operationId,proposalLifetime.Token);
+        }
         var id = Guid.NewGuid().ToString();
         var pending = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (agentTools.Count >= 16 || !agentTools.TryAdd(id, pending)) throw new IOException("Too many pending agent tools.");

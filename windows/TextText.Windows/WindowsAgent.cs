@@ -142,7 +142,7 @@ public sealed class WindowsAgent : IDisposable
             features["code_mode"] = new { direct_only_tool_namespaces = new[] { "texttext" } };
             var result = await Call("thread/start",new { approvalPolicy = "never",sandbox = "read-only",ephemeral = true,cwd = root,
                 developerInstructions = "You are TextText's assistant. Use only the supplied texttext tools within the selected " + (folderTask ? "folder boundary: " : "file: ") + path + ". Read before editing and use its exact hash. Preserve other changes. Never use shell, filesystem, skills, web or other integrations. For read-only requests do not write. " + (customizing ? "Only propose a template preview; do not write." : ""),
-                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing,folderTask,allowFeedProposals && selectedPath.Length>0) } },
+                dynamicTools = new[] { new { type = "namespace",name = "texttext",description = "Selected TextText item tools",tools = Definitions(customizing,folderTask,allowFeedProposals && selectedPath.Length>0,allowFeedProposals && selectedPath.Length==0) } },
                 config = new { mcp_servers = servers,features,agents = new { enabled = false },tools = new { view_image = false },web_search = "disabled",project_doc_max_bytes = 0 } },token);
             token.ThrowIfCancellationRequested(); if(fence != generation) return;
             threadId = result.GetProperty("thread").GetProperty("id").GetString()!;
@@ -161,13 +161,18 @@ public sealed class WindowsAgent : IDisposable
             }
         }
     }
-    private static object[] Definitions(bool design,bool folder = false,bool feed = false)
+    private static object[] Definitions(bool design,bool folder = false,bool feed = false,bool workspace = false)
     {
         object Tool(string name,string description,string[] required,params string[] properties) => new { type = "function",name,description,inputSchema = new { type = "object",properties = properties.ToDictionary(key => key,key => new { type = "string" }),required,additionalProperties = false } };
         var itemTools = new[] { Tool("read_file","Read the selected TextPack and revision hash.",new[]{"path"},"path"),
           design ? Tool("propose_template","Preview a complete declarative template without writing.",new[]{"path","hash","templateJSON"},"path","hash","templateJSON","templateAuthoringSourceJSON")
           : Tool("write_file","Update selected TextPack with exact read hash, preserving assets.",new[]{"path","hash","markdown"},"path","hash","markdown","documentJSON","templateJSON","templateAuthoringSourceJSON") };
         if(folder && feed)itemTools=itemTools.Concat(new[]{Tool("propose_feed","Stage a feed subscription for owner review in the selected folder. Does not fetch or subscribe before approval. Return the review link.",new[]{"url"},"url","name")}).ToArray();
+        if(folder && workspace)itemTools=itemTools.Concat(new object[]{
+            Tool("describe_workspace_proposals","Read canonical schemas for reviewed asset and template actions. Call before proposing. Does not mutate anything.",Array.Empty<string>()),
+            new {type="function",name="propose_workspace_change",description="Stage a discovered asset/template command for owner review. Read current source/hash first. Supply canonical argumentsJSON without idempotency_key. Return the review link, not a completion claim. Applying a saved template is a separate proposal.",
+                inputSchema=new{type="object",properties=new{command=new{type="string",@enum=new[]{"add_item_asset","save_item_as_look","update_item_type","retire_document_template","set_item_template"}},argumentsJSON=new{type="string"}},required=new[]{"command","argumentsJSON"},additionalProperties=false}}
+        }).ToArray();
         return folder ? itemTools.Concat(new[] { Tool("search_files","Search titles and content within the selected folder.",new[]{"query"},"query"), Tool("list_files","List files in the selected folder.",Array.Empty<string>()), Tool("create_file","Create a TextPack in the selected folder. For a custom look supply matching complete documentJSON and templateJSON; snapshot title/body must match title/body.",new[]{"title","body"},"title","body","folder","kind","documentJSON","templateJSON") }).ToArray() : itemTools;
     }
     static bool FolderToolAllowed(string folder,string tool,JsonElement args) {
@@ -210,7 +215,7 @@ public sealed class WindowsAgent : IDisposable
             if(method == "item/tool/call" && value.TryGetProperty("id",out var callId)) {
                 var tool = Get(p,"tool"); var args = p.GetProperty("arguments");
                 var success = false; var text = "The tool is unavailable for this task.";
-                if(Get(p,"namespace") == "texttext" && (folderTask ? (tool=="propose_feed" ? allowFeedProposals && selectedPath.Length>0 : FolderToolAllowed(selectedPath,tool,args)) : Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file")))) {
+                if(Get(p,"namespace") == "texttext" && (folderTask ? (tool=="propose_feed" ? allowFeedProposals && selectedPath.Length>0 : tool is "describe_workspace_proposals" or "propose_workspace_change" ? allowFeedProposals && selectedPath.Length==0 : FolderToolAllowed(selectedPath,tool,args)) : Get(args,"path") == selectedPath && (tool == "read_file" || tool == (customizing ? "propose_template" : "write_file")))) {
                     await emit("texttext:vault-agent",new { type = "tool-call",taskId = id,tool,path = selectedPath });
                     try {
                         token.ThrowIfCancellationRequested();

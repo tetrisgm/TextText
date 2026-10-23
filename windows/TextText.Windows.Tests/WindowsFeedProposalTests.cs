@@ -26,6 +26,27 @@ using(var cancelled=new CancellationTokenSource()){cancelled.Cancel();try{await 
 handler.Callback=async(request,ct)=>{await Task.Yield();current=false;return new(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent("{\"message\":\"late result\"}")};};
 try{await adapter.StageAsync("Feeds",feedArgs,"stable",default);Check(false,"late result fenced");}catch(InvalidOperationException){Check(true,"late response after context retirement is not published");}
 current=true;
+var schemaNames=WindowsFeedProposal.WorkspaceCommands;
+// Same envelope/descriptor fields as GET /api/agent/commands; schemas are opaque and must survive unchanged.
+var schemaDescriptors=schemaNames.Concat(new[]{"delete_item"}).Select(name=>new{name,title=name,description="Canonical command schema",inputSchema=new{type="object",properties=new{item_id=new{type="string"}},required=new[]{"item_id"},additionalProperties=false},approvalRequired=true,invocation="texttext propose "+name+" --args '{...}'"}).ToArray();
+var discoveryReply=JsonSerializer.Serialize(new{commands=Array.Empty<object>(),proposals=schemaDescriptors,note="Run one with: texttext do <name> --args '{...}'"});
+handler.Callback=(request,ct)=>{requests++;target=request.RequestUri;Check(request.Method==HttpMethod.Get&&request.Content is null&&request.Headers.Authorization?.Scheme=="Bearer","workspace discovery is authenticated read-only GET");return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent(discoveryReply)});};
+var discovery=JsonDocument.Parse(await adapter.WorkspaceToolAsync("describe_workspace_proposals","",JsonSerializer.SerializeToElement(new{}),"discovery",default));
+Check(discovery.RootElement.GetRawText()==JsonSerializer.Serialize(schemaDescriptors.Take(5)),"root discovery preserves all five canonical descriptors and excludes other commands");
+handler.Callback=(request,ct)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent("{\"proposals\":[]}")});
+try{await adapter.WorkspaceToolAsync("describe_workspace_proposals","",JsonSerializer.SerializeToElement(new{}),"key",default);Check(false,"incomplete discovery refused");}catch(InvalidDataException){Check(true,"incomplete discovery refused");}
+handler.Callback=async(request,ct)=>{requests++;body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct)).RootElement.Clone();return new(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent(productionReply)};};
+foreach(var command in schemaNames){
+ var proposal=await adapter.WorkspaceToolAsync("propose_workspace_change","",JsonSerializer.SerializeToElement(new{command,argumentsJSON="{\"item_id\":\"captured-item\",\"expected_hash\":\"exact-hash\"}"}),"stable-native-key",default);
+ Check(body.GetProperty("name").GetString()=="proposal:"+command&&body.GetProperty("expectedWorkspaceId").GetString()=="captured-workspace"&&body.GetProperty("arguments").GetProperty("idempotency_key").GetString()=="stable-native-key"&&JsonDocument.Parse(proposal).RootElement.GetProperty("approvalRequired").GetBoolean(),"workspace proposal preserves command, captured authority, native retry key and review receipt");
+}
+foreach(var invalid in new[]{new{command="delete_item",argumentsJSON="{}"},new{command=schemaNames[0],argumentsJSON="[]"},new{command=schemaNames[0],argumentsJSON="{\"idempotency_key\":\"model\"}"}}){
+ var before=requests;try{await adapter.WorkspaceToolAsync("propose_workspace_change","",JsonSerializer.SerializeToElement(invalid),"key",default);Check(false,"invalid workspace proposal refused");}catch(InvalidDataException){Check(requests==before,"invalid workspace proposal refused before transport");}
+}
+try{await adapter.WorkspaceToolAsync("describe_workspace_proposals","Notes",JsonSerializer.SerializeToElement(new{}),"key",default);Check(false,"non-root workspace discovery refused");}catch(InvalidDataException){Check(true,"non-root workspace discovery refused");}
+current=false;
+try{await adapter.WorkspaceToolAsync("describe_workspace_proposals","",JsonSerializer.SerializeToElement(new{}),"key",default);Check(false,"retired workspace discovery refused");}catch(InvalidOperationException){Check(true,"retired workspace discovery refused");}
+current=true;
 handler.Callback=(request,ct)=>Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){RequestMessage=request,Content=new StringContent(JsonSerializer.Serialize(new{content=new[]{new{type="text",text=JsonSerializer.Serialize(reviewDetails)}}}))});
 Check(JsonDocument.Parse(await adapter.StageAsync("Feeds",feedArgs,"stable",default)).RootElement.GetProperty("proposalId").GetString()=="proposal-1","MCP text-content fallback preserves review receipt");
 foreach(var malformed in new[]{"{\"message\":\"old fabricated shape\"}","{\"structuredContent\":{\"approvalRequired\":true,\"proposalId\":\"id\",\"message\":\"missing URL\"}}","{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"failure\"}]}"}) {
