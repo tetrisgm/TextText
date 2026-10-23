@@ -40,14 +40,14 @@ public sealed partial class SyncEngine
         return files;
     }
     bool ReplacementBlockedForSync(string id) {
-        if(catalogHeldIDs.Contains(id))return true;
+        if(catalogHeldIDs.Contains(id)||pathCollisionHeldIDs.Contains(id))return true;
         if(!generationInspectionItems.Contains(id))return store.ReplacementBlocked(id);
         if(generationInspectionBlocked.Contains(id))return true;
         try{_=store.GenerationProtectionSnapshot(id,generationInspectionScope??throw new SharedAccountMismatchException());return false;}
         catch(Exception error)when(error is IOException or InvalidDataException or JsonException){generationInspectionBlocked.Add(id);return true;}
     }
     void AssertReadableForSync(string id) {
-        if(catalogHeldIDs.Contains(id))throw new FileChangedException();
+        if(catalogHeldIDs.Contains(id)||pathCollisionHeldIDs.Contains(id))throw new FileChangedException();
         if(!generationInspectionItems.Contains(id)){store.AssertReplacementReadable(id);return;}
         if(generationInspectionBlocked.Contains(id))throw new FileChangedException();
         _=store.GenerationProtectionSnapshot(id,generationInspectionScope??throw new SharedAccountMismatchException());

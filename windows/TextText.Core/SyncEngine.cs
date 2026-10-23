@@ -34,7 +34,7 @@ public sealed partial class SyncEngine
     public sealed record Operation(string Id,string Kind,string ItemId,string Path,string? Destination,string? Revision,string Hash,string? Payload,bool Conflicted=false,string? Lifecycle=null);
     public sealed record Incoming(string ItemId,string Path,string? OldPath,string? ExpectedHash,string Revision,string Payload,string? Lifecycle=null);
     public sealed record BinaryPending(string Id,string ItemId,string EntryPath,string? ExpectedHash,string? Lifecycle,string? BytesBase64,string SourceHash,bool Conflicted=false,string? PayloadHash=null,string? SourcePath=null);
-    public sealed class State { public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public FolderSyncBaseline? FolderBaseline {get;set;} public FolderSyncCommand? FolderCommand {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; [System.Text.Json.Serialization.JsonConverter(typeof(ProtectedSavedRename.MapConverter))] public Dictionary<string,ProtectedSavedRename.Record> ProtectedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
+    public sealed class State { public Dictionary<string,PathCollisionResolution> PathCollisions {get;set;}=[]; public string? AccountId {get;set;} [System.Text.Json.Serialization.JsonExtensionData] public Dictionary<string,JsonElement>? AdditionalData {get;set;} public WorkspaceCapabilities? Capabilities {get;set;} public List<string>? ManagedFolders {get;set;} public FolderSyncBaseline? FolderBaseline {get;set;} public FolderSyncCommand? FolderCommand {get;set;} public Incoming? PendingPull {get;set;} public int Version {get;set;}=1; public Dictionary<string,Baseline> Items {get;set;}=[]; public List<Operation> Outbox {get;set;}=[]; public Dictionary<string,Operation> SharedRenames {get;set;}=[]; [System.Text.Json.Serialization.JsonConverter(typeof(ProtectedSavedRename.MapConverter))] public Dictionary<string,ProtectedSavedRename.Record> ProtectedRenames {get;set;}=[]; public Dictionary<string,Dictionary<string,string>> BinaryBaselines {get;set;}=[]; public Dictionary<string,string> BinaryRevisions {get;set;}=[]; public List<BinaryPending> BinaryOutbox {get;set;}=[]; }
     readonly HashSet<string> collaborating=[];
     readonly WorkspaceWriterOwnership workspaceOwnership;
     readonly MirrorPolicy? mirrorPolicy;
@@ -174,9 +174,10 @@ public sealed partial class SyncEngine
                !System.Text.RegularExpressions.Regex.IsMatch(op.Hash,@"^[0-9a-f]{64}$")||!System.Text.RegularExpressions.Regex.IsMatch(op.Revision,@"^[0-9a-f]{64}$"))throw new InvalidDataException("Invalid saved file move.");
             _=store.Resolve(op.Path);_=store.Resolve(op.Destination);
         }
-        ValidateFolderState(result);
+        ValidatePathCollisions(result);ValidateFolderState(result);
         return result; }
     void Save(State state) {
+        ValidatePathCollisions(state);
         if(state.AccountId!=accountId)throw new SharedAccountMismatchException();
         if(state.SharedRenames.Count+state.ProtectedRenames.Count>1000)throw new InvalidDataException("Too many saved file moves.");
         if(state.ProtectedRenames.Count>0) {
@@ -196,7 +197,7 @@ public sealed partial class SyncEngine
                 Item=value.Items.GetValueOrDefault(id),Outbox=value.Outbox.Where(op=>op.ItemId==id).ToArray(),
                 Rename=value.SharedRenames.GetValueOrDefault(id),ProtectedRename=value.ProtectedRenames.TryGetValue(id,out var protectedRename)?Convert.ToBase64String(ProtectedSavedRename.ArchiveBytes(protectedRename)):null,Binary=value.BinaryOutbox.Where(op=>op.ItemId==id).ToArray(),
                 Assets=value.BinaryBaselines.GetValueOrDefault(id),BinaryRevision=value.BinaryRevisions.GetValueOrDefault(id),
-                Pull=value.PendingPull?.ItemId==id?value.PendingPull:null
+                Pull=value.PendingPull?.ItemId==id?value.PendingPull:null,PathCollisions=value.PathCollisions.Values.Where(record=>record.Review.LocalItemId==id||record.Review.RemoteItemId==id).ToArray()
             });
             foreach(var pair in blocked)if(Snapshot(before,pair.Key)!=Snapshot(state,pair.Key))throw new RetainedFileReplacement.RequiredException(pair.Value);
         }

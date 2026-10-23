@@ -33,6 +33,7 @@ static class Test
      assert(Retained(engine),"portable unavailable queued staging remains exact with no eligible retry across restart");
  }
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--path-collision"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/",StringComparison.Ordinal))basis="/private"+basis;await PathCollisionRecoveryTests.Run(Path.Combine(basis,"texttext-collision-"+Guid.NewGuid()),Assert);return;}
  if(args.SequenceEqual(new[]{"--catalog-quarantine"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/",StringComparison.Ordinal))basis="/private"+basis;await CatalogQuarantineTests.Run(Path.Combine(basis,"texttext-catalog-"+Guid.NewGuid()),Assert);return;}
  if(args.SequenceEqual(new[]{"--registry-index-reads"})){var fixture=Path.Combine(Path.GetTempPath(),"texttext-registry-index-"+Guid.NewGuid());RegistryIndexReadTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
  if(args.SequenceEqual(new[]{"--repeated-recovery-inventory"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/"))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-repeated-recovery-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);RepeatedRecoveryInventoryTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
@@ -73,6 +74,7 @@ static class Test
  var policyRefused=false;try{await unavailableEngine.SyncAsync();}catch(IOException){policyRefused=true;}
  Assert(policyRefused&&unavailableRemote.ManifestCount==0&&unavailableRemote.UploadCount==0,"missing policy refuses before remote discovery or mutation");
  Assert(unavailableStore.Describe(unavailableFile.Path).Hash==unavailableFile.Hash && (beforeUnavailable is null?!File.Exists(unavailablePath):File.ReadAllBytes(unavailablePath).SequenceEqual(beforeUnavailable)),"missing policy preserves file and durable sync journal");
+ await PathCollisionRecoveryTests.Run(Path.Combine(temp,"path-collision"),Assert);
  await CatalogQuarantineTests.Run(Path.Combine(temp,"catalog-quarantine"),Assert);
  await ForegroundAdmissionTests.Run(Path.Combine(temp,"foreground-admission"),Assert);
  await DocumentOwnershipTests.Run(temp,Assert);
