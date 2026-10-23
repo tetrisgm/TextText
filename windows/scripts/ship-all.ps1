@@ -21,6 +21,8 @@ $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Windows release requires elevated OpenSSH for symlink tests.' }
 $receipt = Join-Path $root ('.texttext/ship-all-' + $RunId + '.json')
 if ($Mode -eq 'Preflight') {
+  & powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/test-quit-normally.ps1
+  if ($LASTEXITCODE -ne 0) { throw 'Normal quit regression tests failed.' }
   Write-Output "Windows preflight: $Commit"
   exit 0
 }
@@ -38,8 +40,29 @@ if ($Mode -eq 'Build') {
 }
 $built = Get-Content -Raw -LiteralPath $receipt | ConvertFrom-Json
 if ($built.commit -ne $Commit) { throw 'Windows candidate commit mismatch.' }
-foreach ($app in @(Get-Process TextText -ErrorAction SilentlyContinue)) {
-  if (!$app.CloseMainWindow() -or !$app.WaitForExit(120000)) { throw 'TextText did not quit normally; installation refused.' }
+. (Join-Path $PSScriptRoot 'quit-normally.ps1')
+$quitReceipt = Join-Path $root ('.texttext/ship-all-quit-' + $RunId + '-' + [guid]::NewGuid().ToString('N') + '.json')
+$taskName = 'TextText-normal-quit-' + [guid]::NewGuid().ToString('N')
+try {
+  # SSH cannot address the interactive desktop's windows. Only request normal
+  # quit in this temporary task; all builds, backups and installs stay here.
+  $helper = Join-Path $PSScriptRoot 'quit-normally.ps1'
+  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$helper`" -ReceiptPath `"$quitReceipt`""
+  $interactive = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+  $settings = New-ScheduledTaskSettingsSet -Priority 4 -ExecutionTimeLimit (New-TimeSpan -Seconds 150)
+  Register-ScheduledTask -TaskName $taskName -Action $action -Principal $interactive -Settings $settings | Out-Null
+  Start-ScheduledTask -TaskName $taskName
+  $deadline = (Get-Date).AddSeconds(160)
+  while ((Get-Date) -lt $deadline) {
+    if ((Test-Path -LiteralPath $quitReceipt) -and (Get-ScheduledTask -TaskName $taskName).State -ne 'Running') { break }
+    Start-Sleep -Seconds 1
+  }
+  Assert-TextTextQuitReceipt $quitReceipt @(Get-Process TextText -ErrorAction SilentlyContinue)
+  if ((Get-ScheduledTask -TaskName $taskName).State -eq 'Running' -or (Get-ScheduledTaskInfo -TaskName $taskName).LastTaskResult -ne 0) { throw 'Normal quit task did not finish successfully; installation refused.' }
+} finally {
+  if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+  }
 }
 $backup = Join-Path $env:LOCALAPPDATA ('TextText-backups/ship-all-' + $RunId)
 if (Test-Path -LiteralPath $backup) { throw 'Backup destination already exists.' }
