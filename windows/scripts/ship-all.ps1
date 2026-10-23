@@ -2,7 +2,8 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$Commit,
   [Parameter(Mandatory=$true)][ValidateSet('Preflight','Build','Install')][string]$Mode,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[a-zA-Z0-9-]+$')][string]$RunId
+  [Parameter(Mandatory=$true)][ValidatePattern('^[a-zA-Z0-9-]+$')][string]$RunId,
+  [string]$PowerShell7Path
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -19,8 +20,14 @@ if ((& git rev-parse HEAD) -ne $Commit) { throw 'Windows and Mac commits differ.
 if ($LASTEXITCODE -ne 0) { throw 'Windows checkout preflight failed.' }
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Windows release requires elevated OpenSSH for symlink tests.' }
+. (Join-Path $PSScriptRoot 'backup-runtime.ps1')
+$backupPowerShell = Get-TextTextBackupPowerShell -ExplicitPath $PowerShell7Path
 $receipt = Join-Path $root ('.texttext/ship-all-' + $RunId + '.json')
 if ($Mode -eq 'Preflight') {
+  & node --test windows/scripts/backup-directory.test.mjs windows/scripts/backup-runtime.test.mjs
+  if ($LASTEXITCODE -ne 0) { throw 'Backup regression tests failed.' }
+  & powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/test-backup-runtime.ps1 -PowerShell7 $backupPowerShell
+  if ($LASTEXITCODE -ne 0) { throw 'Backup runtime regression tests failed.' }
   & powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/test-quit-normally.ps1
   if ($LASTEXITCODE -ne 0) { throw 'Normal quit regression tests failed.' }
   Write-Output "Windows preflight: $Commit"
@@ -66,33 +73,8 @@ try {
 }
 $backup = Join-Path $env:LOCALAPPDATA ('TextText-backups/ship-all-' + $RunId)
 if (Test-Path -LiteralPath $backup) { throw 'Backup destination already exists.' }
-New-Item -ItemType Directory $backup | Out-Null
-$sources = @{
-  vault = (Join-Path $env:USERPROFILE 'TextText')
-  Sync = (Join-Path $env:LOCALAPPDATA 'TextText/Sync')
-  'account.dpapi' = (Join-Path $env:LOCALAPPDATA 'TextText/account.dpapi')
-}
-function Inventory([string]$Path) {
-  $entries = @(Get-ChildItem -LiteralPath $Path -Force -Recurse)
-  if ($entries | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw 'Backup requires review of a reparse point; nothing installed.' }
-  @($entries | Where-Object { !$_.PSIsContainer } | Sort-Object FullName | ForEach-Object {
-    [ordered]@{path=$_.FullName.Substring($Path.Length); hash=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
-  }) | ConvertTo-Json -Compress -Depth 4
-}
-foreach ($name in $sources.Keys) {
-  $source = $sources[$name]
-  if (!(Test-Path -LiteralPath $source)) { throw "Backup source missing: $name" }
-  $target = Join-Path $backup $name
-  if (Test-Path -LiteralPath $source -PathType Container) {
-    $before = Inventory $source
-    Copy-Item -LiteralPath $source -Destination $target -Recurse
-    if ($before -ne (Inventory $source) -or $before -ne (Inventory $target)) { throw "Backup mismatch: $name" }
-  } else {
-    $before = (Get-FileHash -LiteralPath $source).Hash
-    Copy-Item -LiteralPath $source -Destination $target
-    if ($before -ne (Get-FileHash -LiteralPath $source).Hash -or $before -ne (Get-FileHash -LiteralPath $target).Hash) { throw "Backup mismatch: $name" }
-  }
-}
+& $backupPowerShell -NoProfile -File (Join-Path $PSScriptRoot 'backup-stopped.ps1') -Destination $backup
+if ($LASTEXITCODE -ne 0) { throw 'Stopped backup verification failed; nothing installed.' }
 if (Get-Process TextText -ErrorAction SilentlyContinue) { throw 'TextText restarted during backup.' }
 & powershell -NoProfile -ExecutionPolicy Bypass -File windows/scripts/install.ps1 -Candidate $built.candidate
 if ($LASTEXITCODE -ne 0) { throw 'Windows installation failed.' }

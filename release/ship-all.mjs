@@ -15,8 +15,10 @@ function run(command, args, env = {}, onSuccess) {
 }
 function output(command, args) { return execFileSync(command, args, { cwd: root, encoding: 'utf8' }).trim(); }
 const git = (...args) => output('git', args);
-function windowsArgs(mode, commit, runId) {
-  const command = `& "$env:USERPROFILE/dev/texttext/windows/scripts/ship-all.ps1" -Mode ${mode} -Commit ${commit} -RunId ${runId}`;
+export function windowsArgs(mode, commit, runId, powerShell7Path = process.env.TEXTTEXT_WINDOWS_POWERSHELL7) {
+  if (powerShell7Path && !/^[A-Za-z]:[\\/]/.test(powerShell7Path)) throw new Error('TEXTTEXT_WINDOWS_POWERSHELL7 must be an absolute Windows path.');
+  const runtimeArgument = powerShell7Path ? ` -PowerShell7Path '${powerShell7Path.replaceAll("'", "''")}'` : '';
+  const command = `& "$env:USERPROFILE/dev/texttext/windows/scripts/ship-all.ps1" -Mode ${mode} -Commit ${commit} -RunId ${runId}${runtimeArgument}`;
   return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'pc', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')];
 }
 function windows(mode, commit, runId, onSuccess) {
