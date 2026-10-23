@@ -819,3 +819,22 @@ it("replays lost feed proposal staging response without a second proposal",async
  const first=await createWorkspaceWriteProposal(input,h.dependencies),retry=await createWorkspaceWriteProposal(input,h.dependencies);expect(retry).toEqual(first);expect(h.repository.rows.size).toBe(1);
  await expect(createWorkspaceWriteProposal({...input,arguments:{...input.arguments,url:"https://other.example/feed"}},h.dependencies)).rejects.toThrow("reused");expect(h.repository.rows.size).toBe(1);expect(h.execute).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["save_item_as_look", { id: "22222222-2222-4222-8222-222222222222", name: "Saved look", if_match_hash: "a".repeat(64) }],
+  ["set_item_template", { id: "22222222-2222-4222-8222-222222222222", template_id: "texttext.note", template_version: 1, if_match_hash: "a".repeat(64) }],
+  ["update_item_type", { template_id: "look-1", base_version: 1, source_item_id: "22222222-2222-4222-8222-222222222222", source_hash: "a".repeat(64), blueprint: { name: "Revised look", fields: [], collection: { layout: "list" } } }],
+  ["retire_document_template", { template_id: "look-1", source_item_id: "22222222-2222-4222-8222-222222222222", source_hash: "a".repeat(64) }],
+  ["add_item_asset", { id: "22222222-2222-4222-8222-222222222222", source_url: "https://example.com/image.png", placement: "cover", if_match_hash: "a".repeat(64) }],
+] as const)("replays lost native %s staging without a duplicate review", async (tool, args) => {
+  const h = harness();
+  h.dependencies.resolveItems = async () => new Map([["22222222-2222-4222-8222-222222222222", {
+    title: "Source", folderPath: "Notes", visibility: "private" as const, revision: "a".repeat(64),
+  }]]);
+  const input = { actor: { ...owner, folderAgentPath: "" }, tool,
+    arguments: { ...args, idempotency_key: "native-operation-one" }, expectedWorkspaceId: "blog-1" };
+  const first = await createWorkspaceWriteProposal(input, h.dependencies);
+  expect(await createWorkspaceWriteProposal(input, h.dependencies)).toEqual(first);
+  expect(h.repository.rows.size).toBe(1);
+  expect(h.execute).not.toHaveBeenCalled();
+});

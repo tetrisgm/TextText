@@ -436,7 +436,14 @@ export async function createWorkspaceWriteProposal(
   if (!owner) throw new Error("Only the workspace owner can stage a write.");
   if (input.expectedWorkspaceId !== undefined && input.expectedWorkspaceId !== owner.workspace.id) throw new Error("The selected workspace does not match this connection.");
   const requested = validateWorkspaceWriteProposal(input.tool, input.arguments);
-  if (requested.name === "add_feed" && input.stagingKey === undefined) input = { ...input, stagingKey: createHash("sha256").update(`feed:${String(requested.arguments.idempotency_key)}`).digest("hex") };
+  const retryKey = requested.arguments.idempotency_key;
+  const keyedNativeCommands = ["add_feed", "add_item_asset", "save_item_as_look", "update_item_type", "retire_document_template", "set_item_template"];
+  if (input.stagingKey === undefined && (requested.name === "add_feed" || input.expectedWorkspaceId !== undefined) && keyedNativeCommands.includes(requested.name) && typeof retryKey === "string" && retryKey.trim()) {
+    // Keep feed identities compatible with already-staged proposals. Other
+    // canonical operations cannot share a review identity across tool names.
+    const namespace = requested.name === "add_feed" ? "feed" : requested.name;
+    input = { ...input, stagingKey: createHash("sha256").update(`${namespace}:${retryKey}`).digest("hex") };
+  }
   if (input.actor.folderAgentPath !== undefined) {
     const boundary = input.actor.folderAgentPath;
     if (!folderAgentAllowsTool(boundary, requested.name)) throw new Error("This task can only work in its selected folder.");
