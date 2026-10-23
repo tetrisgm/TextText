@@ -33,6 +33,8 @@ static class Test
      assert(Retained(engine),"portable unavailable queued staging remains exact with no eligible retry across restart");
  }
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--repeated-recovery-inventory"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/"))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-repeated-recovery-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);RepeatedRecoveryInventoryTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
+ if(args.SequenceEqual(new[]{"--path-inspection"})){var pathBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&pathBase.StartsWith("/var/"))pathBase="/private"+pathBase;var pathTemp=Path.Combine(pathBase,"texttext-path-inspection-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(pathTemp);PathInspectionTests.Run(pathTemp,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+pathTemp);return;}
  if(args.SequenceEqual(new[]{"--observed-absence"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/",StringComparison.Ordinal))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-observed-absence-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);MirrorGenerationTests.Run(Assert);await MirrorGenerationTests.PolicyVectors(Assert);ObservedAbsenceProfileTests.Run(fixture,Assert);await GenerationTransportTests.Run(Assert);await ProtectedSavedRenameIntegrationTests.RunAbsence(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
 
  if(args.SequenceEqual(new[]{"--local-rename-fixtures"})){var root=Path.Combine(Path.GetTempPath(),"texttext-local-rename-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await LocalRenameTests.Run(root,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+root);return;}
@@ -58,6 +60,8 @@ static class Test
  }
  if(args.Length>0){if(args.Length!=2)throw new InvalidOperationException("Unknown test mode.");if(args[0]=="--resume-account-adoption-fixture")AccountStateAdoptionTests.ResumeFixture(args[1]);else if(args[0]=="--hold-document-owner-fixture")await DocumentOwnershipTests.Hold(args[1]);else throw new InvalidOperationException("Unknown test mode.");return;}
  var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
+ PathInspectionTests.Run(temp,Assert);
+ RepeatedRecoveryInventoryTests.Run(temp,Assert);
  var unavailableStore=new TextPackStore(Path.Combine(temp,"policy-unavailable"),Path.Combine(temp,"policy-unavailable-state"));
  var unavailableFile=unavailableStore.Write("Note.textpack",Pack());var unavailableRemote=new Fake();
  var unavailableEngine=new SyncEngine(unavailableStore,unavailableRemote);
@@ -66,6 +70,7 @@ static class Test
  var policyRefused=false;try{await unavailableEngine.SyncAsync();}catch(IOException){policyRefused=true;}
  Assert(policyRefused&&unavailableRemote.ManifestCount==0&&unavailableRemote.UploadCount==0,"missing policy refuses before remote discovery or mutation");
  Assert(unavailableStore.Describe(unavailableFile.Path).Hash==unavailableFile.Hash && (beforeUnavailable is null?!File.Exists(unavailablePath):File.ReadAllBytes(unavailablePath).SequenceEqual(beforeUnavailable)),"missing policy preserves file and durable sync journal");
+ await ForegroundAdmissionTests.Run(Path.Combine(temp,"foreground-admission"),Assert);
  await DocumentOwnershipTests.Run(temp,Assert);
  await MirrorPolicyTests.Run(Assert);await SharedPathPolicyTests.Run(temp,Assert);
  await MirrorLifecycleTests.Run(temp,Assert);await MirrorTombstoneIntegrationTests.Run(temp,Assert);await ProtectedRenameTransportTests.Run(Assert);SharedRenameProfileTests.Run(temp,Assert);

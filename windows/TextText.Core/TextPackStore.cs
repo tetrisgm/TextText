@@ -40,7 +40,7 @@ public sealed partial class TextPackStore
     static void CheckLinks(string path)
     {
         for (var p = path; !string.IsNullOrEmpty(p); p = System.IO.Path.GetDirectoryName(p))
-            if ((File.Exists(p) || Directory.Exists(p)) && ProviderPaths.IsUnsafeReparse(p)) throw new IOException("Linked folders are not supported.");
+            if (ProviderPaths.IsUnsafeReparseIfPresent(p)) throw new IOException("Linked folders are not supported.");
     }
     public string Resolve(string path)
     {

@@ -15,6 +15,7 @@ void Assert(bool condition, string name) { Console.WriteLine((condition ? "ok   
 await PrivateActorWorkspaceTests.Run(Assert);
 if(args.Contains("--isolated-workspace-only"))return failures==0?0:1;
 #endif
+await BridgeConstructionTests.Run(Assert);
 await AccountIdentityTests.Run(Assert);
 static byte[] Pack(string body, string id) {
     using var output = new MemoryStream();
@@ -29,6 +30,7 @@ var temp = Path.Combine(temporaryRoot, "texttext-windows-bridge-" + Guid.NewGuid
 var root = Path.Combine(temp, "workspace"); var state = Path.Combine(temp, "state");
 Directory.CreateDirectory(root); Directory.CreateDirectory(state);
 try {
+    await ConnectionStatusTests.Run(temp,Assert);
     await AccountBridgeTests.Run(temp,Assert);
     await ReplacementBridgeTests.Run(temp,Assert);
     await ExternalAssetReopenTests.Run(temp,Assert);
@@ -55,7 +57,7 @@ try {
         }
         var listing = await Bounded(bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
         var listed = clock.Elapsed;
-        Assert(listed < WindowsBridge.GateWait + TimeSpan.FromSeconds(3), $"listing answers while the sync pass holds the gate ({listed.TotalMilliseconds:F0} ms)");
+        Assert(listed < TimeSpan.FromSeconds(1), $"listing answers immediately while the sync pass holds the gate ({listed.TotalMilliseconds:F0} ms)");
         Assert(listing.GetProperty("items").GetArrayLength() == 1 && listing.GetProperty("items")[0].GetProperty("itemId").GetString() == "startup-1", "listing contains the local file");
         Assert(listing.GetProperty("items")[0].GetProperty("canEditContent").GetBoolean() && listing.GetProperty("fullAccess").GetBoolean(), "owner default permissions apply before the gate is available");
         clock.Restart();
@@ -84,6 +86,15 @@ try {
         var authoritative = Json(await bridge.InvokeAsync("files.list", Json(new { }), deadline.Token));
         Assert(clock.Elapsed < TimeSpan.FromSeconds(1), "listing with a free gate does not pay the bounded wait");
         Assert(!authoritative.GetProperty("fullAccess").GetBoolean() && !authoritative.GetProperty("items")[0].GetProperty("canEditContent").GetBoolean(), "the refreshed listing carries the authoritative permissions");
+        var engine=(SyncEngine)typeof(WindowsBridge).GetField("sync",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(bridge)!;
+        var syncGate=(SemaphoreSlim)typeof(SyncEngine).GetField("gate",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(engine)!;
+        await syncGate.WaitAsync(deadline.Token);
+        try {
+            clock.Restart();
+            var retained=Json(await bridge.InvokeAsync("files.list",Json(new { }),deadline.Token));
+            Assert(clock.Elapsed<TimeSpan.FromSeconds(1),"cached permissions answer immediately during a later sync pass");
+            Assert(!retained.GetProperty("fullAccess").GetBoolean()&&!retained.GetProperty("items")[0].GetProperty("canEditContent").GetBoolean(),"busy sync preserves restrictive cached permissions instead of restoring owner defaults");
+        } finally {syncGate.Release();}
         Assert(new TextPackStore(root, state).Describe(local.Path).Hash == local.Hash, "the local file is untouched");
 
         // An external writer may briefly replace a TextPack with incomplete
@@ -118,6 +129,8 @@ try {
         Assert(available.CanWrite,"native retirement releases the cross-process sync lock");
     var refusedAfter=false;try{await retiring.InvokeAsync("files.list",Json(new{}),CancellationToken.None);}catch(Exception error)when(error is ObjectDisposedException or OperationCanceledException){refusedAfter=true;}
     Assert(refusedAfter,"a retired bridge rejects later calls");
+    await ReadinessAdmissionTests.Run(temp,Assert);
+    await ReadinessAdmissionTests.RunFlood(temp,Assert);
 } finally { try { Directory.Delete(temp, true); } catch { /* best effort */ } }
 Console.WriteLine(failures == 0 ? "All Windows bridge startup tests passed." : failures + " failure(s).");
 return failures == 0 ? 0 : 1;

@@ -73,7 +73,7 @@ public static class RetainedFileReplacement
     {
         for (var current = Path.GetFullPath(path); !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current)) {
             if(verified?.Contains(current)==true)break;
-            if ((File.Exists(current) || Directory.Exists(current)) && ProviderPaths.IsUnsafeReparse(current))
+            if (ProviderPaths.IsUnsafeReparseIfPresent(current))
                 throw new IOException("Linked recovery paths are not supported.");
             verified?.Add(current);
         }

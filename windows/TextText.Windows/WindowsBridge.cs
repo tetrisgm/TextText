@@ -40,12 +40,32 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     WorkspaceInventory? lastKnownInventory;
     long inventoryVersion;
     string? lastStatus;
+    bool hasSyncIssues;
+    long remoteManifestCount, lastRemoteManifestUtcTicks;
+    string? schedulerFailure;
+    void RemoteManifestReceived() {
+        Interlocked.Exchange(ref lastRemoteManifestUtcTicks, DateTimeOffset.UtcNow.Ticks);
+        Interlocked.Increment(ref remoteManifestCount);
+    }
+    // Snapshot and events share one conservative readiness contract. A retained
+    // sync issue remains visible even when the last remote request succeeded.
+    object ConnectionStatus() => new {
+        connected = true, available = true, connecting = schedulerFailure is null && lastStatus is null,
+        onlineReady = schedulerFailure is null && lastStatus == "ready", hasConflicts = hasSyncIssues,
+        authenticationRequired = lastStatus == "auth-required",
+        remoteManifestResponses = Interlocked.Read(ref remoteManifestCount),
+        lastRemoteManifestUtc = Interlocked.Read(ref lastRemoteManifestUtcTicks) is var ticks && ticks > 0 ? new DateTimeOffset(ticks, TimeSpan.Zero).ToString("O") : null,
+        schedulerFailure,
+        message = schedulerFailure is null ? null : "Sync is paused. Restart TextText to reconnect.",
+        workspaceId = context.WorkspaceId,
+        webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri
+    };
     int permissionsChanged;
     long durabilityVersion, notifiedDurabilityVersion;
     // Last permissions read under the sync gate. Startup listings reuse it while
     // a remote sync pass holds the gate instead of leaving the renderer blank.
     (WorkspaceCapabilities? Capabilities, IReadOnlyDictionary<string,bool> Items)? knownPermissions;
-    /// <summary>Longest a read-only listing or readiness query waits for the sync gate. The renderer gives up on bootstrap reads after 8 seconds and lists twice.</summary>
+    /// <summary>Longest a readiness query waits for the sync gate. Listings use an immediate permission snapshot or their existing fallback.</summary>
     public static readonly TimeSpan GateWait = TimeSpan.FromSeconds(2);
 
     public static TextPackStore OpenStore(string root,Uri origin,string workspaceId,string? stateDirectory=null) {
@@ -69,6 +89,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
         notification = new(_ => { if (!lifetime.IsCancellationRequested) _ = context.Emit("texttext:vault-changed", new { }); }, null, Timeout.Infinite, Timeout.Infinite);
         files.Changed += Changed;
         sync.DurabilityChanged += SyncStateChanged;
+        sync.RemoteManifestReceived += RemoteManifestReceived;
         sync.CapabilitiesChanged += PermissionStateChanged;
         watcher = new(context.Root) { IncludeSubdirectories = true, NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size };
         watcher.Changed += FileChanged; watcher.Created += FileChanged; watcher.Deleted += FileChanged; watcher.Renamed += FileChanged;
@@ -122,37 +143,50 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
 
     async Task Run()
     {
+        // Busy or deferred admission does not discharge a yielded full pass.
+        var rerunRequired = false;
         var failures = 0; var localWake = false; var lastRemotePass = DateTimeOffset.MinValue;
         try {
             while (!lifetime.IsCancellationRequested) {
                 var outcome="success";
+
                 try {
                     // Remote discovery remains a separate read cadence. The shared
                     // policy owns all retry and local-change debounce timing.
                     var localOnly = localWake && failures == 0 && DateTimeOffset.UtcNow - lastRemotePass < TimeSpan.FromSeconds(30);
-                    if (!localOnly) lastRemotePass = DateTimeOffset.UtcNow;
-                    try { await sync.SyncAsync(lifetime.Token, localChangesOnly: localOnly); }
+                    SyncEngine.PassOutcome pass;
+                    try { pass = await sync.SyncPassAsync(lifetime.Token, localChangesOnly: localOnly); }
                     finally {
                         if(Interlocked.Exchange(ref permissionsChanged,0)!=0 && !lifetime.IsCancellationRequested) await context.Emit("texttext:vault-changed",new { });
                     }
-                    var status = sync.Status.Error is null ? "ready" : "conflict";
+                    if (pass == SyncEngine.PassOutcome.ForegroundYield) rerunRequired = true;
+                    else if (pass == SyncEngine.PassOutcome.Completed) rerunRequired = false;
+                    if(rerunRequired) lastRemotePass=DateTimeOffset.MinValue;
+                    else if(pass==SyncEngine.PassOutcome.Completed && !localOnly) lastRemotePass=DateTimeOffset.UtcNow;
+                    if(pass==SyncEngine.PassOutcome.Completed) {
+                    hasSyncIssues = sync.Status.Error is not null;
+                    var status = hasSyncIssues ? "conflict" : "ready";
                     var completedVersion = Volatile.Read(ref durabilityVersion);
                     if (lastStatus != status || notifiedDurabilityVersion != completedVersion) {
                         lastStatus = status; notifiedDurabilityVersion = completedVersion;
-                        await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = true, hasConflicts = status == "conflict" });
+                        await context.Emit("texttext:vault-sync-status", ConnectionStatus());
+                    }
                     }
                 } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { break; }
                 catch (Exception error) {
                     outcome=MirrorFailure.Outcome(error);
+                    if (outcome == "conflict") hasSyncIssues = true;
                     var status=outcome=="conflict" ? "conflict" : outcome=="auth-required" ? "auth-required" : "offline";
-                    if (lastStatus != status) { lastStatus = status; await context.Emit("texttext:vault-sync-status", new { connected = true, available = true, onlineReady = false, hasConflicts = status == "conflict", authenticationRequired=outcome=="auth-required" }); }
+                    if (lastStatus != status) { lastStatus = status; await context.Emit("texttext:vault-sync-status", ConnectionStatus()); }
                 }
                 MirrorScheduleDecision decision;
                 try {
                     if(mirrorPolicy is null)throw new MirrorPolicyUnavailableException("The shared sync policy is unavailable.");
-                    decision=await mirrorPolicy.ScheduleAsync(new(outcome,failures,sync.HasEligiblePending,false),lifetime.Token);
+                    decision=await mirrorPolicy.ScheduleAsync(new(outcome,failures,sync.HasEligiblePending,rerunRequired),lifetime.Token);
                 } catch(OperationCanceledException) when(lifetime.IsCancellationRequested) { break; }
-                catch {
+                catch (Exception error) {
+                    schedulerFailure = MirrorFailure.Outcome(error);
+                    await context.Emit("texttext:vault-sync-status", ConnectionStatus());
                     // No executable policy means no background writer or invented
                     // native retry policy. Reopening creates a new fenced host.
                     await Task.Delay(Timeout.Infinite,lifetime.Token);break;
@@ -261,7 +295,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     {
         ct.ThrowIfCancellationRequested();
         switch (method) {
-            case "files.connection": return new { connected = true, available = true, onlineReady = lastStatus == "ready", hasConflicts = lastStatus == "conflict", webURL = new Uri(context.Origin, "/vault/" + context.WorkspaceId).AbsoluteUri };
+            case "files.connection": return ConnectionStatus();
             case "files.restoreReconcile": {
                 var itemId=Required(p,"itemId");await sync.ReconcileRestoredAsync(itemId,Required(p,"relativePath"),Required(p,"operationId"),ct);
                 Volatile.Write(ref inventory,null);
@@ -363,7 +397,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
                 var snapshot = Inventory();
                 var items = snapshot.Files;
                 var owner = context.Access == "owner";
-                var read = await BoundedGateRead(async gated => (await sync.CapabilitiesAsync(gated), await sync.FilePermissionsAsync(items, owner, gated)), ct);
+                var read = sync.TryListingPermissions(items, owner);
                 if (read is { } current) knownPermissions = current;
                 else {
                     // The remote pass holds the gate. Serve the last authoritative permissions
@@ -490,7 +524,7 @@ public sealed class WindowsBridge : INativeWorkspaceBridge
     private async Task RetireCoreAsync()
     {
         mirrorPolicy?.Retire();
-        lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed; sync.DurabilityChanged -= SyncStateChanged; sync.CapabilitiesChanged -= PermissionStateChanged;
+        lifetime.Cancel(); agent.Dispose(); watcher.Dispose(); notification.Dispose(); files.Changed -= Changed; sync.RemoteManifestReceived -= RemoteManifestReceived; sync.DurabilityChanged -= SyncStateChanged; sync.CapabilitiesChanged -= PermissionStateChanged;
         // Await the worker and every entered bridge operation before releasing
         // editing leases. Recovery can then prove that this writer has retired.
         try { await worker; }

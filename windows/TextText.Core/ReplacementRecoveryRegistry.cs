@@ -178,6 +178,7 @@ public sealed partial class ReplacementRecoveryRegistry
             }
             if (Path.GetFileName(name) != entry.Operation.ToString("D") + ".json" || OperatingSystem.IsWindows()&&(itemId is not null&&entry.ItemId!=itemId||movePath is not null&&(entry.Kind!="move"||!SameMovePath(entry.Path,movePath)&&!SameMovePath(entry.SourcePath,movePath)))) throw new InvalidDataException("Replacement registry name or identity mismatch.");
             Validate(entry,verifyOwner:false,validatePaths:validatedTargets.Add(entry.Path+"\0"+entry.RecoveryPath+(entry.RecoveryPath is null?"":"\0"+entry.Operation.ToString("D"))),verified:verified);
+            removalObservation?.Invoke("registryEntryValidated");
             if(entry.OwnerHash!=ownerHash)throw new InvalidDataException("Replacement registry owner changed.");
             if((itemId is null||entry.ItemId==itemId)&&(movePath is null||entry.Kind=="move"&&(SameMovePath(entry.Path,movePath)||SameMovePath(entry.SourcePath,movePath))))result.Add(entry);
         }

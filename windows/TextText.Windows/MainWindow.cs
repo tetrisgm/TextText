@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window
     private INativeWorkspaceBridge? bridge;
     private string root = "";
     private bool closing, transitioning;
+    private long workspaceOpenGeneration;
     private bool closeAfterActivation;
     private readonly RendererFlushGuard flushGuard = new();
     private readonly string? webViewProfile;
@@ -188,7 +189,11 @@ public sealed partial class MainWindow : Window
     }
     private async Task OpenWorkspace(string? selectedRoot = null, Action? beforeCommit = null, AvailableWorkspace? replacement = null, Func<Task>? prepareCommit = null)
     {
+        var generation = ++workspaceOpenGeneration;
+        var stageInitial = bridge is null && web is null;
         var identity = account ?? throw new InvalidOperationException("Sign in required");
+        bool IsCurrentOpen() => generation == workspaceOpenGeneration && ReferenceEquals(account, identity) && !lifetime.IsCancellationRequested;
+        void RequireCurrentOpen() { lifetime.Token.ThrowIfCancellationRequested(); if (!IsCurrentOpen()) throw new SharedAccountMismatchException(); }
         var active = identity with { WorkspaceId = replacement?.Id ?? ActiveWorkspaceId, Name = replacement?.Name ?? ActiveWorkspaceName };
         if(!Guid.TryParse(active.WorkspaceId,out _)) throw new InvalidOperationException("Invalid workspace");
 #if TEXTTEXT_STRESS_ACTOR
@@ -216,7 +221,9 @@ public sealed partial class MainWindow : Window
         {
         var profile = webViewProfile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"TextText","WebView2",active.AccountId ?? "legacy",active.WorkspaceId);
         var environment = await CoreWebView2Environment.CreateAsync(null,profile);
+        RequireCurrentOpen();
         await nextWeb.EnsureCoreWebView2Async(environment);
+        RequireCurrentOpen();
         var core = nextWeb.CoreWebView2;
         var policyPageReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         core.NavigationCompleted += (_,e) => {
@@ -244,20 +251,26 @@ public sealed partial class MainWindow : Window
         core.WindowCloseRequested += (_,_) => { _ = RequestClose(); };
         core.WebMessageReceived += Receive;
         if (prepareCommit is not null) await prepareCommit();
-        if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
-        INativeWorkspaceBridge? CreateBridge() => WorkspaceFactory?.Invoke(new(nextRoot, active.WorkspaceId, Origin,
+        RequireCurrentOpen();
+        var factory = WorkspaceFactory;
+        var context = new WorkspaceContext(nextRoot, active.WorkspaceId, Origin,
             () => Task.FromResult(active.Token),
             (name, detail) => EmitForView(nextWeb, name, detail), replacement?.Access ?? selectedWorkspace?.Access ?? "owner", active.AccountId,
-            () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task)));
-        try { nextBridge = CreateBridge(); }
+            () => CreateMirrorPolicy(nextWeb, active, policyPageReady.Task));
+        INativeWorkspaceBridge? CreateBridge() => factory?.Invoke(context);
+        Task<INativeWorkspaceBridge?> Construct() => stageInitial
+            ? BridgeConstruction.CreateAsync(CreateBridge, IsCurrentOpen, lifetime.Token)
+            : Task.FromResult(CreateBridge());
+        try { nextBridge = await Construct(); }
         catch(LegacyAccountStateException) {
 #if TEXTTEXT_STRESS_ACTOR
             if(privateActorWorkspace is not null)throw;
 #endif
             if(!await ReviewRetainedWork(nextRoot,active,identity))throw;
-            if(!ReferenceEquals(account,identity))throw new SharedAccountMismatchException();
-            nextBridge = CreateBridge();
+            RequireCurrentOpen();
+            nextBridge = await Construct();
         }
+        RequireCurrentOpen();
         beforeCommit?.Invoke();
         var oldWeb = web; var oldBridge = bridge;
         if (oldWeb?.CoreWebView2 is { } oldCore) oldCore.WebMessageReceived -= Receive;
@@ -270,11 +283,20 @@ public sealed partial class MainWindow : Window
         oldBridge?.Dispose(); oldWeb?.Dispose();
         core.Navigate("https://texttext.local/index.html");
         }
-        catch {
+        catch (Exception openingError) {
             if (!ReferenceEquals(web, nextWeb)) {
-                nextBridge?.Dispose(); nextWeb.Dispose();
-                if (previousContent is not null) staging.Children.Remove(previousContent);
-                Content = previousContent;
+                var failures = new List<Exception> { openingError };
+                try { if (nextBridge is not null) await nextBridge.RetireAsync(); }
+                catch (Exception retirementError) { failures.Add(retirementError); }
+                try { nextWeb.Dispose(); }
+                catch (Exception disposalError) { failures.Add(disposalError); }
+                try {
+                    if (generation == workspaceOpenGeneration && !lifetime.IsCancellationRequested && ReferenceEquals(Content, staging)) {
+                        if (previousContent is not null) staging.Children.Remove(previousContent);
+                        Content = previousContent;
+                    }
+                } catch (Exception restorationError) { failures.Add(restorationError); }
+                if (failures.Count > 1) throw new AggregateException(failures);
             }
             throw;
         }

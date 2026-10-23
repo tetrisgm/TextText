@@ -6,6 +6,15 @@ internal static class ProviderPaths
     [StructLayout(LayoutKind.Sequential)] struct AttributeTag {public uint Attributes;public uint Tag;}
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern SafeFileHandle CreateFileW(string name,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
     [DllImport("kernel32.dll",SetLastError=true)] [return:MarshalAs(UnmanagedType.Bool)] static extern bool GetFileInformationByHandleEx(SafeFileHandle handle,int infoClass,out AttributeTag info,uint size);
+    // Creation paths may be absent. Inspect existing paths once rather than
+    // querying file existence, directory existence, and then attributes.
+    // Other failures remain errors instead of being mistaken for absence.
+    public static bool IsUnsafeReparseIfPresent(string path)
+    {
+        try { return IsUnsafeReparse(path); }
+        catch(FileNotFoundException) { return false; }
+        catch(DirectoryNotFoundException) { return false; }
+    }
     public static bool IsUnsafeReparse(string path)
     {
         if((File.GetAttributes(path)&FileAttributes.ReparsePoint)==0)return false;
