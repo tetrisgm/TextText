@@ -127,6 +127,10 @@ public sealed partial class ReplacementRecoveryRegistry
     static string[] RecordPaths(string directory) => Directory.GetFileSystemEntries(directory).Where(name=>!Path.GetFileName(name).StartsWith('.')).ToArray();
     static string PathKey(string path)=>"\0path:"+(OperatingSystem.IsWindows()?path.ToUpperInvariant():path);
     static bool SameMovePath(string? first,string? second)=>string.Equals(first,second,OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal);
+    byte[] ReadRecord(string path) {
+        removalObservation?.Invoke("registryRecordRead");
+        return RetainedFileReplacement.Read(path,16384);
+    }
     string[] IndexedPaths(string? itemId)
     {
         if(itemId is null || !OperatingSystem.IsWindows())return RecordPaths(directory);
@@ -136,16 +140,35 @@ public sealed partial class ReplacementRecoveryRegistry
                 return cached.Items.TryGetValue(itemId,out var selected)?selected.ToArray():[];
             var paths=RecordPaths(directory);var items=new Dictionary<string,List<string>>(StringComparer.Ordinal);
             foreach(var path in paths) {
-                var bytes=RetainedFileReplacement.Read(path,16384);
-                using var parsed=JsonDocument.Parse(bytes);
-                if(parsed.RootElement.ValueKind!=JsonValueKind.Object||!parsed.RootElement.TryGetProperty("ItemId",out var field)||field.ValueKind!=JsonValueKind.String||field.GetString() is not {} identity||!ValidItemId(identity))
-                    throw new InvalidDataException("Replacement registry identity cannot be indexed.");
+                // Startup's full validation already decodes these records. Reuse
+                // only unchanged bytes for index membership; selected records still
+                // pass ReadEntries' owner, scope and path validation below.
+                (RetainedFileReplacement.Stamp Stamp,Entry Entry)? decoded=null;
+                lock(cacheGate)if(records.TryGetValue(path,out var prior))decoded=prior;
+                string identity;string? destination=null,source=null;
+                if(decoded is {} existing&&existing.Stamp==RetainedFileReplacement.Fingerprint(path)) {
+                    identity=existing.Entry.ItemId;
+                    if(!ValidItemId(identity))throw new InvalidDataException("Replacement registry identity cannot be indexed.");
+                    if(existing.Entry.Kind=="move") {
+                        destination=existing.Entry.Path;source=existing.Entry.SourcePath??throw new InvalidDataException("Move paths cannot be indexed.");
+                    }
+                } else {
+                    var bytes=ReadRecord(path);
+                    using var parsed=JsonDocument.Parse(bytes);
+                    if(parsed.RootElement.ValueKind!=JsonValueKind.Object||!parsed.RootElement.TryGetProperty("ItemId",out var field)||field.ValueKind!=JsonValueKind.String||field.GetString() is not {} value||!ValidItemId(value))
+                        throw new InvalidDataException("Replacement registry identity cannot be indexed.");
+                    identity=value;
+                    if(parsed.RootElement.TryGetProperty("Kind",out var kind)&&kind.ValueKind==JsonValueKind.String&&kind.GetString()=="move") {
+                        if(!parsed.RootElement.TryGetProperty("Path",out var target)||target.ValueKind!=JsonValueKind.String||!parsed.RootElement.TryGetProperty("SourcePath",out var origin)||origin.ValueKind!=JsonValueKind.String)
+                            throw new InvalidDataException("Move paths cannot be indexed.");
+                        destination=target.GetString();source=origin.GetString();
+                    }
+                }
                 if(!items.TryGetValue(identity,out var values))items[identity]=values=[];
                 values.Add(path);
-                if(parsed.RootElement.TryGetProperty("Kind",out var kind)&&kind.ValueKind==JsonValueKind.String&&kind.GetString()=="move") {
-                    foreach(var name in new[]{"Path","SourcePath"}) {
-                        if(!parsed.RootElement.TryGetProperty(name,out var member)||member.ValueKind!=JsonValueKind.String)throw new InvalidDataException("Move paths cannot be indexed.");
-                        var key=PathKey(member.GetString()!);if(!items.TryGetValue(key,out var members))items[key]=members=[];if(members.Count==0||members[^1]!=path)members.Add(path);
+                if(destination is not null) {
+                    foreach(var member in new[]{destination,source!}) {
+                        var key=PathKey(member);if(!items.TryGetValue(key,out var members))items[key]=members=[];if(members.Count==0||members[^1]!=path)members.Add(path);
                     }
                 }
             }
@@ -171,7 +194,7 @@ public sealed partial class ReplacementRecoveryRegistry
             var stamp=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true);Entry entry;
             lock(cacheGate)entry=stamp is not null&&records.TryGetValue(name,out var cached)&&cached.Stamp==stamp?cached.Entry:null!;
             if(entry is null) {
-                var bytes=RetainedFileReplacement.Read(name,16384);CheckFields(bytes);
+                var bytes=ReadRecord(name);CheckFields(bytes);
                 entry=JsonSerializer.Deserialize<Entry>(bytes)??throw new InvalidDataException("Invalid replacement registry.");
                 if(stamp!=RetainedFileReplacement.Fingerprint(name,ancestorsVerified:true))throw new FileChangedException();
                 if(stamp is not null)lock(cacheGate){if(records.Count>=4096)records.Clear();records[name]=(stamp,entry);}

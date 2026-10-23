@@ -33,6 +33,7 @@ static class Test
      assert(Retained(engine),"portable unavailable queued staging remains exact with no eligible retry across restart");
  }
  static async Task Main(string[] args){
+ if(args.SequenceEqual(new[]{"--registry-index-reads"})){var fixture=Path.Combine(Path.GetTempPath(),"texttext-registry-index-"+Guid.NewGuid());RegistryIndexReadTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
  if(args.SequenceEqual(new[]{"--repeated-recovery-inventory"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/"))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-repeated-recovery-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);RepeatedRecoveryInventoryTests.Run(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
  if(args.SequenceEqual(new[]{"--path-inspection"})){var pathBase=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&pathBase.StartsWith("/var/"))pathBase="/private"+pathBase;var pathTemp=Path.Combine(pathBase,"texttext-path-inspection-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(pathTemp);PathInspectionTests.Run(pathTemp,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+pathTemp);return;}
  if(args.SequenceEqual(new[]{"--observed-absence"})){var basis=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&basis.StartsWith("/var/",StringComparison.Ordinal))basis="/private"+basis;var fixture=Path.Combine(basis,"texttext-observed-absence-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fixture);MirrorGenerationTests.Run(Assert);await MirrorGenerationTests.PolicyVectors(Assert);ObservedAbsenceProfileTests.Run(fixture,Assert);await GenerationTransportTests.Run(Assert);await ProtectedSavedRenameIntegrationTests.RunAbsence(fixture,Assert);Console.WriteLine("RETAINED_PRIVATE_FIXTURE "+fixture);return;}
@@ -62,6 +63,7 @@ static class Test
  var temporaryRoot=Path.GetTempPath();if(OperatingSystem.IsMacOS()&&temporaryRoot.StartsWith("/var/"))temporaryRoot="/private"+temporaryRoot;var temp=Path.Combine(temporaryRoot,"texttext-core-test-"+Guid.NewGuid());Directory.CreateDirectory(temp);try{
  PathInspectionTests.Run(temp,Assert);
  RepeatedRecoveryInventoryTests.Run(temp,Assert);
+ RegistryIndexReadTests.Run(temp,Assert);
  var unavailableStore=new TextPackStore(Path.Combine(temp,"policy-unavailable"),Path.Combine(temp,"policy-unavailable-state"));
  var unavailableFile=unavailableStore.Write("Note.textpack",Pack());var unavailableRemote=new Fake();
  var unavailableEngine=new SyncEngine(unavailableStore,unavailableRemote);
