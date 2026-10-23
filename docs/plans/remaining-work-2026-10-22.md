@@ -18,6 +18,19 @@ All three already share one editor: the `src/local-vault` React app, served by t
 
 ## Phase 1: one release step for all three surfaces (start here)
 
+October 23 latest: the human-invoked unified `a868426a` run exited 0 and
+delivered that full commit to Oracle web, Mac 0.203 build 1277, and Windows.
+Each surface passed one real exact-content edit, save, normal close, and reopen
+check. The deployed missing-folder GET returned an empty result without making
+a directory. [Mac/web receipt](../verification/2026-10-23-a868-mac-web-installed.md),
+[Windows receipt](../verification/2026-10-23-windows-a868-installed-acceptance.md).
+Cross-client sync remains blocked by three older invalid empty server folder
+names; removal awaits the owner's explicit approval. Phase 2 latency targets
+have not passed. The `2b470873` candidate failed pre-delivery test gates, and
+the first two `a868426a` attempts stopped at Apple timestamp preflight; the
+successful run followed a genuine timestamped desktop probe. None of those
+failed attempts delivered a partial release.
+
 October 23 update: `98b5314a` is delivered on all three surfaces with real
 exact-content normal reopen checks. The invocation delivered web/Mac but stopped
 on Windows PowerShell 5 backup path limits; guarded recovery installed the same
@@ -85,6 +98,13 @@ Exit: one invocation brings web, Mac and Windows to the same commit. Each surfac
 Effort: about 1 day. Mac build time dominates.
 
 ## Phase 2: Windows startup and open responsiveness
+
+October 23 later evidence: the installed `a868426a` app passed one exact-content
+normal reopen check, without a latency claim. A single sampled launch of the
+prior installed build showed duplicate retained-registry reads during bridge
+construction and first listing; sampling perturbed timing, so it is diagnostic
+only. A focused cache/read-count correction is in progress. The five-launch
+installed timing exit check remains open.
 
 October 23 status: checkpoint scheduling/fairness, state reporting, scoped-error,
 listing and initial-construction changes are committed as `41959359` and
@@ -163,6 +183,11 @@ Exit: the matrix has a real result for every row on all three surfaces, and no u
 Effort: 1–2 weeks, depending on the failures found.
 
 ## Phase 4: templates and agent workflows (T20)
+
+October 23 progress: reviewed file-backed feed commands and durable proposal
+staging are committed as `20baf011` (with a line-ending-only follow-up
+`1b09e725`). Focused Mac checks and Mac/PC typechecks pass; native assistant
+adapters, one batch release, and real four-entry-point acceptance remain open.
 
 For article, note, bookmark, gallery, talk and feeds:
 - create, place in a folder, edit the body, metadata and assets;
