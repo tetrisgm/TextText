@@ -13,8 +13,7 @@
 #   release/ship.sh 0.13 --local-install
 #   release/ship.sh 0.13 --skip-tests
 #   release/ship.sh 0.13 --skip-web-deploy
-#   release/ship.sh --web-only      # deploy the web app to Oracle
-#   release/ship.sh --web-only --skip-tests  # reuse separately passed Vitest gates
+#   release/ship.sh --web-only      # focused web release checks and Oracle deploy
 set -euo pipefail
 exec </dev/null
 cd "$(dirname "$0")/.."
@@ -118,20 +117,10 @@ if [ "$WEB_ONLY" = "1" ]; then
     echo "--web-only cannot be combined with a Mac version or installation options." >&2
     exit 1
   }
-  echo ">> verify web application and PostgreSQL behavior"
-  if [ "$SKIP_TESTS" = "1" ]; then
-    npm run test:sync:check
-    echo ">> reuse separately passed web and database Vitest gates"
-  else
-    web_test_workers="${TEXTTEXT_WEB_TEST_WORKERS:-4}"
-    [[ "$web_test_workers" =~ ^[1-9][0-9]*$ ]] || {
-      echo "TEXTTEXT_WEB_TEST_WORKERS must be a positive integer." >&2
-      exit 1
-    }
-    npm test -- --maxWorkers="$web_test_workers"
-    npm run test:db
-    npm run test:sync
-  fi
+  echo ">> check web release source"
+  # Change-specific tests belong with the change. The release itself checks the
+  # packaging contract and compiles the product; Oracle preserves its backup,
+  # migration, health, and authenticated smoke checks.
   npx tsc --noEmit
   node --test "$ROOT/release/oracle/test.mjs" "$ROOT/release/oracle/test-smoke.mjs" "$ROOT/release/oracle/test-restore-drill.mjs"
   node --env-file=.env.local "$ROOT/release/oracle/test-bootstrap.mjs"
