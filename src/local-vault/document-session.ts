@@ -50,6 +50,15 @@ export class VaultDocumentSession {
     this.request = identity.localFiles ? vaultRequest : captureVaultRequest();
     this.file = initial; this.snapshot = readDocument(initial);
   }
+  private reconcileObservedFile(before: VaultFile, fresh: VaultFile): boolean {
+    if (!this.shared || packIdentity(fresh.markdown) !== this.identity.itemId ||
+        fresh.templateJSON !== before.templateJSON ||
+        fresh.templateAuthoringSourceJSON !== before.templateAuthoringSourceJSON) return false;
+    if (!this.shared.reconcileExternalDocument(
+      externalFileReconciliationBase(before, fresh, this.identity.itemId), readDocument(fresh))) return false;
+    this.replaceFile(fresh);
+    return true;
+  }
   private createClient() {
     const identity = this.identity, native = this.native;
     this.shared = new FileCollaborationClient({
@@ -66,10 +75,8 @@ export class VaultDocumentSession {
         const before = this.file;
         const moved = error instanceof VaultError && error.path && error.path !== before.path ? error.path : undefined;
         const fresh = await this.request<VaultFile>("read", { path: moved ?? before.path });
-        if (this.closed || !this.native || fresh.hash === before.hash || packIdentity(fresh.markdown) !== identity.itemId) return false;
-        if (fresh.templateJSON !== before.templateJSON || fresh.templateAuthoringSourceJSON !== before.templateAuthoringSourceJSON) return false;
-        if (!this.client.reconcileExternalDocument(externalFileReconciliationBase(before, fresh, identity.itemId), readDocument(fresh))) return false;
-        this.replaceFile(fresh); return true;
+        if (this.closed || !this.native || fresh.hash === before.hash) return false;
+        return this.reconcileObservedFile(before, fresh);
       } : undefined,
       checkpoint: native ? async ({ journal, document }) => {
         const active = this.native;
@@ -204,7 +211,13 @@ export class VaultDocumentSession {
           const latest = await this.request<VaultFile>("read", { path: this.file.path });
           if (!this.closed && this.attached && latest.hash !== this.file.hash) {
             const refreshed = refreshBinaryOnlyFile(this.file, latest, this.identity.itemId, true);
-            if (refreshed) this.replaceFile(refreshed); else this.shared.notifyExternalFileChange();
+            if (refreshed) this.replaceFile(refreshed);
+            else {
+              let joined = false;
+              try { joined = this.reconcileObservedFile(this.file, latest); }
+              catch { /* Invalid or conflicting bytes retain the checkpoint recovery path. */ }
+              if (!joined) this.shared.notifyExternalFileChange();
+            }
           }
         } catch { /* Unavailable bytes keep the existing recovery path. */ }
       }
