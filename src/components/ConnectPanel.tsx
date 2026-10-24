@@ -329,22 +329,6 @@ export function ConnectPanel({
         />
       </section>
 
-      <section className="connect-section" aria-labelledby="connect-in-app">
-        <h2 className="connect-section-title" id="connect-in-app">
-          In-app assistant
-        </h2>
-        <p className="connect-body">
-          Set up a workspace-owned Anthropic or OpenAI API key, then write with
-          the assistant beside the current TextText document. Provider usage is
-          billed separately.
-        </p>
-        <p>
-          <a className="ac-btn ac-btn-filled" href="/docs/ai#embedded-agent">
-            Set up the in-app assistant
-          </a>
-        </p>
-      </section>
-
       <section
         className="connect-section connect-verification"
         aria-labelledby="connect-verification"
