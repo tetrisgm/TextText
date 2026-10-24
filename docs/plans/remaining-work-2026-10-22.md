@@ -6,6 +6,14 @@ Written October 22, 2026, after the owner's scope change. T21–T27 (the six-cli
 
 Mac, Windows and web behave as one application: the same editor, look and workflows, the same version everywhere, and reliable open, edit, save, quit and reopen. Work is finite. Each phase has an exit check run against real installed clients, not simulations.
 
+## Status at October 23 closeout
+
+Phase 1's unified human-invoked release exited 0 at full commit `30f167dfbd56dce35a3225460ff2a0c2ff76989d`: Oracle web, Mac 0.203 build 1281, and Windows were installed from that commit. The two-ID same-path collision subsequently passed the installed Windows Keep both flow, preserved both identities and bytes through normal quit/reopen, and converged with the live server. One real Safari edit saved, survived tab close/reopen, and arrived in the Windows reader after normal reopen and in the Mac package with the exact server hash. [Windows](../verification/2026-10-23-windows-30f-path-recovery-installed.md), [web](../verification/2026-10-23-30f167df-web-convergence.md), and [Mac](../verification/2026-10-23-30f167df-mac-acceptance.md) receipts delimit the evidence. Close the collision/durability batch; no further acceptance loop is needed for it.
+
+Remaining exit checks are separate work. A Mac-origin edit in this release was not confirmed saved, and its reopened reader could not be verified visually, despite exact package convergence. Live simultaneous editing is not established. Phase 2's five-launch timing targets remain unmeasured; Phase 3's complete parity matrix and Phase 4 workflows remain unfinished. The next bounded batch should resolve the Mac editor save failure from runtime evidence and one installed normal-quit/reopen check, then proceed through the remaining product flows with one release per batch. The source-only release-order correction `6b5b7840` runs gates before native candidate builds and is pushed but not an installed product change. A partial template source guard is preserved in stash and is not accepted.
+
+The dated entries below are a historical work log. Their earlier “latest,” “pending,” and “blocked” statements describe their time, not current status.
+
 ## Current state (verified October 22)
 
 | Surface | Version | State |
