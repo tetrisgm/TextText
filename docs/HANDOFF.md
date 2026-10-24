@@ -4,6 +4,8 @@ Execute [Finish TextText](plans/finish-texttext.md), the sole active plan agreed
 
 Start by tracing one document through editor, multiplayer and external file writes, then replace duplicated native reconciliation with one shared adapter. Independently remove embedded-agent release coupling and advanced template lifecycle scope. Do not revive the deferred template source-guard stash.
 
+October 24 source progress: the live document watcher now routes an observed external TextPack edit through its existing TypeScript merge before treating it as a checkpoint conflict; [focused receipt](verification/2026-10-24-observed-file-merge.md). The ordinary web-only release path has focused checks instead of mandatory full application/database/sync suites; [release receipt](verification/2026-10-24-web-release-gate-simplification.md). The connection screen no longer promotes a built-in assistant setup. These source changes are not installed product acceptance. Native engine retirement, embedded runtime removal, and the final multiplayer/file-edit workflow remain open.
+
 ## Installed baseline
 
 Web, Mac 0.203 build 1281 and Windows were delivered from `30f167dfbd56dce35a3225460ff2a0c2ff76989d`. Installed Keep both preserved both colliding identities through reopen. A web edit reached the Windows reader after reopen and the Mac package. These results are closed, not recurring entry gates.
