@@ -1,20 +1,20 @@
 # TextText handoff
 
 ARCHIVED: replaced by [the current handoff](../HANDOFF.md) and
-[the October 22 remaining-work plan](../plans/remaining-work-2026-10-22.md).
+[the October 22 remaining-work plan](../plans/finish-texttext.md).
 
 ## Objective and active work
 
-**Active October 22:** execute the [remaining-work plan](../plans/remaining-work-2026-10-22.md),
+**Active October 22:** execute the [remaining-work plan](../plans/finish-texttext.md),
 starting with Phase 1. Mac LAN SSH is working. Sync entry orchestration checks
 pass on the Mac ([receipt](../verification/2026-10-22-release-sync-entry.md)); combined
 release and installed acceptance remain pending. The entry is now
 `bash release/ship-all.sh` on the Mac ([checks](../verification/2026-10-22-ship-all-entry.md)).
 T21–T27 are obsolete.
 
-Finish the [27-task checklist](../plans/shared-app-finish-checklist.md) and [master plan](../plans/shared-app-durability-execution.md). Continue independent work; source/private actor checks do not replace installed acceptance. No public Mac distribution or new accounts.
+Finish the [27-task checklist](../plans/finish-texttext.md) and [master plan](../plans/finish-texttext.md). Continue independent work; source/private actor checks do not replace installed acceptance. No public Mac distribution or new accounts.
 
-For a standalone transfer to Claude, read [the complete Claude handoff](../CLAUDE-HANDOFF.md): owner priorities, permissions, delivered identities, T01–T27 status, remaining execution order and evidence references.
+For a standalone transfer to Claude, read [the complete Claude handoff](../plans/finish-texttext.md): owner priorities, permissions, delivered identities, T01–T27 status, remaining execution order and evidence references.
 
 **October19 current:** Mac0.204(1274), source56d144f7, is installed with the matching signed CLI after the [passing candidate](../verification/2026-10-19-mac-1274-56d144f7-candidate.md) and fresh complete stopped backup. The exact previously blocked7ba article opens normally, retains its original text/image, and accepts fresh text/image edits. Three actual normal save/Quit/reopen cycles passed across that article and a fresh note; full hosted snapshots and JPEG bytes match. App left open on the healthy article. [Installed acceptance](../verification/2026-10-19-mac-1274-installed-acceptance.md). The owner’s immediate Mac installation/save/reopen objective is complete. Wider checklist work below is separate; no six-client endurance campaign was run.
 
@@ -25,7 +25,7 @@ For a standalone transfer to Claude, read [the complete Claude handoff](../CLAUD
 - **Resource diagnostics:**f446773e logical client/session counters default off (main749+TypeScript+17 checks); f5292d6b pure independently pinned ownership validator passes62; finite sampler00c3f159 has bounded Mac/PC helper proof. Live telemetry export/collector integration and actual resource/idle/performance measurements remain open. Null is not zero. The default-off Windows collector emitter is committed as eefd2568 with main30 controlled checks; genuine collection and coordinator integration remain open.
 - **Fresh owned fixtures:** mixed7ba1c77c and guarded-closed793c399 are private articles, exact seed body, zero assets. Initial generated filenames retained; guarded title alignment makes titles equal actual filename stems. [Preparation receipt](../verification/2026-10-19-1273-acceptance-fixture-preparation.md). Actual native image import and fresh per-fixture PC isolation roots/seals remain required. Do not reuse old79 scope, which binds only historicalf52c9a01.
 
-**Current plan:** [remaining work, October 22](../plans/remaining-work-2026-10-22.md).
+**Current plan:** [remaining work, October 22](../plans/finish-texttext.md).
 
 **October22 owner scope change:** the six-client physical runner and matrix (T21–T22), endurance runs (T24), performance measurement (T25), account switching (T23), and final delivery/changelog closure (T26–T27) are obsolete. Do not run, prepare or report them as open work; their historical receipts remain evidence only.
 

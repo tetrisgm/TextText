@@ -6,7 +6,7 @@
 
 ## Objective
 
-Finish the [27-task checklist](../plans/shared-app-finish-checklist.md) and [master plan](../plans/shared-app-durability-execution.md): durable sync and a consistent Mac/Windows/web experience. Public Mac distribution and OpenAI account sign-in remain excluded.
+Finish the [27-task checklist](../plans/finish-texttext.md) and [master plan](../plans/finish-texttext.md): durable sync and a consistent Mac/Windows/web experience. Public Mac distribution and OpenAI account sign-in remain excluded.
 
 ## Active work, October 18
 

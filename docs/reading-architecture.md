@@ -137,7 +137,7 @@ and parsing; it never fabricates a candidate.
 
 The home page of a workspace that follows feeds is a news front page
 with recent work beside it. Design and acceptance map:
-`docs/plans/home-artifact-news.md`.
+`home-artifact-news.md` (removed; see Git history).
 
 - Read model: `src/lib/reading/home.server.ts`, served by
   `GET /api/workspace/reading/home`. A unit is a Summary or a single

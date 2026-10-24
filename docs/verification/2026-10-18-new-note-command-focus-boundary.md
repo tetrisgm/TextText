@@ -18,6 +18,6 @@ Installed 1269's batched CUA command plus typing separately changed old Gallery/
 
 ## Contract and possible scope
 
-[Ordinary-use acceptance](../plans/shared-app-finish-checklist.md) specifies create, type title/body, navigate, normal close and independent reopen. T25 specifies measured typing and usable-open latency. Neither explicitly requires preserving keys sent before new-editor focus; [DESIGN](../../DESIGN.md) does require a new note to focus writing immediately. This diagnostic is not an accepted-input durability failure or a passing latency measurement.
+[Ordinary-use acceptance](../plans/finish-texttext.md) specifies create, type title/body, navigate, normal close and independent reopen. T25 specifies measured typing and usable-open latency. Neither explicitly requires preserving keys sent before new-editor focus; [DESIGN](../../DESIGN.md) does require a new note to focus writing immediately. This diagnostic is not an accepted-input durability failure or a passing latency measurement.
 
 A minimal follow-up can define and measure command-to-focus readiness and verify exact input after focus. Preserving earlier typing would require one synchronously mounted pending-item editor with actual IME/paste/selection semantics, a durable account/root-bound creation intent and stable item identity, idempotent native creation/lost-reply recovery, explicit cancel/error retention, and the same DOM through creation and shared ownership. These changes are not implemented. A global keydown character buffer would not establish those guarantees.

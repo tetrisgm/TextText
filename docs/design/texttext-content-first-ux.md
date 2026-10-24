@@ -383,7 +383,7 @@ Before substantial work, save this entire brief in the repository, preferably at
 `docs/design/texttext-content-first-ux.md`
 
 Maintain one compact canonical checkpoint, preferably:
-`docs/TEXTTEXT_UX_CHECKPOINT.md`
+`TEXTTEXT_UX_CHECKPOINT.md` (removed; see Git history)
 
 Use existing equivalent canonical paths if present. Merge the new brief carefully and reconcile existing completed work. Do not create another competing roadmap or overwrite unrelated requirements. Add a short pointer in the main handoff.
 

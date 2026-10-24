@@ -4,7 +4,7 @@
 
 ## Current work (October 18)
 
-Goal: finish the [27-task completion checklist](../plans/shared-app-finish-checklist.md) for durable sync and one application experience across Mac, Windows and web. The [master plan](../plans/shared-app-durability-execution.md) defines full scope. Public Mac distribution and OpenAI account sign-in remain excluded.
+Goal: finish the [27-task completion checklist](../plans/finish-texttext.md) for durable sync and one application experience across Mac, Windows and web. The [master plan](../plans/finish-texttext.md) defines full scope. Public Mac distribution and OpenAI account sign-in remain excluded.
 
 ## Installed and hosted state
 
@@ -38,7 +38,7 @@ Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/wo
 
 ## References
 
-- [Detailed checklist and current ledger](../plans/shared-app-finish-checklist.md)
+- [Detailed checklist and current ledger](../plans/finish-texttext.md)
 - [Six-client acceptance contract](../verification/six-client-sync-acceptance.md)
 - [Lifecycle audit](../verification/document-lifecycle-audit.md)
 - [Pre-delivery handoff](../archive/texttext-handoff-2026-10-17-before-installed-verification.md)

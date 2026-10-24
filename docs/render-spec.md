@@ -234,7 +234,7 @@ The legacy spellings are accepted permanently, not until a migration finishes,
 for the same reason.
 
 The remaining merges, and what each costs, are in
-`docs/plans/primitive-reduction.md`. The target is 13 names, not 10: `field`
+`primitive-reduction.md` (removed; see Git history). The target is 13 names, not 10: `field`
 and `rows` need nested unions rather than flat flags, and `quote`, `progress`
 and `poll` stay separate.
 

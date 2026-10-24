@@ -1,3 +1,5 @@
+> Scope reset, October 23: [Finish TextText](plans/finish-texttext.md) governs future work. This reference describes existing implementation or earlier design, including capabilities scheduled for removal. It does not impose expansion work or verification gates.
+
 # The agentic text product
 
 TextText should be the fastest durable writing home for people and agents.

@@ -40,4 +40,4 @@ The file receipt and action-audit database write are separate durable systems co
 - Inventory every crash/failpoint in the existing server and native tests, then add only missing boundaries.
 - Run crash/restart and sustained multi-client acceptance on the exact installed candidates. Preserve site-data deletion, filesystem provider eviction and physical power-loss limits in the final claim.
 
-See [Packet B progress](2026-10-11-packet-a-b-progress.md), [the lifecycle audit](document-lifecycle-audit.md), and [the execution plan](../plans/shared-app-durability-execution.md).
+See [Packet B progress](2026-10-11-packet-a-b-progress.md), [the lifecycle audit](document-lifecycle-audit.md), and [the execution plan](../plans/finish-texttext.md).

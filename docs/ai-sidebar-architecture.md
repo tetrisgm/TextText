@@ -1,3 +1,5 @@
+> Scope reset, October 23: [Finish TextText](plans/finish-texttext.md) governs future work. This reference describes existing implementation or earlier design, including capabilities scheduled for removal. It does not impose expansion work or verification gates.
+
 # Assistant and workspace command architecture
 
 This document describes the implemented AI architecture. TextText has one

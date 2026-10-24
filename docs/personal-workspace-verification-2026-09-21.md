@@ -1,6 +1,6 @@
 # Personal workspace verification
 
-Unreleased work. The [build plan](plans/personal-workspace.md) remains the
+Unreleased work. The [build plan](plans/finish-texttext.md) remains the
 acceptance contract; this receipt does not mark it complete.
 
 ## Destination timing baseline

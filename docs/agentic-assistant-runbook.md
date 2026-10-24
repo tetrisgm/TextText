@@ -1,3 +1,5 @@
+> Scope reset, October 23: [Finish TextText](plans/finish-texttext.md) governs future work. This reference describes existing implementation or earlier design, including capabilities scheduled for removal. It does not impose expansion work or verification gates.
+
 # Agentic assistant implementation runbook
 
 This is the implementation and maintenance reference for TextText's agentic

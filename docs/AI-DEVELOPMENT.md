@@ -1,3 +1,5 @@
+> Scope reset, October 23: [Finish TextText](plans/finish-texttext.md) governs future work. This reference describes existing implementation or earlier design, including capabilities scheduled for removal. It does not impose expansion work or verification gates.
+
 ## AI provider keys for development
 
 To run the in-app assistant against a real model, keep the key in the login

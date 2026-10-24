@@ -1,3 +1,5 @@
+> Scope reset, October 23: [Finish TextText](docs/plans/finish-texttext.md) governs future work. This reference describes existing implementation or earlier design, including capabilities scheduled for removal. It does not impose expansion work or verification gates.
+
 # TextText design direction
 
 The [content-first brief](docs/design/texttext-content-first-ux.md) governs this work. TextText is one place to write, save, read, collect visuals, and work with people and an agent. Items and folders stay in the existing TextPack model. This document summarizes presentation choices; storage, permission, collaboration, and recovery contracts still apply.

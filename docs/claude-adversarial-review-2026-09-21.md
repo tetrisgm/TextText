@@ -33,7 +33,7 @@ establish working behavior.
 
 # Adversarial review: TextText personal workspace
 
-Read: `docs/plans/personal-workspace.md`, `DESIGN.md`, the verification receipt (selectively), and the named implementation. Nothing edited or executed.
+Read: `personal-workspace.md` (removed; see Git history), `DESIGN.md`, the verification receipt (selectively), and the named implementation. Nothing edited or executed.
 
 **Verdict.** The content model (DocumentSnapshot + DocumentRenderer) is sound and should stay. The incoherence is one layer up: *three* unreconciled ideas of "what a folder is and what it looks like," *two* divergent gallery products behind one component, and a shell that remounts destinations and then spends thousands of lines restoring what the remount destroyed. The September 21 claim that folder/type coupling was "the first removal of coupling" is accurate but narrower than it reads — the coupling was removed from one of three write paths.
 

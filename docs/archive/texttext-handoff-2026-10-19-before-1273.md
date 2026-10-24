@@ -4,7 +4,7 @@
 
 ## Objective
 
-Finish the [27-task checklist](../plans/shared-app-finish-checklist.md) and [master plan](../plans/shared-app-durability-execution.md) on main. Continue ready work until completion or a dependency prevents all useful work. Public Mac distribution and OpenAI account sign-in are excluded. Source/private-actor tests do not replace installed physical acceptance.
+Finish the [27-task checklist](../plans/finish-texttext.md) and [master plan](../plans/finish-texttext.md) on main. Continue ready work until completion or a dependency prevents all useful work. Public Mac distribution and OpenAI account sign-in are excluded. Source/private-actor tests do not replace installed physical acceptance.
 
 ## Active work, October 19
 
@@ -57,4 +57,4 @@ Finish the [27-task checklist](../plans/shared-app-finish-checklist.md) and [mas
 
 Main only, no worktrees. One heavy Mac compiler/gate at a time; PC compiler is independent. Serialize Git index changes. Preserve unrelated `mac/Package.resolved`, assistant attachments, tabs test, `mac/scripts/__pycache__/` and the untracked editor probe. Owner Package.resolved SHA-256 remains `eea669ec76b68673014c10c95b90e721c14d67c99de5756f5c8071c968306edb`; save/restore exact bytes around Swift.
 
-[Historical handoff](texttext-handoff-2026-10-18-before-1265.md), [execution ledger](../plans/shared-app-finish-checklist.md), [six-client contract](../verification/six-client-sync-acceptance.md), [Oracle operations](../../release/oracle/README.md), [title focus source check](../verification/2026-10-18-title-promotion-focus.md).
+[Historical handoff](texttext-handoff-2026-10-18-before-1265.md), [execution ledger](../plans/finish-texttext.md), [six-client contract](../verification/six-client-sync-acceptance.md), [Oracle operations](../../release/oracle/README.md), [title focus source check](../verification/2026-10-18-title-promotion-focus.md).

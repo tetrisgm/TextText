@@ -43,4 +43,4 @@ The browser and native checkpoint, file-mutation and presence paths now use the 
 3. Mac and Windows background file sync continues while no editor is open and yields to an active collaboration lease.
 4. Browser tab recovery after reload and competing-tab ownership are verified in a real browser.
 
-See [the application parity inventory](application-parity-matrix.md) and [the execution plan](../plans/shared-app-durability-execution.md).
+See [the application parity inventory](application-parity-matrix.md) and [the execution plan](../plans/finish-texttext.md).

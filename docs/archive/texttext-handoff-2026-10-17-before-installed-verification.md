@@ -16,15 +16,15 @@ Packet B fixed false browser-only `flushLocal()` success after storage failure. 
 
 The [synchronous browser transaction failure](../verification/2026-10-12-browser-transaction-sync-throw.md) is fixed in source: a thrown IndexedDB request now rejects instead of leaving save/close pending. The 92 focused tests, 407 shared-client tests, TypeScript, and full Mac native suite pass. This source change has not yet been built or installed in either local app or deployed to Oracle.
 
-The [application parity inventory](../verification/application-parity-matrix.md) maps the shared workspace UI and the remaining separate native sync engines/runtime gaps. The current execution ledger is in [the playbook](../plans/shared-app-executor.md).
+The [application parity inventory](../verification/application-parity-matrix.md) maps the shared workspace UI and the remaining separate native sync engines/runtime gaps. The current execution ledger is in [the playbook](../plans/finish-texttext.md).
 
 Keep unrelated dirty files untouched: `mac/Package.resolved`, `src/components/workspace/assistant/attachments.ts`, `src/lib/workspace/__tests__/tabs.test.ts`, `mac/scripts/__pycache__/`, and `scripts/.probe-editor.ts`. No website or public release was deployed.
 
 ## Execution order
 
-Start with the [detailed completion checklist](../plans/shared-app-finish-checklist.md), prepared October 17: T01 refreshes current identities; T03–T04 deliver the committed save fix and verify new-item installed close/reopen. It breaks the remaining master scope into 27 tasks with dependencies and evidence requirements. Historical October 12 identities above must be rechecked.
+Start with the [detailed completion checklist](../plans/finish-texttext.md), prepared October 17: T01 refreshes current identities; T03–T04 deliver the committed save fix and verify new-item installed close/reopen. It breaks the remaining master scope into 27 tasks with dependencies and evidence requirements. Historical October 12 identities above must be rechecked.
 
-Continue the [implementation playbook](../plans/shared-app-executor.md) and [master plan](../plans/shared-app-durability-execution.md). Packet A candidate installation and existing-note reopen are verified; finish the historical refusal explanation and a new-item installed edit/reopen. Packet B is in progress; the first storage-failure regression is fixed, but the browser persistence contract is not complete.
+Continue the [implementation playbook](../plans/finish-texttext.md) and [master plan](../plans/finish-texttext.md). Packet A candidate installation and existing-note reopen are verified; finish the historical refusal explanation and a new-item installed edit/reopen. Packet B is in progress; the first storage-failure regression is fixed, but the browser persistence contract is not complete.
 
 ## References
 
