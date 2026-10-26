@@ -1,12 +1,16 @@
 # Oracle runtime packaging
 
-The Mac builds and verifies TextText. Oracle runs the resulting standalone
-application on Linux ARM64; it does not build or install releases on a schedule.
+An ordinary web product change ships with `release/ship.sh --web-only` on the
+Mac. That command runs the web packaging checks, builds the Oracle artifact,
+and deploys it without building or releasing the Mac or Windows apps. Oracle
+runs the resulting standalone application on Linux ARM64; it does not build or
+install releases on a schedule.
 The only scheduled task described here is the database backup.
 
 ## Prepare a release
 
-Use the human-invoked release entry point, `release/ship.sh`, for publishing.
+Use the human-invoked `release/ship.sh --web-only` for an ordinary web change.
+Use `release/ship.sh` with a version only when publishing a public Mac app.
 These packaging commands are its local building blocks, not another release lane:
 
 ```sh
