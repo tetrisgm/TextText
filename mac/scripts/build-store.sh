@@ -17,8 +17,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
 
-# Source changes invalidate the cached contract; ordinary builds reverify it.
-node "$ROOT/sync/verify.mjs" --check || node "$ROOT/sync/verify.mjs"
+# Source checks run with the change. A local app build must not launch the
+# historical full sync suite merely because its receipt is stale.
 
 # SwiftPM rewrites Package.resolved to match the Store-only manifest, which
 # intentionally excludes Sparkle. Preserve the standalone lockfile so preparing
