@@ -43,3 +43,7 @@ A passing result stays passed until a relevant change invalidates it. Stop repea
 ## Decisions still requiring evidence
 
 The precise shared-adapter runtime and readable on-disk format, how existing TextPacks migrate without losing assets or pending changes, and desktop cached-app compatibility remain implementation decisions. Do not convert these into new feature projects. If a decision materially sacrifices direct agent file editing, multiplayer, offline durability or existing content, return it to the owner.
+
+## Current status
+
+The first observed external edit now enters the existing TypeScript merge while an editor is open; native background observation, pending journals, and recovery still carry distinct responsibilities. The bundled Codex helper is optional in Mac source builds. The shared web gallery no longer offers advanced template lifecycle actions, though other authoring surfaces and data actions remain. Ordinary web changes already have a web-only release command and one Oracle deployment. The one final real multiplayer and file-edit closeout has not been performed on these source changes; the Mac build reached signing but its login keychain key was unavailable to SSH.
