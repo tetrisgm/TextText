@@ -14,6 +14,8 @@ The shared workspace gallery now offers existing look selection without advanced
 
 Oracle now serves `a5b24f0d` after its required backup and authenticated release smoke passed; [web receipt](verification/2026-10-25-web-a5b24f0d.md). The initial attempt stopped safely at its storage floor. Exact non-current release staging cleanup made room for the successful retry; the live and rollback releases and backup archives were preserved. The final real multiplayer plus external-file edit check and native adapter consolidation remain open.
 
+The next web batch removed visible “Save as look” authoring across local, shared and web editors and the embedded Codex connection promotion. Oracle now serves `b460f474`; its required backup and authenticated release smoke passed, and the noisy macOS archive metadata was excluded; [receipt](verification/2026-10-25-web-b460f474.md). Existing looks remain selectable. Native background sync replacement and the final real multiplayer/file-edit closeout remain open. A new Mac binary still needs a signing session with access to the login keychain private key; an SSH signing probe could not access either development or distribution identity.
+
 ## Installed baseline
 
 Web, Mac 0.203 build 1281 and Windows were delivered from `30f167dfbd56dce35a3225460ff2a0c2ff76989d`. Installed Keep both preserved both colliding identities through reopen. A web edit reached the Windows reader after reopen and the Mac package. These results are closed, not recurring entry gates.
