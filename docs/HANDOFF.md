@@ -16,6 +16,8 @@ Oracle now serves `a5b24f0d` after its required backup and authenticated release
 
 The next web batch removed visible “Save as look” authoring across local, shared and web editors and the embedded Codex connection promotion. Oracle now serves `b460f474`; its required backup and authenticated release smoke passed, and the noisy macOS archive metadata was excluded; [receipt](verification/2026-10-25-web-b460f474.md). Existing looks remain selectable. Native background sync replacement and the final real multiplayer/file-edit closeout remain open. A new Mac binary still needs a signing session with access to the login keychain private key; an SSH signing probe could not access either development or distribution identity.
 
+The core workspace no longer mounts the in-app assistant rail/provider runtime or the item-type studio entry. External TextPack file edits, CLI, and hosted MCP remain documented. Oracle serves `c774fcd6` after required backup and authenticated release smoke; [receipt](verification/2026-10-25-web-c774fcd6.md). Legacy provider-key removal remains in Settings so saved keys are manageable. Native closed-file sync still belongs to Mac/Windows engines; replacing it requires a persistent host adapter and recoverable journal ownership migration. The final real multiplayer/file-edit acceptance remains open, as does Mac signing for a new local binary.
+
 ## Installed baseline
 
 Web, Mac 0.203 build 1281 and Windows were delivered from `30f167dfbd56dce35a3225460ff2a0c2ff76989d`. Installed Keep both preserved both colliding identities through reopen. A web edit reached the Windows reader after reopen and the Mac package. These results are closed, not recurring entry gates.
