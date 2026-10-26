@@ -127,7 +127,9 @@ export function packageBuild({ projectRoot = root, distDirectory = ".next", migr
       lockfileSha256: createHash("sha256").update(readFileSync(join(app, "package-lock.json"))).digest("hex"),
     }, null, 2) + "\n");
     const archive = join(temporary, "release.tar.gz");
-    run("tar", ["-czf", archive, "-C", app, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+    // macOS provenance xattrs add an extended header to every copied file and
+    // flood the Linux deploy log with warnings. The app does not use them.
+    run("tar", ["--no-xattrs", "-czf", archive, "-C", app, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
     cpSync(archive, target, { errorOnExist: true, force: false });
     const digest = createHash("sha256").update(readFileSync(target)).digest("hex");
     writeFileSync(`${target}.sha256`, `${digest}  ${target.split(sep).at(-1)}\n`, { flag: "wx" });
