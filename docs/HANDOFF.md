@@ -8,6 +8,8 @@ October 24 source progress: the live document watcher now routes an observed ext
 
 The web-only command subsequently deployed `46e3515e` to Oracle and exited 0 with authenticated document/audit smoke; [delivery receipt](verification/2026-10-25-web-46e3515e.md). This delivers the web connection-screen cut. The file watcher change remains source-only for native clients. No signed-in visual connection-page check was available. The current CLI workspace did not find the existing changelog note, so no duplicate was made.
 
+The local Mac build entry points no longer start the full sync suite when a receipt is stale. A single build reached signing after successful Swift compilation and bundle assembly, then stopped because the SSH session could not access the login keychain private key; [receipt](verification/2026-10-25-local-mac-build-gate.md). The owner was asked to unlock the keychain locally. No Mac install has occurred. The native engines still own background file observation and pending-journal recovery; their active-editor guards cannot be removed solely because the TypeScript watcher now merges an open-file edit.
+
 ## Installed baseline
 
 Web, Mac 0.203 build 1281 and Windows were delivered from `30f167dfbd56dce35a3225460ff2a0c2ff76989d`. Installed Keep both preserved both colliding identities through reopen. A web edit reached the Windows reader after reopen and the Mac package. These results are closed, not recurring entry gates.
