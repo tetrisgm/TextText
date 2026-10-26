@@ -1,15 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ComponentProps } from "react";
 import { emptyDocumentSnapshot, type DocumentSnapshot } from "@/lib/documents/model";
-import {
-  getTypeLibraryAction, duplicateFolderLookAction, importFolderLookAction,
-  restoreFolderLookVersionAction, retireFolderLookAction, exportTemplateLookAction,
-  type FolderLookState,
-} from "@/app/editor/folder-template-actions";
+import { getTypeLibraryAction, type FolderLookState } from "@/app/editor/folder-template-actions";
 import { useDialogFocus } from "@/components/accessibility/useDialogFocus";
-import { useTypeDesigner } from "@/components/workspace/TypeDesignerContext";
 import styles from "./TemplateGallery.module.css";
 import { TemplateGallery } from "./TemplateGallery";
 
@@ -17,22 +12,12 @@ type Props = Pick<ComponentProps<typeof TemplateGallery>, "onApply" | "onClose" 
   handle: string;
   folderPath?: string;
   document?: DocumentSnapshot;
-  onChanged?: () => void;
 };
 
 /** Both item and folder entry points use the same authoritative library. */
-export function WorkspaceTypeLibrary({ handle, folderPath, document, onChanged, ...gallery }: Props) {
-  const openDesigner = useTypeDesigner();
-  const [selectedTypeId, setSelectedTypeId] = useState<string | undefined>();
-  const [designing, setDesigning] = useState(false);
+export function WorkspaceTypeLibrary({ handle, folderPath, document, ...gallery }: Props) {
   const [state, setState] = useState<FolderLookState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    const next = await getTypeLibraryAction(handle, folderPath);
-    if (!next.allowed) throw new Error("The type library is unavailable for this workspace.");
-    setState(next);
-    return next;
-  }, [handle, folderPath]);
   useEffect(() => {
     let current = true;
     void getTypeLibraryAction(handle, folderPath).then((next) => {
@@ -42,42 +27,10 @@ export function WorkspaceTypeLibrary({ handle, folderPath, document, onChanged, 
     }).catch(() => { if (current) setError("Could not load the type library."); });
     return () => { current = false; };
   }, [handle, folderPath]);
-  if (designing) return null;
   if (error && state) return <LibraryStatus error={error} onClose={() => setError(null)} />;
   if (!state) return <LibraryStatus error={error} onClose={gallery.onClose} />;
-  const changed = async () => { await load(); onChanged?.(); };
-  return <TemplateGallery {...gallery} library={state.library} initialTypeId={selectedTypeId}
+  return <TemplateGallery {...gallery} library={state.library}
     document={document ?? emptyDocumentSnapshot(state.current ?? { id: "texttext.note", version: 1 })}
-    onEdit={openDesigner ? async (selected) => {
-      setSelectedTypeId(selected.id);
-      const finished = openDesigner(selected.id, folderPath);
-      // Suspend the gallery focus trap while the shared designer is open.
-      setDesigning(true);
-      try { await finished; await load(); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open this type."); }
-      finally { setDesigning(false); }
-    } : undefined}
-    onExport={(selected) => exportTemplateLookAction(handle, selected.id, selected.version)}
-    onDuplicate={async (selected, name) => {
-      const result = await duplicateFolderLookAction(handle, selected.id, selected.version, name);
-      if (!result.ok) throw new Error(result.error);
-      await changed(); return result.definition;
-    }}
-    onImport={async (text, mode) => {
-      const result = await importFolderLookAction(handle, text, mode);
-      if (!result.ok) throw new Error(result.error);
-      await changed(); return result.definition;
-    }}
-    onRestoreVersion={async (selected) => {
-      const result = await restoreFolderLookVersionAction(handle, selected.id, selected.version);
-      if (!result.ok) throw new Error(result.error);
-      await changed(); return result.definition;
-    }}
-    onRetire={async (selected) => {
-      const result = await retireFolderLookAction(handle, selected.id);
-      if (!result.ok) throw new Error(result.error);
-      await changed();
-    }}
   />;
 }
 

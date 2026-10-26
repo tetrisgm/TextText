@@ -26,4 +26,23 @@ describe("shared type library rendering", () => {
     expect(html).toContain("Import");
     expect(html).not.toContain("Not available");
   });
+
+  it("keeps an existing look selectable without lifecycle controls", () => {
+    const earlier = { ...definition, version: 1 };
+    const current = { ...definition, version: 2 };
+    const html = renderToStaticMarkup(React.createElement(TemplateGallery, {
+      document: emptyDocumentSnapshot(),
+      library: [{ ...library[0], definition: current, versions: [
+        { definition: current, createdAt: null },
+        { definition: earlier, createdAt: null },
+      ] }],
+      initialTypeId: current.id,
+      onApply: () => {}, onClose: () => {},
+    }));
+    expect(html).toContain("Reading review");
+    expect(html).toContain("Use this look");
+    for (const hidden of ["Import", "Remix", "Retire type", "Edit type", "Version history"]) {
+      expect(html).not.toContain(hidden);
+    }
+  });
 });

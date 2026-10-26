@@ -526,7 +526,7 @@ export function TemplateGallery({
                   </div>
                 </form>
               )}
-              {(previewEntry?.versions.length ?? 0) > 1 && (
+              {onRestoreVersion && (previewEntry?.versions.length ?? 0) > 1 && (
                 <div className={styles.history}>
                   <h3>Version history</h3>
                   {previewEntry?.versions.map((version, index) => (

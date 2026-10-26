@@ -68,7 +68,6 @@ export function FolderLookPicker({
         motionOrigin={motionOrigin}
         motionOpen={motionOpen}
         onClose={finishClose}
-        onChanged={onChanged}
         onApply={(selected) => apply(selected.id, selected.version)}
       />
       {(applying || error) && (
