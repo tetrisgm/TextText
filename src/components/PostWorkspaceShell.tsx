@@ -1,13 +1,8 @@
 "use client";
 
-import { loadStudioFolderSample } from "./workspace/item-type-studio-state";
-import { TypeDesignerContext, readEditableType } from "./workspace/TypeDesignerContext";
-import { normalizeStoredPostDocument } from "@/lib/pool/storage";
-
 import { itemDestination } from "@/lib/workspace/writing";
 import { readingUnreadByFolder } from "@/components/workspace/reading/unread";
 import { useListReturnFocus } from "@/components/workspace/useListReturnFocus";
-import { setWorkspaceChoice } from "@/components/workspace/useWorkspaceChoice";
 import { viewScrollMemoryKey } from "@/lib/workspace/view-memory";
 import { scrollRestoreWindow } from "@/lib/workspace/scroll-restore";
 import { requestDocumentCaret } from "@/lib/document-history-events";
@@ -75,7 +70,6 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   createFolderItemAction,
@@ -88,7 +82,6 @@ import {
 } from "@/app/editor/actions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 
-import type { ItemTypeBlueprint } from "@/lib/presentation/item-type-blueprint";
 import {
   useCommandContextReader,
   useCommandToast,
@@ -104,13 +97,6 @@ import {
 } from "@/components/PostActionBar";
 import { UpdatedBuildNotice } from "@/components/workspace/UpdatedBuildNotice";
 
-const ItemTypeStudio = dynamic(() =>
-  import("@/components/workspace/ItemTypeStudio").then(
-    (module) => module.ItemTypeStudio,
-  ),
-);
-
-
 import {
   createOptimisticWorkspacePost,
   mergeCreatedWorkspacePost,
@@ -118,42 +104,8 @@ import {
   shouldOpenWorkspacePostInEdit,
   useLocalWorkspaceItemIdentity,
 } from "@/components/workspace/useLocalWorkspaceInteraction";
-import {
-  LazyAssistantConversation as AssistantConversation,
-  LazyAssistantConversationState as AssistantConversationState,
-  LazyAssistantSidebar as AssistantSidebar,
-} from "@/components/workspace/assistant/AssistantBoundaryUI";
 import type { AssistantSidebarState } from "@/components/workspace/assistant/constants";
-import { TRY_AI_IN_TEXTTEXT_EVENT } from "@/components/workspace/AiConnectionSettings";
-import { useAssistantComposerDraft } from "@/components/workspace/assistant/composer-store";
-import {
-  createAssistantConfirmationController,
-  type AssistantConfirmationRequest,
-} from "@/components/workspace/assistant/confirmation";
-import {
-  assistantComposerSelection,
-  assistantContextChipWithSelection,
-  resolveWorkspaceAssistantContext,
-} from "@/components/workspace/assistant/context";
-import { starterContextFromChip } from "@/components/workspace/assistant/starters";
-import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
-import { SelectionActions } from "@/components/workspace/assistant/SelectionActions";
-import {
-  conversationIdFromThreadKey,
-  NativeAssistantRuntime,
-  useNativeAssistant,
-} from "@/components/workspace/assistant/useNativeAssistantFacade";
-import { loadAssistantBoundary } from "@/components/workspace/assistant/assistant-boundary";
 import { executeWorkspaceToolRequest } from "@/lib/ai/workspace-tool-client";
-import {
-  openWorkspaceItemDraftRevision,
-  patchOpenWorkspaceItemDraftIfCurrent,
-  readOpenWorkspaceItemDraft,
-  readOpenWorkspaceItemSelection,
-  subscribeOpenWorkspaceItemDrafts,
-  type WorkspaceItemTextPatch,
-  type WorkspaceItemTextSnapshot,
-} from "@/lib/ai/workspace-item-draft";
 import type {
   Blog,
   Folder,
@@ -169,7 +121,6 @@ import {
   postFromPoolPost,
   starredPoolPosts,
 } from "@/lib/pool/selectors";
-import { fetchContextSourceText } from "@/components/workspace/assistant/context-source-client";
 import {
   addPost,
   acknowledgePost,
@@ -276,9 +227,6 @@ import {
   OPEN_WORKSPACE_SIDEBAR_EVENT,
   WorkspaceSidebarChrome,
   focusSidebarRow,
-  setWorkspaceAssistantState,
-  setWorkspaceAssistantWidth,
-  useWorkspaceAssistantPreferences,
   useWorkspaceSidebarCollapsed,
 } from "@/components/workspace/WorkspaceSidebarChrome";
 import { useClientHydrated } from "@/lib/use-client-hydrated";
@@ -566,9 +514,7 @@ function LocalWorkspaceShell({
   className,
   homePath,
   initialPool,
-  initialAssistantState,
   initialSidebarWidth,
-  initialAssistantWidth,
   initialSidebarCollapsed,
   initialSearchQuery,
   initialHomePane = "home",
@@ -619,71 +565,6 @@ function LocalWorkspaceShell({
     [sourcePool],
   );
   const displayPoolRef = useRef(displayPool);
-  const loadItemTypeStudioPreviewDocuments = useCallback(
-    async (folderPath: string, targetPostId?: string, refresh = false) => {
-      const currentPool = displayPoolRef.current;
-      const candidates = currentPool.posts.filter(
-        (post) => targetPostId ? post.id === targetPostId : folderPathForPoolPost(currentPool, post) === folderPath,
-      );
-      if (refresh && targetPostId && candidates.length) {
-        // A live editor can keep a local body dirty while the server has a newer
-        // revision. Conflict recovery must read the server directly instead of
-        // trusting the pool cache, or the same save conflict repeats forever.
-        const response = await fetch(`/api/post/${encodeURIComponent(targetPostId)}/body`, {
-          credentials: "same-origin",
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-        if (!response.ok) throw new Error("Could not load the current document");
-        const current = normalizeStoredPostDocument(await response.json(), {
-          blogId: currentPool.blogId,
-          postId: targetPostId,
-        });
-        if (!current?.revision) throw new Error("Current document revision unavailable");
-        const post = candidates[0];
-        return [{
-          postId: post.id, revision: current.revision,
-          folderPath, document: current.document,
-          pinned: Boolean(post.pinned),
-          createdAt: post.date ?? null,
-          updatedAt: current.updatedAt ?? post.updatedAt ?? post.date ?? null,
-          publishedAt: post.status === "published" ? (post.date ?? null) : null,
-        }];
-      }
-      const sample = await loadStudioFolderSample(candidates, async (post) => {
-        await ensurePostDocument(currentPool.blogId, post.id, { force: refresh });
-        if (displayPoolRef.current.blogId !== currentPool.blogId) return null;
-        let cached = getCachedWorkspacePostDocument(currentPool.blogId, post.id);
-        if (!cached) {
-          // An item may already be loading elsewhere. ensurePostDocument then
-          // returns before that fetch finishes; read this bounded sample
-          // directly so the preview does not silently omit those items.
-          try {
-            const response = await fetch(`/api/post/${encodeURIComponent(post.id)}/body`, {
-              credentials: "same-origin",
-              cache: "no-store",
-              headers: { Accept: "application/json" },
-            });
-            if (!response.ok) return null;
-            cached = normalizeStoredPostDocument(await response.json(), {
-              blogId: currentPool.blogId,
-              postId: post.id,
-            });
-          } catch { return null; }
-        }
-        return cached ? {
-          postId: post.id, revision: cached.revision,
-          folderPath, document: cached.document,
-          pinned: Boolean(post.pinned),
-          createdAt: post.date ?? null,
-          updatedAt: post.updatedAt ?? post.date ?? null,
-          publishedAt: post.status === "published" ? (post.date ?? null) : null,
-        } : null;
-      });
-      return sample.filter((entry) => entry !== null);
-    },
-    [],
-  );
   const contentRef = useRef<HTMLDivElement | null>(null);
   const rememberListFocus = useListReturnFocus(contentRef, viewScrollMemoryKey(view, homePane));
   const pendingScrollRestoreRef = useRef<{
@@ -1022,50 +903,7 @@ function LocalWorkspaceShell({
   const [pendingDeletePostIds, setPendingDeletePostIds] = useState<string[]>(
     [],
   );
-  const [lookNotice, setLookNotice] = useState<string | null>(null);
-  const [itemTypeStudioEditing, setItemTypeStudioEditing] = useState<{
-    templateId: string;
-    baseVersion: number;
-    blueprint: ItemTypeBlueprint;
-  } | null>(null);
-  const [itemTypeStudioFolderPath, setItemTypeStudioFolderPath] = useState<
-    string | null
-  >(null);
-  const [itemTypeStudioTargetPostId, setItemTypeStudioTargetPostId] = useState<string | null>(null);
-  const designerReturnRef = useRef<(() => void) | null>(null);
-  const designerOpenRequestRef = useRef(0);
-  const openTypeDesigner = useCallback(async (templateId: string, folderPath = "") => {
-    const request = ++designerOpenRequestRef.current;
-    const current = viewRef.current;
-    const targetPostId = current.level === "post" || current.level === "edit" ? current.postId : null;
-    const targetWorkspaceId = displayPoolRef.current.blogId;
-    const editing = templateId && !templateId.startsWith("texttext.")
-      ? await readEditableType(displayPool.blog.handle, templateId).catch(() => null)
-      : null;
-    const currentView = viewRef.current;
-    if (request !== designerOpenRequestRef.current || targetWorkspaceId !== displayPoolRef.current.blogId ||
-        (targetPostId && (!(currentView.level === "post" || currentView.level === "edit") || currentView.postId !== targetPostId))) return;
-    setItemTypeStudioTargetPostId(targetPostId);
-    setItemTypeStudioEditing(editing);
-    setItemTypeStudioFolderPath(folderPath);
-    await new Promise<void>((resolve) => { designerReturnRef.current = resolve; });
-  }, [displayPool.blog.handle]);
-  const { state: assistantState, width: assistantWidth } =
-    useWorkspaceAssistantPreferences(initialAssistantState, initialAssistantWidth);
-  const { width: workspaceSidebarWidth } =
-    useWorkspaceSidebarWidth(initialSidebarWidth);
-  useSyncExternalStore(
-    subscribeOpenWorkspaceItemDrafts,
-    openWorkspaceItemDraftRevision,
-    () => 0,
-  );
-  const [assistantConfirmation, setAssistantConfirmation] =
-    useState<AssistantConfirmationRequest | null>(null);
-
-  const assistantConfirmationController = useMemo(
-    () => createAssistantConfirmationController(setAssistantConfirmation),
-    [],
-  );
+  const { width: workspaceSidebarWidth } = useWorkspaceSidebarWidth(initialSidebarWidth);
   // Desktop keeps the folder rail visible beside the Artifact content. Small
   // screens still honor the persisted collapsed state and use the bottom bar.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
@@ -1124,17 +962,6 @@ function LocalWorkspaceShell({
     };
   }, [marqueeDragging, sidebarCollapsed]);
 
-  const changeAssistantState = useCallback(
-    (next: AssistantSidebarState) => {
-      if (next !== "hidden") void loadAssistantBoundary();
-      setWorkspaceAssistantState(next);
-    },
-    [],
-  );
-  const changeAssistantWidth = useCallback(
-    (next: number) => setWorkspaceAssistantWidth(next),
-    [],
-  );
   const activateRegion = useCallback((region: WorkspaceActiveRegion) => {
     activeRegionRef.current = region;
     setActiveRegion(region);
@@ -1193,11 +1020,6 @@ function LocalWorkspaceShell({
       selectOnlyPost(postId);
     },
     [selectOnlyPost, selectedPostIds],
-  );
-
-  useEffect(
-    () => () => assistantConfirmationController.dispose(),
-    [assistantConfirmationController],
   );
 
   // Hover highlight is earned by MOVING the pointer. Scrolling clears it,
@@ -1886,17 +1708,6 @@ function LocalWorkspaceShell({
         post,
         folderPathForPoolPost(displayPoolRef.current, post),
         "edit",
-      );
-    },
-    [openPoolPost],
-  );
-
-  const openAssistantItem = useCallback(
-    (post: WorkspacePoolPost, mode: "read" | "edit") => {
-      openPoolPost(
-        post,
-        folderPathForPoolPost(displayPoolRef.current, post),
-        mode,
       );
     },
     [openPoolPost],
@@ -2778,321 +2589,6 @@ function LocalWorkspaceShell({
   const effectiveSelectedPostIdentity = effectiveSelectedPostId
     ? itemIdentity.stableKey(effectiveSelectedPostId)
     : null;
-
-  // The selected row is the assistant's context on folder/root pages; an open
-  // item remains authoritative in reader/editor views. This is all local UI
-  // state and does not navigate, reload, or refresh the workspace.
-  const assistantTarget = useMemo(
-    () =>
-      resolveWorkspaceAssistantContext({
-        homePath,
-        pool: displayPool,
-        selectedFolderPath: effectiveSelectedSectionPath,
-        selectedPostId: effectiveSelectedPostId,
-        view:
-          view.level === "settings" || view.level === "search"
-            ? { level: "root" }
-            : view,
-      }),
-    [
-      displayPool,
-      effectiveSelectedPostId,
-      effectiveSelectedSectionPath,
-      homePath,
-      view,
-    ],
-  );
-  const assistantDraft =
-    assistantTarget.view.level === "edit" && assistantTarget.view.postId
-      ? readOpenWorkspaceItemDraft(assistantTarget.view.postId)
-      : null;
-  const assistantSelection = assistantComposerSelection(assistantDraft);
-  const assistantContext = assistantContextChipWithSelection(
-    assistantTarget.chip,
-    assistantSelection,
-  );
-  const getAssistantPool = useCallback(() => displayPoolRef.current, []);
-  const getAssistantView = useCallback(
-    () => assistantTarget.view,
-    [assistantTarget],
-  );
-  const readAssistantItemText = useCallback(
-    async (postId: string): Promise<WorkspaceItemTextSnapshot> => {
-      const openDraft = readOpenWorkspaceItemDraft(postId);
-      if (openDraft) return openDraft;
-
-      const currentPool = displayPoolRef.current;
-      const poolPost = findPoolPostById(currentPool, postId);
-      if (!poolPost) return fetchContextSourceText(currentPool.blogId, postId);
-
-      let document = getCachedWorkspacePostDocument(
-        currentPool.blogId,
-        postId,
-      )?.document;
-      if (!document) {
-        await ensurePostDocument(currentPool.blogId, postId);
-        document =
-          getCachedWorkspacePostDocument(currentPool.blogId, postId)
-            ?.document ??
-          currentPool.initialDocuments?.find(
-            (candidate) => candidate.postId === postId,
-          )?.document;
-      }
-      if (!document) throw new Error("Could not load the item document");
-      const body = document.content.body;
-      return {
-        revision: getCachedWorkspacePostDocument(currentPool.blogId, postId)?.revision ?? poolPost.revision,
-        title: poolPost.title,
-        excerpt: markdownSubtitle(body) || poolPost.excerpt || "",
-        body,
-        tags: poolPost.tags,
-      };
-    },
-    [],
-  );
-  const applyAssistantItemPatch = useCallback(
-    async (
-      postId: string,
-      patch: WorkspaceItemTextPatch,
-      expected: WorkspaceItemTextPatch = {},
-      ifMatchHash?: string,
-    ) => {
-      const openDraftResult = patchOpenWorkspaceItemDraftIfCurrent(
-        postId,
-        patch,
-        expected,
-      );
-      if (openDraftResult === "applied") {
-        return { synced: false, queued: true };
-      }
-      if (openDraftResult === "stale") {
-        throw new Error(
-          "This item changed after the preview. Run the action again.",
-        );
-      }
-
-      const currentPool = displayPoolRef.current;
-      const poolPost = findPoolPostById(currentPool, postId);
-      if (!poolPost) throw new Error("This item is no longer available.");
-      const currentText = await readAssistantItemText(postId);
-      for (const field of ["title", "excerpt", "body"] as const) {
-        if (
-          expected[field] !== undefined &&
-          currentText[field] !== expected[field]
-        ) {
-          throw new Error(
-            "This item changed after the preview. Run the action again.",
-          );
-        }
-      }
-      const existingDraft = localWorkspaceDraftSessions.get(postId);
-      const draft =
-        existingDraft ??
-        initialDraft(postFromPoolPost(poolPost, currentText.body));
-      const nextBody =
-        patch.excerpt === undefined
-          ? (patch.body ?? draft.body)
-          : replaceMarkdownSubtitle(patch.body ?? draft.body, patch.excerpt);
-      const nextDraft = {
-        ...draft,
-        ...patch,
-        body: nextBody,
-        excerpt: markdownSubtitle(nextBody),
-      };
-      if (patch.title?.trim() && isPlaceholderSlug(nextDraft.slug)) {
-        const usedSlugs = currentPool.posts
-          .filter((candidate) => candidate.id !== postId)
-          .map((candidate) => candidate.slug);
-        nextDraft.slug = uniqueSlug(slugify(patch.title, "post"), usedSlugs);
-      }
-
-      const baseUpdatedAt =
-        localWorkspaceServerRevisions.get(postId) ?? poolPost.updatedAt;
-      const requestedKey = payloadKey(
-        payloadFor(postId, nextDraft, poolPost.slug, baseUpdatedAt),
-      );
-      localWorkspaceDraftSessions.set(postId, nextDraft);
-      localWorkspacePendingSaveIds.add(postId);
-      markPostDirty(postId);
-      const requestedRevision = bumpLocalDraftRevision(postId);
-      updatePost(postId, {
-        ...mergeDraftIntoWorkspacePost(poolPost, nextDraft),
-        updatedAt: new Date().toISOString(),
-      });
-      if (patch.body !== undefined || patch.excerpt !== undefined) {
-        updateCachedDocumentBody(currentPool.blogId, postId, nextDraft.body);
-      }
-      persistLocalWorkspaceDraft(
-        currentPool.blogId,
-        postId,
-        nextDraft,
-        requestedKey,
-        baseUpdatedAt,
-      );
-
-      try {
-        const result = await executeWorkspaceToolRequest(
-          currentPool.blog.handle,
-          "update_item",
-          {
-            id: postId,
-            ...(patch.title !== undefined ? { title: nextDraft.title } : {}),
-            ...(patch.excerpt !== undefined
-              ? { excerpt: nextDraft.excerpt || null }
-              : {}),
-            ...(patch.body !== undefined ? { body: nextDraft.body } : {}),
-            ...(patch.tags !== undefined ? { tags: nextDraft.tags } : {}),
-            ...(ifMatchHash ? { if_match_hash: ifMatchHash } : {}),
-          },
-        );
-        const savedItem = result.item as { updatedAt?: unknown } | undefined;
-        const savedAt =
-          typeof savedItem?.updatedAt === "string"
-            ? savedItem.updatedAt
-            : new Date().toISOString();
-        localWorkspaceServerRevisions.set(postId, savedAt);
-        if (localDraftRevision(postId) === requestedRevision) {
-          localWorkspacePendingSaveIds.delete(postId);
-          localWorkspaceDraftSessions.delete(postId);
-          acknowledgePost(postId);
-          const document = getCachedWorkspacePostDocument(
-            currentPool.blogId,
-            postId,
-          )?.document;
-          if (document) {
-            acknowledgePostDocument(
-              currentPool.blogId,
-              postId,
-              documentWithUpdatedBody(document, nextDraft.body),
-              poolPost.revision,
-              savedAt,
-            );
-          }
-          void deletePersistedWorkspaceDraft(
-            currentPool.blogId,
-            postId,
-            requestedKey,
-          );
-          void refreshWorkspacePool(
-            currentPool.blog.handle,
-            currentPool.blogId,
-          );
-        }
-        return { synced: true, queued: false };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (
-          /access|authoriz|cannot|conflict|forbidden|hash|invalid|no longer|owner|permission|required|sign in|stale/i.test(
-            message,
-          )
-        ) {
-          if (localDraftRevision(postId) === requestedRevision) {
-            localWorkspacePendingSaveIds.delete(postId);
-            if (existingDraft) {
-              localWorkspaceDraftSessions.set(postId, existingDraft);
-              markPostDirty(postId);
-            } else {
-              localWorkspaceDraftSessions.delete(postId);
-            }
-            updatePost(postId, {
-              title: currentText.title,
-              excerpt: currentText.excerpt || undefined,
-              tags: currentText.tags ?? poolPost.tags,
-              updatedAt: poolPost.updatedAt,
-            });
-            const restoredDocument = updateCachedDocumentBody(
-              currentPool.blogId,
-              postId,
-              currentText.body,
-            );
-            if (!existingDraft) {
-              acknowledgePost(postId);
-              acknowledgePostDocument(
-                currentPool.blogId,
-                postId,
-                restoredDocument,
-                poolPost.revision,
-                poolPost.updatedAt,
-              );
-            }
-            void deletePersistedWorkspaceDraft(
-              currentPool.blogId,
-              postId,
-              requestedKey,
-            );
-          }
-          throw error;
-        }
-        // The local draft remains authoritative and persisted. Opening the
-        // item resumes the editor's normal retry path instead of rolling the
-        // user's accepted change back to stale server state.
-        return { synced: false, queued: true };
-      }
-    },
-    [readAssistantItemText],
-  );
-  const assistantOptions = useMemo(
-    () => ({
-      handle: displayPool.blog.handle,
-      contextKey: assistantTarget.contextKey,
-      getPool: getAssistantPool,
-      getView: getAssistantView,
-      openItem: openAssistantItem,
-      readItemText: readAssistantItemText,
-      applyItemPatch: applyAssistantItemPatch,
-      confirmDestructive: assistantConfirmationController.request,
-    }),
-    [
-      applyAssistantItemPatch,
-      assistantConfirmationController,
-      assistantTarget.contextKey,
-      displayPool.blog.handle,
-      getAssistantPool,
-      getAssistantView,
-      openAssistantItem,
-      readAssistantItemText,
-    ],
-  );
-  const assistant = useNativeAssistant(assistantOptions);
-  const [assistantPickerRequest, setAssistantPickerRequest] = useState<string | null>(null);
-  const assistantComposer = useAssistantComposerDraft(
-    `${displayPool.blog.handle}:${assistantTarget.contextKey}`,
-  );
-  const setAssistantComposerText = assistantComposer.setText;
-  useEffect(() => {
-    const onTryAi = (event: Event) => {
-      const detail = (event as CustomEvent<{ prompt?: unknown; postId?: unknown }>).detail;
-      if (detail?.postId !== undefined && detail.postId !== assistantTarget.view.postId) return;
-      const prompt = detail?.prompt;
-      if (typeof prompt === "string" && prompt.trim()) setAssistantComposerText(prompt);
-      else if (typeof detail?.postId !== "string") return;
-      changeAssistantState("pinned");
-    };
-    window.addEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
-    return () => window.removeEventListener(TRY_AI_IN_TEXTTEXT_EVENT, onTryAi);
-  }, [assistantTarget.view.postId, changeAssistantState, setAssistantComposerText]);
-  const assistantContextItems = useMemo(
-    () =>
-      [...displayPool.posts]
-        .sort((left, right) =>
-          (right.updatedAt ?? right.createdAt ?? "").localeCompare(
-            left.updatedAt ?? left.createdAt ?? "",
-          ),
-        )
-        .map((post) => {
-          const folderPath = folderPathForPoolPost(displayPool, post);
-          const folderName =
-            displayPool.folders.find((folder) => folder.path === folderPath)
-              ?.name ?? folderPath;
-          const kind = `${post.type.charAt(0).toUpperCase()}${post.type.slice(1)}`;
-          return {
-            id: post.id,
-            name: post.title.trim() || "Untitled",
-            detail: `${folderName} · ${kind}`,
-          };
-        }),
-    [displayPool],
-  );
 
   useEffect(() => {
     if (!mounted) return;
@@ -4832,21 +4328,6 @@ function LocalWorkspaceShell({
       readerTapG,
       openAdjacentPost: (direction: 1 | -1) => selectRelativePost(direction),
       createItem: createItemFromCommand,
-      customizeCurrent: () => {
-        const current = viewRef.current;
-        if (current.level !== "post" && current.level !== "edit") return;
-        const pool = displayPoolRef.current;
-        const post = findPoolPostById(pool, current.postId);
-        if (!post) return;
-        void openTypeDesigner(post.template?.id ?? "", folderPathForPoolPost(pool, post));
-      },
-      customizeFolder: () => {
-        const current = viewRef.current;
-        if (current.level !== "section") return;
-        const folder = displayPoolRef.current.folders.find((entry) => entry.path === current.folderPath);
-        if (!folder) return;
-        void openTypeDesigner(folder.defaultTemplate?.id ?? "", folder.path);
-      },
       openCreatedPost,
       reconcileCreatedPost,
       openFolder: navigateSection,
@@ -4948,7 +4429,6 @@ function LocalWorkspaceShell({
       openCreatedPost,
       openSelected,
       openItemByIndex,
-      openTypeDesigner,
       getNavigationTargetPaths,
       openSectionByIndex,
       openPostId,
@@ -5222,17 +4702,6 @@ function LocalWorkspaceShell({
       selectedPostId={effectiveSelectedPostId}
       selectedPostIds={effectiveSelectedPostIds}
       view={view}
-      assistantConnection={assistant.connectionPreference === "native" ? assistant.nativeConnection : null}
-      assistantCloudProvider={assistant.cloudProvider}
-      onConnectAssistant={assistant.connectNativeAssistant}
-      onOpenAssistant={() => changeAssistantState("pinned")}
-      onUseAssistantPrompt={(prompt) => {
-        assistantComposer.setText(prompt);
-        changeAssistantState("pinned");
-      }}
-      onBuildItemType={(folderPath = "") =>
-        setItemTypeStudioFolderPath(folderPath)
-      }
       onFocusCapture={(folderPath) => {
         navigateSection(folderPath);
         setCaptureFocusRequestKey((value) => value + 1);
@@ -5243,21 +4712,17 @@ function LocalWorkspaceShell({
   const effectiveSidebarCollapsed = sidebarCollapsed;
   const showDocumentTabs = (view.level === "post" || view.level === "edit") && tabPosts.length > 1;
   return (
-    <TypeDesignerContext.Provider value={openTypeDesigner}>
     <div
       data-artifact-view={view.level}
       className={`post-editor-shell applecms artifact-workspace has-sidebar ${className}${
         effectiveSidebarCollapsed ? " is-sidebar-collapsed" : ""
       } is-active-region-${activeRegion}${
         marqueeDragging ? " is-marquee-dragging" : ""
-      } assistant-is-${assistantState}${
-        assistantState === "pinned" ? " has-assistant-pinned" : ""
-      }${assistantState !== "hidden" ? " has-assistant-open" : ""}${
+      }${
         showDocumentTabs ? " has-tab-bar" : ""
       }`}
       style={
         {
-          "--workspace-assistant-width": `${assistantWidth}px`,
           // First paint carries the dragged width; without it the server
           // painted the stylesheet default and the whole content margin
           // jumped when the client applied the real value on every reload.
@@ -5294,17 +4759,7 @@ function LocalWorkspaceShell({
         }}
         onNewItem={runCreateCurrent}
         onSettings={navigateSettings}
-        onBuildItemType={(folder) => {
-          designerOpenRequestRef.current += 1;
-          setItemTypeStudioTargetPostId(null);
-          setItemTypeStudioEditing(null);
-          setItemTypeStudioFolderPath(folder.path);
-        }}
-        onChangeItemType={(folder) => {
-          void openTypeDesigner(folder.defaultTemplate?.id ?? "", folder.path)
-            .catch((error: unknown) => setLookNotice(error instanceof Error ? error.message : "Could not open this type."));
-        }}
-        onSelectRoot={() => { setHomePane("home"); navigateRoot(); }}
+          onSelectRoot={() => { setHomePane("home"); navigateRoot(); }}
         onToggleCollapsed={toggleSidebarCollapsed}
         peeking={leftEdgePeeking}
         onPeekEngage={() => {
@@ -5321,7 +4776,6 @@ function LocalWorkspaceShell({
       />
       <ArtifactNavigation pane={view.level === "settings" ? "profile" : (view.level === "edit" || view.level === "post") ? (() => { const post = itemIdentity.resolvePost(displayPool, view.postId); return post ? itemDestination(post) : homePane; })() : view.level === "section" ? (displayPool.folders.find((folder) => folder.path === view.folderPath)?.mode === "notes" ? "notes" : "profile") : homePane} onSelect={openDestination} onBrowseFolders={() => window.dispatchEvent(new Event(OPEN_WORKSPACE_SIDEBAR_EVENT))} />
       <div className="workspace-document-layout">
-        <NativeAssistantRuntime options={assistantOptions} />
         {/* The tab strip is the topmost band, above the action bar, as in
             Sublime. The actions belong to the tab that is open, so a bar
             drawn ABOVE the tabs reads as acting on the wrong thing (owner,
@@ -5404,231 +4858,8 @@ function LocalWorkspaceShell({
           onMove={moveSelectedPosts}
           onToggleStar={toggleStarSelected}
         />
-        <SelectionActions
-          key={`${assistant.conversationStoreKey}:${assistantTarget.view.postId}:${assistantTarget.view.level}`}
-          itemId={assistantTarget.view.postId}
-          enabled={
-            assistant.ownerScopeReady && assistantTarget.view.level === "edit"
-          }
-          readSelection={() =>
-            assistantTarget.view.level === "edit" && assistantTarget.view.postId
-              ? readOpenWorkspaceItemSelection(assistantTarget.view.postId)
-              : null
-          }
-          onRunAction={assistant.createSelectionPreview}
-        />
-
-        <AssistantConversationState
-          activeConversationId={assistant.activeConversationId}
-          assistantVisible={assistantState !== "hidden"}
-          contextKey={assistant.conversationContextKey}
-          handle={displayPool.blog.handle}
-          ownerScopeReady={assistant.ownerScopeReady}
-          storeKey={assistant.conversationStoreKey}
-        >
-          {(conversation) => (
-        <AssistantSidebar
-          contextKey={assistant.conversationContextKey}
-          initialContextPickerOpen={assistantPickerRequest === assistantTarget.contextKey}
-          onRequestContextPicker={() => setAssistantPickerRequest(assistantTarget.contextKey)}
-          onDismissContextPicker={() => setAssistantPickerRequest(null)}
-          workspaceHandle={displayPool.blog.handle}
-          agent={assistantAgentIdentity(
-            assistant.cloudProvider,
-            assistant.connectionPreference === "native" ? assistant.nativeConnection : null,
-            collaboratorColor,
-            assistant.runningJobs > 0,
-          )}
-          onNewConversation={assistant.startNewConversation}
-          hasConversation={conversation.messages.length > 0}
-          activeConversationId={assistant.activeConversationId}
-          conversations={conversation.conversations}
-          onOpenConversation={assistant.openConversation}
-          onSearchConversations={assistant.searchConversations}
-          onToggleConversationPinned={assistant.toggleConversationPinned}
-          onDeleteConversation={assistant.deleteConversation}
-          modelChoices={assistant.modelChoices}
-          selectedModel={assistant.selectedCloudModel}
-          onModelChange={assistant.selectCloudModel}
-          connectionPreference={assistant.connectionPreference}
-          nativeConnectionAvailable={Boolean(assistant.nativeConnection?.embeddedChatSupported)}
-          onChooseConnection={assistant.selectConnection}
-          className="workspace-assistant-shell"
-          state={assistantState}
-          onStateChange={changeAssistantState}
-          width={assistantWidth}
-          onWidthChange={changeAssistantWidth}
-          // Auto: pinned participates in the shell grid as a real column;
-          // open/hidden float over the page. The module owns its own
-          // positioning per state, and the grid only reserves a column when
-          // the shell says has-assistant-pinned, so nothing is reserved for a
-          // hidden rail. inline was wrong here: it holds a track open in every
-          // state, which squeezed the library beside an invisible assistant.
-          layout="auto"
-          context={assistantContext}
-          composerValue={assistantComposer.draft.text}
-          onComposerChange={assistantComposer.setText}
-          attachments={assistantComposer.draft.attachments}
-          availableContextItems={assistantContextItems}
-          contextChoice={assistant.contextChoice}
-          onContextChoiceChange={assistant.setContextChoice}
-          hasSelection={Boolean(assistantSelection)}
-          onFilesSelected={assistantComposer.addFiles}
-          onRemoveAttachment={(attachment) =>
-            assistantComposer.removeAttachment(attachment.id)
-          }
-          onSubmit={(submission) => {
-            if (!assistant.ownerScopeReady) return;
-            assistantComposer.clear();
-            void assistant.submit(submission.text, submission.attachments);
-          }}
-          shellOnSubmit={(submission) => {
-            assistantComposer.clear();
-            void assistant.submit(submission.text, submission.attachments);
-          }}
-          shellOnQuickAction={assistant.runQuickAction}
-          shellViewerName={blog.author}
-          onCancel={assistant.cancel}
-          submitting={assistant.submitting}
-          submitDisabled={!assistant.ownerScopeReady}
-          launcherBusy={assistant.runningJobs > 0}
-          pendingCount={conversation.pendingProposalCount}
-          historySyncStatus={conversation.historySyncStatus}
-          onRetryHistorySync={conversation.retryHistorySync}
-          pendingConversations={conversation.pendingConversations}
-          onOpenPendingConversation={(conversation) => {
-            assistant.openConversationInContext(
-              conversation.contextKey,
-              conversation.id,
-            );
-            if (conversation.contextKey.startsWith("item:")) {
-              openPostId(conversation.contextKey.slice("item:".length));
-              return;
-            }
-            if (conversation.contextKey.startsWith("place:")) {
-              navigatePath(conversation.contextKey.slice("place:".length));
-            }
-          }}
-          composerPlaceholder={
-            assistant.ownerScopeStatus === "checking"
-              ? "Checking assistant access"
-              : assistant.ownerScopeStatus === "denied"
-                ? "Assistant is available to the workspace owner"
-                : (assistant.connectionPreference === "native"
-                    ? assistant.nativeConnection?.state === "ready"
-                    : Boolean(assistant.cloudProvider))
-                  ? undefined
-                  : "Connect an AI to start"
-          }
-          accept={assistant.attachmentAccept}
-          attachmentDisabled={!assistant.attachmentsAvailable}
-          attachmentTitle={assistant.attachmentTitle}
-        >
-          <AssistantConversation
-            accessState={assistant.ownerScopeStatus}
-            activeCloudProvider={assistant.activeCloudProvider}
-            cloudProvider={assistant.cloudProvider}
-            nativeConnection={assistant.connectionPreference === "native" ? assistant.nativeConnection : null}
-            onConnectNative={assistant.connectNativeAssistant}
-            aiSettingsHref={`${workspaceSettingsHref(homePath)}#api-key-connections`}
-            onOpenAiSettings={() => changeAssistantState("hidden")}
-            onRetry={(prompt) => assistant.submit(prompt)}
-            onSaveAnswer={assistant.saveAnswer}
-            savingAnswerId={assistant.savingAnswerId}
-            onRateAnswer={assistant.rateAnswer}
-            onWriteProposalDecision={assistant.decideWriteProposal}
-            jobs={assistant.jobs}
-            messages={conversation.messages}
-            hydrating={conversation.hydrating}
-            starterContext={starterContextFromChip(assistantContext)}
-            viewerName={blog.author}
-            quickActions={assistant.quickActions}
-            submitting={assistant.submitting}
-            onApplyProposal={assistant.applyProposal}
-            onOpenJob={(job) => {
-              // Open the conversation the job reports into, then jump to its
-              // context: items open directly, places navigate by their stored
-              // URL. Without the conversation switch, clicking a job that ran
-              // in the place already on screen visibly did nothing.
-              const conversationId = conversationIdFromThreadKey(job.threadKey);
-              if (conversationId) {
-                assistant.openConversationInContext(
-                  job.contextKey,
-                  conversationId,
-                );
-              }
-              if (job.contextKey.startsWith("item:")) {
-                openPostId(job.contextKey.slice("item:".length));
-                return;
-              }
-              if (job.contextKey.startsWith("place:")) {
-                navigatePath(job.contextKey.slice("place:".length));
-              }
-            }}
-            onUsePrompt={assistantComposer.setText}
-            onQuickAction={assistant.runQuickAction}
-            onUndoProposal={assistant.undoProposal}
-          />
-        </AssistantSidebar>
-          )}
-        </AssistantConversationState>
       </div>
       <UpdatedBuildNotice />
-      {itemTypeStudioFolderPath !== null && assistant.ownerScopeReady ? (
-        <ItemTypeStudio
-          key={`${assistant.conversationStoreKey ?? "checking"}:${displayPool.blogId}:${itemTypeStudioTargetPostId ?? itemTypeStudioFolderPath}`}
-          availableTypes={displayPool.templates}
-          blogId={displayPool.blogId}
-          folders={displayPool.folders}
-          generateWithConnectedAgent={assistant.generateItemTypeBlueprint}
-          ownerScopeKey={assistant.conversationStoreKey}
-          nativeConnection={assistant.nativeConnection}
-          selectedModel={assistant.selectedCloudModel}
-          connectionPreference={assistant.connectionPreference}
-          onChooseConnection={assistant.selectConnection}
-          onConnectNative={assistant.connectNativeAssistant}
-          onCancelNativeSetup={assistant.cancelNativeSetup}
-          handle={displayPool.blog.handle}
-          editing={itemTypeStudioEditing ?? undefined}
-          initialFolderPath={itemTypeStudioFolderPath}
-          initialTargetPostId={itemTypeStudioTargetPostId ?? undefined}
-          initialTargetTitle={displayPool.posts.find((post) => post.id === itemTypeStudioTargetPostId)?.title}
-          initialTemplate={displayPool.templates.find((template) => {
-            const current = displayPool.posts.find((post) => post.id === itemTypeStudioTargetPostId)?.template;
-            return template.id === current?.id && template.version === current.version;
-          })}
-          onCreated={(folderPath, look) => {
-            if (!folderPath || !look) return;
-            const folder = displayPoolRef.current.folders.find((entry) => entry.path === folderPath);
-            if (folder) setWorkspaceChoice(`texttext:folder-collection:${folder.id}`, `${look.id}@${look.version}`);
-          }}
-          onClose={() => {
-            setItemTypeStudioFolderPath(null);
-            setItemTypeStudioEditing(null);
-            setItemTypeStudioTargetPostId(null);
-            designerOpenRequestRef.current += 1;
-            designerReturnRef.current?.();
-            designerReturnRef.current = null;
-          }}
-          loadPreviewDocuments={loadItemTypeStudioPreviewDocuments}
-        />
-      ) : null}
-      <ConfirmationDialog
-        open={Boolean(lookNotice)}
-        title="This look cannot be reopened"
-        message={lookNotice ?? ""}
-        confirmLabel="OK"
-        onCancel={() => setLookNotice(null)}
-        onConfirm={() => setLookNotice(null)}
-      />
-      <ConfirmationDialog
-        open={Boolean(assistantConfirmation)}
-        title="Confirm assistant action"
-        message={assistantConfirmation?.description ?? ""}
-        confirmLabel="Continue"
-        onCancel={assistantConfirmationController.cancel}
-        onConfirm={assistantConfirmationController.confirm}
-      />
       <ConfirmationDialog
         open={pendingDeletePostIds.length > 0}
         title={
@@ -5646,7 +4877,6 @@ function LocalWorkspaceShell({
         onConfirm={confirmDeleteTarget}
       />
     </div>
-    </TypeDesignerContext.Provider>
   );
 }
 

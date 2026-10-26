@@ -38,8 +38,6 @@ import {
 } from "@/components/PostActionBar";
 import { ReaderComments } from "@/components/workspace/ReaderComments";
 import { ReaderFindHighlights } from "@/components/workspace/ReaderFindHighlights";
-import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
-import { assistantAgentIdentity } from "@/components/workspace/assistant/agent-identity";
 import type {
   Blog,
   Post,
@@ -97,9 +95,6 @@ export function LocalUnifiedWorkspacePostEditor({
   pool,
   poolPost,
   returnToSearch,
-  assistantConnection,
-  assistantCloudProvider,
-  onOpenAssistant,
 }: {
   active: boolean;
   blog: Blog;
@@ -110,15 +105,7 @@ export function LocalUnifiedWorkspacePostEditor({
   pool: WorkspacePoolPayload;
   poolPost: WorkspacePoolPost;
   returnToSearch?: WorkspaceSearchLocation;
-  assistantConnection?: AiConnectionSnapshot | null;
-  assistantCloudProvider?: string | null;
-  onOpenAssistant?: () => void;
 }) {
-  const activeAgent = assistantAgentIdentity(
-    assistantCloudProvider,
-    assistantConnection,
-    collaboratorColor,
-  );
   const template = templateForPoolPost(pool, poolPost);
   const openDesigner = useTypeDesigner();
   // The authoritative body may not be local yet. The pool list omits document
@@ -247,8 +234,6 @@ export function LocalUnifiedWorkspacePostEditor({
       onCustomizeDocument={openDesigner ? () => { void openDesigner(template.id, containingFolderPath); } : undefined}
       referenceChoices={referenceChoices}
       canReviewAgentChanges
-      activeAgent={activeAgent}
-      onOpenAgent={onOpenAssistant}
       collab={{
         postId: poolPost.id,
         userName: blog.author || "You",

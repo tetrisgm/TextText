@@ -8,7 +8,6 @@ export function HomeCreateMenu({ pool, onCreateItem, heading = "Home", headingId
   headingId?: string;
   pool: WorkspacePoolPayload;
   onCreateItem?: FolderCreateItem;
-  onBuildItemType: () => void;
 }) {
   const create = () => {
     const folder = pool.folders.find((entry) => entry.path === "notes")

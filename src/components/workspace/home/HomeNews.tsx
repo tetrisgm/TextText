@@ -145,26 +145,22 @@ export function HomeNews({
   handle,
   blogId,
   canManage,
-  assistantReady,
   /** Where a new feed's folder is created, which is the bookmarks root. */
   feedsFolderPath,
   feedsFolderName,
   retentionDays,
   onOpenPost,
   onOpenSection,
-  onUseAssistantPrompt,
 }: {
   session?: HomeSession;
   handle: string;
   blogId: string;
   canManage: boolean;
-  assistantReady: boolean;
   feedsFolderPath: string;
   feedsFolderName: string;
   retentionDays: number;
   onOpenPost: (postId: string) => void;
   onOpenSection: (folderPath: string) => void;
-  onUseAssistantPrompt: (prompt: string) => void;
 }) {
   // The server renders the default view; the URL's mode and topic are
   // adopted right after hydration (a deferred update, so the first render
@@ -867,11 +863,6 @@ export function HomeNews({
                 {unhealthy.length > 0 && (
                   <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setManaging(true); }} title={unhealthy[0].healthDetail ?? undefined}>
                     {unhealthy.length === 1 ? "1 source needs attention" : `${unhealthy.length} sources need attention`}
-                  </button>
-                )}
-                {assistantReady && (
-                  <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onUseAssistantPrompt(catchMeUpPrompt(topic?.startsWith("source:") ? topic.slice(7) : null)); }}>
-                    Catch me up
                   </button>
                 )}
                 {canManage && (

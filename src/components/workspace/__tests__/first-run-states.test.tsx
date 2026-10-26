@@ -65,9 +65,9 @@ const render = renderToStaticMarkup;
 function landing(testPool = pool, query = "", source: "query" | "tag" = "query", canManageItems = true) {
   return <WorkspaceRootLanding pool={testPool} query={query} source={source} canManageItems={canManageItems}
     focusRequestKey={0} selectedPostId={null} selectedPostIds={new Set()} selectedSectionPath={null}
-    assistantConnection={null} settingsHref="/t/writer/settings" onFocusCapture={focusCapture} onQueryChange={queryChange}
+    settingsHref="/t/writer/settings" onFocusCapture={focusCapture} onQueryChange={queryChange}
     onOpenPost={vi.fn()} onOpenSection={vi.fn()} onSelectPost={vi.fn()} onSelectSection={vi.fn()}
-    onOpenAssistant={vi.fn()} onBuildItemType={vi.fn()} onUseAssistantPrompt={vi.fn()} />;
+    />;
 }
 function reader(document: DocumentSnapshot, canManagePost = true) {
   return <WorkspacePostReader blog={blog} pool={pool} poolPost={{ ...emptyPost, document, blogId: pool.blogId }} homePath="/t/writer" canManagePost={canManagePost} canCommentPost={false} onNavigate={vi.fn()} onSearch={vi.fn()} onOpenTag={vi.fn()} searchFocusRequestKey={0} />;
@@ -83,6 +83,13 @@ function findButton(node: ReactNode, label: string): React.ReactElement<{ onClic
 beforeEach(() => { vi.clearAllMocks(); driver.poolError = null; });
 
 describe("content-first library and first run", () => {
+  it("keeps first run focused on notes and external connections", () => {
+    const html = render(landing({ ...pool, folders: [folder] }));
+    expect(html).toContain("Write a note");
+    expect(html).not.toContain("Try the assistant");
+    expect(html).not.toContain("Create a template");
+    expect(html).not.toContain("Connect an AI");
+  });
   it.each([false, true])("offers capture and one item library with existing items %s", returning => {
     const html = render(landing({ ...pool, folders: [folder], posts: returning ? [{ ...emptyPost, blogId: pool.blogId, folderId: folder.id, title: "Existing note" }] : [] }));
     expect(html).toContain("<h1>All items</h1>");
@@ -97,7 +104,7 @@ describe("content-first library and first run", () => {
     const openSection = vi.fn();
     let tree: ReactNode;
     function InspectProfile() {
-      tree = ArtifactProfile({ pool: { ...pool, folders: [folder] }, history: {}, onOpenPost: vi.fn(), onOpenSection: openSection, onShowLibrary: vi.fn(), onBrowseFolders: vi.fn(), onOpenAssistant: vi.fn(), settingsHref: "/t/writer/settings", canManage: true });
+      tree = ArtifactProfile({ pool: { ...pool, folders: [folder] }, history: {}, onOpenPost: vi.fn(), onOpenSection: openSection, onShowLibrary: vi.fn(), onBrowseFolders: vi.fn(), settingsHref: "/t/writer/settings", canManage: true });
       return tree;
     }
     render(<InspectProfile />);
@@ -113,7 +120,7 @@ describe("content-first library and first run", () => {
     expect(html).not.toContain("Write your first note");
   });
   it("provides library access from Profile even without folders", () => {
-    const html = render(<ArtifactProfile pool={pool} history={{}} onOpenPost={vi.fn()} onOpenSection={vi.fn()} onShowLibrary={vi.fn()} onBrowseFolders={vi.fn()} onOpenAssistant={vi.fn()} settingsHref="/t/writer/settings" canManage={false} />);
+    const html = render(<ArtifactProfile pool={pool} history={{}} onOpenPost={vi.fn()} onOpenSection={vi.fn()} onShowLibrary={vi.fn()} onBrowseFolders={vi.fn()} settingsHref="/t/writer/settings" canManage={false} />);
     expect(html).toContain("All items");
     expect(html).toContain("Browse folders");
     expect(html).not.toContain("Publisher Subscriptions");

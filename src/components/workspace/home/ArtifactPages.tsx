@@ -169,14 +169,13 @@ export function SavedArticles({ state, folders = [], session, ...props }: OpenPr
   </>;
 }
 
-export function ArtifactProfile({ pool, history, onOpenPost, onOpenSection, onShowLibrary, onBrowseFolders, onOpenAssistant, settingsHref, canManage }: {
+export function ArtifactProfile({ pool, history, onOpenPost, onOpenSection, onShowLibrary, onBrowseFolders, settingsHref, canManage }: {
   pool: WorkspacePoolPayload;
   history: WorkspaceDocumentOpenHistory;
   onOpenPost: (id: string) => void;
   onOpenSection: (path: string) => void;
   onShowLibrary: () => void;
   onBrowseFolders: () => void;
-  onOpenAssistant: () => void;
   settingsHref: string;
   canManage: boolean;
 }) {
@@ -215,7 +214,7 @@ export function ArtifactProfile({ pool, history, onOpenPost, onOpenSection, onSh
         {pool.folders.filter((folder) => !folder.parentId).map((folder) => <li key={folder.id}><button onClick={() => onOpenSection(folder.path)}><ArtifactIcon name="folder" /><span>{folder.name}</span><span aria-hidden="true">›</span></button></li>)}
         <li><button onClick={onBrowseFolders}><ArtifactIcon name="folder" /><span>Browse folders</span><span aria-hidden="true">›</span></button></li>
       </ul>
-      <ul className={styles.profileList}><li><button onClick={onOpenAssistant}><ArtifactIcon name="profile" /><span>Assistant</span><span aria-hidden="true">›</span></button></li><li><a href={settingsHref}><ArtifactIcon name="settings" /><span>Settings</span><span aria-hidden="true">›</span></a></li></ul>
+      <ul className={styles.profileList}><li><a href={settingsHref}><ArtifactIcon name="settings" /><span>Settings</span><span aria-hidden="true">›</span></a></li></ul>
     </>}
     {settingsMenu && <StoryActions placement="menu" label="Profile settings" onClose={() => setSettingsMenu(false)}>
       {canManage && <button onClick={() => { setSettingsMenu(false); setManaging(true); }}>Subscriptions<ArtifactIcon name="bookmark" /></button>}

@@ -132,7 +132,6 @@ import {
   WorkspacePostOption,
   domSafeId,
 } from "@/components/workspace/WorkspacePostOption";
-import type { AiConnectionSnapshot } from "@/lib/ai/connection-state";
 import { WorkspaceViewModeControl, useWorkspaceViewMode } from "@/components/workspace/WorkspaceViewModeControl";
 import {
   type WorkspaceItemIdentityRegistry,
@@ -231,7 +230,6 @@ export function WorkspaceRootLanding({
   homePane = "home",
   onSelectPane,
   homeSession,
-  onOpenAssistant,
   onBrowseFolders = () => undefined,
   focusRequestKey,
   captureFocusRequestKey = 0,
@@ -245,12 +243,8 @@ export function WorkspaceRootLanding({
   source,
   selectedPostId,
   selectedSectionPath,
-  assistantConnection,
-  assistantCloudProvider,
-  onBuildItemType,
   onFocusCapture,
   onCreateItem,
-  onUseAssistantPrompt,
   settingsHref,
 }: {
   canManageItems: boolean;
@@ -271,14 +265,8 @@ export function WorkspaceRootLanding({
   selectedPostId: string | null;
   selectedPostIds: ReadonlySet<string>;
   selectedSectionPath: string | null;
-  assistantConnection: AiConnectionSnapshot | null;
-  assistantCloudProvider?: string | null;
-  onConnectAssistant?: () => void;
-  onOpenAssistant: () => void;
-  onBuildItemType: () => void;
   onFocusCapture: (folderPath: string) => void;
   onCreateItem?: FolderCreateItem;
-  onUseAssistantPrompt: (prompt: string) => void;
   settingsHref: string;
 }) {
   const searchRef = useRef<HTMLInputElement>(null);
@@ -442,8 +430,6 @@ export function WorkspaceRootLanding({
       ) ?? null,
     [pool],
   );
-  const assistantReady =
-    Boolean(assistantCloudProvider) || assistantConnection?.state === "ready";
 
   useEffect(() => {
     const hydrate = window.setTimeout(() => {
@@ -770,8 +756,7 @@ export function WorkspaceRootLanding({
                 <div>
                   <strong>Make TextText yours</strong>
                   <span>
-                    Capture something, or ask AI to build and organize the kind
-                    of writing you keep.
+                    Capture notes and organize the writing you keep.
                     {welcomePost ? (
                       <button
                         type="button"
@@ -785,12 +770,6 @@ export function WorkspaceRootLanding({
                 </div>
                 <div className="workspace-start-here-actions">
                   <button type="button" disabled={creatingFirstFolder} onClick={openFirstNote}>{creationFolder ? "Write a note" : creatingFirstFolder ? "Creating notes folder" : firstFolder ? "Refresh folders" : "Create a notes folder"}</button>
-                  <button type="button" onClick={onBuildItemType}>Create a template</button>
-                  {assistantReady ? (
-                    <button type="button" onClick={() => onUseAssistantPrompt("Build a reusable project tracker with status, owner, priority, due date, and a folder view grouped by status. Show me the structure before applying it.")}>Try the assistant</button>
-                  ) : (
-                    <a href={`${settingsHref}#settings-connection-gallery`}>Connect an AI</a>
-                  )}
                 </div>
                 {firstFolderError && <p role="alert">{firstFolderError}</p>}
                 <button type="button" className="workspace-start-here-dismiss" aria-label="Dismiss Start here" onClick={dismissStartHere}>Done</button>
@@ -804,20 +783,18 @@ export function WorkspaceRootLanding({
                   handle={pool.blog.handle}
                   blogId={pool.blogId}
                   canManage={canManageItems}
-                  assistantReady={assistantReady}
                   feedsFolderPath={feedsFolder?.path ?? "bookmarks"}
                   feedsFolderName={feedsFolder?.name ?? "Bookmarks"}
                   retentionDays={pool.blog.readingRetentionDays ?? 90}
                   onOpenPost={onOpenPost}
                   onOpenSection={onOpenSection}
-                  onUseAssistantPrompt={onUseAssistantPrompt}
                 /></RetainedWorkspacePane>
                 <RetainedWorkspacePane active={homePane === "notes"}><ArtifactNotes session={homeSession} pool={pool} onOpenPost={onOpenPost} onOpenSection={onOpenSection} onCreateNote={openFirstNote} notice={firstFolderError} creating={creatingFirstFolder} onBrowseFolders={onBrowseFolders} canManage={canManageItems}
-                  creationControls={<HomeCreateMenu heading="Writing" headingId="artifact-notes-title" pool={pool} onCreateItem={onCreateItem} onBuildItemType={onBuildItemType} />}
+                  creationControls={<HomeCreateMenu heading="Writing" headingId="artifact-notes-title" pool={pool} onCreateItem={onCreateItem} />}
                 /></RetainedWorkspacePane>
                 <RetainedWorkspacePane active={homePane === "headlines"}><ArtifactHeadlines handle={pool.blog.handle} blogId={pool.blogId} onOpenPost={onOpenPost} /></RetainedWorkspacePane>
                 <RetainedWorkspacePane active={homePane === "profile" && !libraryOpen}><ArtifactProfile pool={pool} history={openHistory} onOpenPost={onOpenPost} onOpenSection={onOpenSection}
-                  onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} onOpenAssistant={onOpenAssistant} settingsHref={settingsHref} canManage={canManageItems} /></RetainedWorkspacePane>
+                  onShowLibrary={() => setLibraryOpen(true)} onBrowseFolders={onBrowseFolders} settingsHref={settingsHref} canManage={canManageItems} /></RetainedWorkspacePane>
               </div>
             {showLibrary && (
             <section className={`workspace-recent is-view-${recentViewMode}`}>
@@ -970,13 +947,7 @@ export function LocalWorkspaceContent({
   selectedPostId,
   selectedPostIds,
   view,
-  assistantConnection,
-  assistantCloudProvider,
-  onConnectAssistant,
-  onOpenAssistant,
-  onBuildItemType,
   onFocusCapture,
-  onUseAssistantPrompt,
 }: {
   blog: Blog;
   homePane?: ArtifactPane;
@@ -1019,13 +990,7 @@ export function LocalWorkspaceContent({
   selectedPostId: string | null;
   selectedPostIds: ReadonlySet<string>;
   view: LocalWorkspaceView;
-  assistantConnection: AiConnectionSnapshot | null;
-  assistantCloudProvider?: string | null;
-  onConnectAssistant?: () => void;
-  onOpenAssistant: () => void;
-  onBuildItemType: (folderPath?: string) => void;
   onFocusCapture: (folderPath: string) => void;
-  onUseAssistantPrompt: (prompt: string) => void;
 }) {
   // Stable identity for the section's items: FolderPage memoizes its sort,
   // collection shaping and calendar off this array, and handing it a fresh
@@ -1087,14 +1052,8 @@ export function LocalWorkspaceContent({
       selectedPostId={selectedPostId}
       selectedPostIds={selectedPostIds}
       selectedSectionPath={selectedSectionPath}
-      assistantConnection={assistantConnection}
-      assistantCloudProvider={assistantCloudProvider}
-      onConnectAssistant={onConnectAssistant}
-      onOpenAssistant={onOpenAssistant}
-      onBuildItemType={() => onBuildItemType()}
       onFocusCapture={onFocusCapture}
       onCreateItem={onCreateItem}
-      onUseAssistantPrompt={onUseAssistantPrompt}
       settingsHref={workspaceSettingsHref(homePath)}
     />
   );
@@ -1268,9 +1227,6 @@ export function LocalWorkspaceContent({
                 ? view.returnToSearch
                 : undefined
             }
-            assistantConnection={assistantConnection}
-            assistantCloudProvider={assistantCloudProvider}
-            onOpenAssistant={onOpenAssistant}
           />
         </div>
       )}
