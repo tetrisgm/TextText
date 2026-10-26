@@ -4,7 +4,9 @@ Execute [Finish TextText](plans/finish-texttext.md), the sole active plan agreed
 
 Start by tracing one document through editor, multiplayer and external file writes, then replace duplicated native reconciliation with one shared adapter. Independently remove embedded-agent release coupling and advanced template lifecycle scope. Do not revive the deferred template source-guard stash.
 
-October 24 source progress: the live document watcher now routes an observed external TextPack edit through its existing TypeScript merge before treating it as a checkpoint conflict; [focused receipt](verification/2026-10-24-observed-file-merge.md). The ordinary web-only release path has focused checks instead of mandatory full application/database/sync suites; [release receipt](verification/2026-10-24-web-release-gate-simplification.md). The connection screen no longer promotes a built-in assistant setup. These source changes are not installed product acceptance. Native engine retirement, embedded runtime removal, and the final multiplayer/file-edit workflow remain open.
+October 24 source progress: the live document watcher now routes an observed external TextPack edit through its existing TypeScript merge before treating it as a checkpoint conflict; [focused receipt](verification/2026-10-24-observed-file-merge.md). The ordinary web-only release path has focused checks instead of mandatory full application/database/sync suites; [release receipt](verification/2026-10-24-web-release-gate-simplification.md). The connection screen no longer promotes a built-in assistant setup. Native engine retirement, embedded runtime removal, and the final multiplayer/file-edit workflow remain open.
+
+The web-only command subsequently deployed `46e3515e` to Oracle and exited 0 with authenticated document/audit smoke; [delivery receipt](verification/2026-10-25-web-46e3515e.md). This delivers the web connection-screen cut. The file watcher change remains source-only for native clients. No signed-in visual connection-page check was available. The current CLI workspace did not find the existing changelog note, so no duplicate was made.
 
 ## Installed baseline
 
