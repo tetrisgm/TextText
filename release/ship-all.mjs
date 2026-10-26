@@ -72,16 +72,12 @@ async function main() {
       checkpoint();
       run('node', ['--test', 'release/committed-pin.test.mjs', 'release/stage-checkpoint.test.mjs', 'release/parallel-stage.test.mjs', 'release/signing-preflight.test.mjs', 'scripts/verify-sync.test.mjs', 'release/oracle/storage-preflight.test.mjs', 'windows/scripts/check-checkout.test.mjs']);
       run('python3', ['release/test_stopped_backup.py']);
-      run('bash', ['mac/scripts/test-embedded-codex-version.sh']);
       windows('Preflight', commit, runId);
       const installed = '/Applications/TextText.app';
       const version = plist('mac/Info.plist', 'CFBundleShortVersionString');
       const build = String(Math.max(Number(plist('mac/Info.plist', 'CFBundleVersion')), Number(plist(`${installed}/Contents/Info.plist`, 'CFBundleVersion'))) + 1);
       if (!/^[1-9][0-9]*$/.test(build)) throw new Error('Cannot allocate a fresh Mac build number.');
-      const runtime = join(installed, 'Contents/Helpers/codex');
       run('codesign', ['--verify', '--strict', installed]);
-      run('codesign', ['--verify', '--strict', runtime]);
-      const runtimeVersion = plist(`${installed}/Contents/Info.plist`, 'TextTextEmbeddedAgentVersion');
       // Prepare both native candidates before changing any installed surface.
       const bundle = join(evidence, 'mirror-policy');
       mkdirSync(bundle);
@@ -90,8 +86,10 @@ async function main() {
         TEXTTEXT_RELEASE_GATE_RECEIPT: join(root, '.texttext/release-gate-receipt.json'),
         TEXTTEXT_WORKFLOW_CAPABILITY_RECEIPT: join(evidence, 'workflow-capability.json'),
         TEXTTEXT_BUILD_ATTESTATION: join(evidence, 'AppHealthBuildAttestation.json'),
-        TEXTTEXT_EMBEDDED_CODEX_RUNTIME: runtime,
-        TEXTTEXT_EMBEDDED_CODEX_VERSION: runtimeVersion,
+        // The in-app agent is optional. A prior install's helper must not
+        // become a prerequisite or silently enter the next product build.
+        TEXTTEXT_EMBEDDED_CODEX_RUNTIME: '',
+        TEXTTEXT_EMBEDDED_CODEX_VERSION: '',
         TEXTTEXT_STORE_LOCAL: '1', APP_VERSION: version, APP_BUILD_NUMBER: build,
         NEXT_DEPLOYMENT_ID: `texttext-all-${runId}`,
       });

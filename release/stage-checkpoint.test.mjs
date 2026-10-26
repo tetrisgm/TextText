@@ -101,3 +101,12 @@ test('deterministic fixtures and full gates finish before native candidate build
   assert.ok(positions.every(position => position >= 0), 'every required stage remains present');
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'no candidate build or deployment starts before the gates');
 });
+
+test('unified release does not require or inherit an embedded agent executable', () => {
+  const source = readFileSync(new URL('./ship-all.mjs', import.meta.url), 'utf8');
+  const store = readFileSync(new URL('../mac/scripts/build-store.sh', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /codesign.*runtime|test-embedded-codex-version\.sh|TextTextEmbeddedAgentVersion/);
+  assert.match(source, /TEXTTEXT_EMBEDDED_CODEX_RUNTIME: ''/);
+  assert.match(source, /TEXTTEXT_EMBEDDED_CODEX_VERSION: ''/);
+  assert.doesNotMatch(store, /Refusing local Store build: set TEXTTEXT_EMBEDDED_CODEX_RUNTIME/);
+});
