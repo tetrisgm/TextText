@@ -6,8 +6,6 @@ export type ConnectionGalleryProps = {
   cloudConfigured: boolean;
   /** Specific state for the TextText AI card ("Anthropic · claude-sonnet-5"). */
   cloudStatusLabel?: string;
-  nativeAvailable: boolean;
-  nativeReady: boolean;
   clientCount: number | null;
   mcpCount: number | null;
   onVerify?: () => void;
@@ -17,8 +15,6 @@ export type ConnectionGalleryProps = {
 export function ConnectionGallery({
   cloudConfigured,
   cloudStatusLabel,
-  nativeAvailable,
-  nativeReady,
   clientCount,
   mcpCount,
   onVerify,
@@ -32,19 +28,6 @@ export function ConnectionGallery({
       href: "#settings-ai",
       action: cloudConfigured ? "Manage" : "Connect",
     },
-    ...(nativeAvailable
-      ? [
-          {
-            name: "Codex with ChatGPT",
-            description:
-              "Use your ChatGPT account with the assistant inside TextText.",
-            status: nativeReady ? "Connected" : "Available",
-            connected: nativeReady,
-            href: "#settings-ai",
-            action: nativeReady ? "Manage" : "Learn more",
-          },
-        ]
-      : []),
     {
       name: "Claude and Codex",
       description: "Connect external agents through the hosted TextText MCP.",

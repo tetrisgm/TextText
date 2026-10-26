@@ -9,8 +9,6 @@ describe("connection gallery", () => {
     const html = renderToStaticMarkup(
       React.createElement(ConnectionGallery, {
         cloudConfigured: true,
-        nativeAvailable: false,
-        nativeReady: false,
         clientCount: 1,
         mcpCount: 0,
         onVerify: () => {},
@@ -28,8 +26,6 @@ describe("connection gallery", () => {
     const html = renderToStaticMarkup(
       React.createElement(ConnectionGallery, {
         cloudConfigured: false,
-        nativeAvailable: false,
-        nativeReady: false,
         clientCount: 0,
         mcpCount: 0,
       }),
@@ -38,19 +34,17 @@ describe("connection gallery", () => {
     expect(html).not.toContain("Verify connection");
   });
 
-  it("shows account setup only when the app reports a usable runtime", () => {
+  it("keeps external agents visible without promoting embedded account setup", () => {
     const html = renderToStaticMarkup(
       React.createElement(ConnectionGallery, {
         cloudConfigured: false,
-        nativeAvailable: true,
-        nativeReady: false,
         clientCount: 0,
         mcpCount: 0,
       }),
     );
 
-    expect(html).toContain("Codex with ChatGPT");
-    expect(html).toContain("assistant inside TextText");
-    expect(html).not.toContain("standalone Mac agent");
+    expect(html).toContain("Claude and Codex");
+    expect(html).not.toContain("Codex with ChatGPT");
+    expect(html).not.toContain("assistant inside TextText");
   });
 });

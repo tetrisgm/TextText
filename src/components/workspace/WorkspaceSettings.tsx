@@ -393,10 +393,6 @@ export function WorkspaceSettings({
         <ConnectionGallery
           cloudConfigured={aiSettings?.connectionState === "ready"}
           cloudStatusLabel={aiOverviewLabel}
-          nativeAvailable={Boolean(
-            nativeConnection && nativeConnection.state !== "unavailable",
-          )}
-          nativeReady={nativeConnection?.state === "ready"}
           clientCount={tokensVisible ? tokenClients.length : null}
           mcpCount={mcpCount}
           onVerify={
