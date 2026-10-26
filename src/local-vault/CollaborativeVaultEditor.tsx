@@ -7,7 +7,6 @@ import type { EditorImagePasteRequest, EditorImagePasteResult, LocalDocumentRebi
 import { DocumentRenderer } from "@/components/document/DocumentRenderer";
 import { applyDocumentSnapshot, documentSnapshotFromYDoc } from "@/lib/collab/document";
 import { validateTemplateDefinition } from "@/lib/presentation/schema";
-import { prepareSavedLook } from "./saved-look";
 import { BUILTIN_TEMPLATES, templateExperience } from "@/lib/presentation/templates";
 import type { DocumentSnapshot } from "@/lib/documents/model";
 import { FileCollaborationClient, type FileCollaborationStatus } from "./collaboration-client";
@@ -485,13 +484,6 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
     } catch (error) { if (mountedRef.current && viewKeyRef.current === mutationView) setDetail(error instanceof Error ? error.message : "Could not save the recovery copy."); }
     finally { setBusy(false); }
   };
-  const saveLook = async (name: string) => {
-    if (!await flush()) return { ok: false, message: "Save this item before keeping its look." };
-    const metadata = prepareSavedLook(latestSnapshot.current, template, name, file.current.templateAuthoringSourceJSON);
-    const fresh = await vaultRequest<VaultFile>("create", { title: name, folder: "Templates", sourcePath: file.current.path, sourceHash: file.current.hash,
-      ...metadata });
-    onChanged(); return { ok: true, message: `Saved in ${fresh.path}` };
-  };
   const blocked = status === "recovery" || status === "error";
   const ready = !!client?.hasBaseline;
   const editable = ready && canEdit && !permissionReadOnly && !blocked && !busy;
@@ -523,7 +515,7 @@ export function CollaborativeVaultEditor({ documentReferences, onOpenReference, 
       {!editable || reading ? (articleSource(snapshot) ? <ArticleReader document={display} template={template} update={editable ? updateArticle : undefined} /> : experience === "note" ? <VaultNoteDisplay document={display} sourceBody={snapshot.content.body} template={template} itemId={config.itemId} onOpenCardPath={path => window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path } }))} onOpenCardId={async itemId => { const resolved = await vaultRequest<{ path: string }>("resolveItemId", { itemId }); window.dispatchEvent(new CustomEvent("texttext:vault-open", { detail: { path: resolved.path } })); }} onEdit={editable ? () => setReading(false) : undefined} onToggleTask={editable ? (index, body) => updateArticle(current => current.content.body !== body ? current : { ...current, content: { ...current.content, body: toggleNoteTask(body, index) ?? body } }) : undefined} /> : experience === "article" ? <VaultStoryDisplay document={display} template={template} onEdit={editable ? () => setReading(false) : undefined} /> : <DocumentRenderer document={display} template={template} />) :
         <HostedVaultEditor surfaceResetKey={generation > 0 ? `${config.itemId}:${generation}` : undefined} onOpenReference={onOpenReference} referenceChoices={referenceChoices} documentReferences={documentReferences} renderNoteTemplatePicker={props => <VaultNoteTemplatePicker {...props} />} key={`${config.itemId}:${generation}`} transport="local" localDocument={bound?.doc ?? client.doc} localPresence={awareness ? { awareness, peers: presencePeers } : undefined} registerLocalRebind={registerRebind} resolveDocumentAssets={resolveAssets}
           focusNewNote={focusNewNote} focusNewNoteTitle={focusNewNoteTitle} focusNewNoteOrigin={focusNewNoteOrigin} focusNewNoteSelection={focusNewNoteSelection} onNewNoteFocusHandled={onNewNoteFocusHandled}
-          onPasteImages={pasteImages} onSaveAsLook={saveLook} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
+          onPasteImages={pasteImages} blog={localBlog} post={asPost(snapshot, config.itemId)} template={template} availableTemplates={[template, ...BUILTIN_TEMPLATES.filter(value => value.id !== template.id)]}
           collab={{ postId: `${config.namespace}:${config.workspaceId}:${config.itemId}`, userName: "You", color: "#3970c5", canEdit: true }} onDone={async () => { if (await flush() && (experience === "note" || experience === "article")) setReading(true); }}
           renderTemplateLibrary={props => <WorkspaceTypeLibrary currentTemplate={template} onClose={props.onClose} onApply={(nextTemplate, sourceJSON) => {
             const mutationView = viewKeyRef.current;

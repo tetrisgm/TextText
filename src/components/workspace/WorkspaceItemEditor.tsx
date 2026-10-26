@@ -25,7 +25,6 @@ import type {
 } from "react";
 import { usePresence } from "@/lib/collab/usePresence";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
-import { saveItemAsLookAction } from "@/app/editor/look-actions";
 import { useTypeDesigner } from "./TypeDesignerContext";
 import { UnifiedDocumentEditor } from "@/components/document/UnifiedDocumentEditor";
 import { UnifiedDocumentReader } from "@/components/document/UnifiedDocumentReader";
@@ -247,13 +246,6 @@ export function LocalUnifiedWorkspacePostEditor({
       availableTemplates={pool.templates}
       onCustomizeDocument={openDesigner ? () => { void openDesigner(template.id, containingFolderPath); } : undefined}
       referenceChoices={referenceChoices}
-      onSaveAsLook={async (name) => {
-        if (!post.id) return { ok: false, message: "Save the item first." };
-        const result = await saveItemAsLookAction(blog.handle, post.id, name);
-        return result.ok
-          ? { ok: true, message: `Saved as "${result.name}"` }
-          : { ok: false, message: result.error };
-      }}
       canReviewAgentChanges
       activeAgent={activeAgent}
       onOpenAgent={onOpenAssistant}

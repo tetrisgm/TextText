@@ -186,12 +186,6 @@ export type UnifiedDocumentEditorProps = {
   onDelete?: () => Promise<void> | void;
   onChooseTemplate?: () => void;
   onCustomizeDocument?: () => void;
-  /**
-   * Save this document's look under a name. Passed in rather than imported:
-   * this component is a leaf, and importing a server action here drags the
-   * auth graph into every unit test that renders it.
-   */
-  onSaveAsLook?: (name: string) => Promise<{ ok: boolean; message: string }>;
   leadingControls?: ReactNode;
 };
 
@@ -575,7 +569,6 @@ export function UnifiedDocumentEditor({
   onDelete,
   onChooseTemplate,
   onCustomizeDocument,
-  onSaveAsLook,
   leadingControls,
   canReviewAgentChanges = false,
 }: UnifiedDocumentEditorProps) {
@@ -910,13 +903,6 @@ export function UnifiedDocumentEditor({
   const [providerAttempt, setProviderAttempt] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [choosingTemplate, setChoosingTemplate] = useState(false);
-  // "Save as look" is how a look gets made now. It takes what this document
-  // already renders as and keeps it under a name; it never edits the document.
-  const [savingLook, setSavingLook] = useState(false);
-  const [namingLook, setNamingLook] = useState(false);
-  const [lookName, setLookName] = useState("");
-  const lookNameRef = useRef<HTMLInputElement>(null);
-  const [lookNotice, setLookNotice] = useState<string | null>(null);
   const [showSubtitle, setShowSubtitle] = useState(false);
   const providerRef = useRef<CollabProvider | null>(null);
   // Presence follows the shown editor, not the mounted one: the warm editor
@@ -2289,11 +2275,6 @@ export function UnifiedDocumentEditor({
               <span className="tt-look-name">{activeTemplate.name}</span>
             </button>
           )}
-          {lookNotice && (
-            <span className="tt-look-notice" role="status">
-              {lookNotice}
-            </span>
-          )}
           {(
             <details className="tt-editor-more">
             <summary aria-label="More actions" title="More actions">
@@ -2310,60 +2291,6 @@ export function UnifiedDocumentEditor({
                 <button type="button" onClick={onCustomizeDocument}>
                   Customize this document
                 </button>
-              )}
-              {/* Naming happens in the menu, not in a window.prompt. The
-                  browser dialog was a grey system box with the page frozen
-                  behind it, which is the exact jank the look work was meant to
-                  remove. */}
-              {onSaveAsLook && !namingLook && (
-                <button
-                  type="button"
-                  disabled={savingLook}
-                  onClick={() => {
-                    setLookName(`${activeTemplate.name} copy`);
-                    setNamingLook(true);
-                    window.requestAnimationFrame(() =>
-                      lookNameRef.current?.select(),
-                    );
-                  }}
-                >
-                  Save as look
-                </button>
-              )}
-              {onSaveAsLook && namingLook && (
-                <form
-                  className="tt-editor-more-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const name = lookName.trim();
-                    if (!name) return;
-                    setSavingLook(true);
-                    setLookNotice("Saving look...");
-                    setNamingLook(false);
-                    void onSaveAsLook(name)
-                      .then((result) => setLookNotice(result.message))
-                      .catch(() => setLookNotice("Could not save that look."))
-                      .finally(() => setSavingLook(false));
-                  }}
-                >
-                  <input
-                    ref={lookNameRef}
-                    aria-label="Name this look"
-                    value={lookName}
-                    disabled={savingLook}
-                    maxLength={160}
-                    onChange={(event) => setLookName(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setNamingLook(false);
-                      }
-                    }}
-                  />
-                  <button type="submit" disabled={savingLook || !lookName.trim()}>
-                    {savingLook ? "Saving" : "Save"}
-                  </button>
-                </form>
               )}
               {canAddSubtitle && (
                 <button

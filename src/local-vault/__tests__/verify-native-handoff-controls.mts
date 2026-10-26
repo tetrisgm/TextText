@@ -204,14 +204,7 @@ try {
     await page.getByRole("status").filter({ hasText: "Finish connecting this note before pasting an image. Your clipboard is unchanged." }).waitFor();
     assert.equal(await body.innerText(), acceptedBody, "Refused image paste must not alter accepted text");
     await page.locator(".tt-editor-more").getByLabel("More actions", { exact: true }).click();
-    await page.getByRole("button", { name: "Save as look", exact: true }).click();
-    await page.getByRole("textbox", { name: "Name this look", exact: true }).fill("Owned paused look");
-    await page.getByRole("button", { name: "Save", exact: true }).first().click();
-    await wait(200);
-    await writeFile(path.join(dir, "look-observation.json"), JSON.stringify({
-      statuses: await page.getByRole("status").allTextContents(), localWrites, addedAssetRequests, creates, errors, fixtureErrors
-    }, null, 2), { flag: "wx" });
-    await page.getByRole("status").filter({ hasText: "Finish connecting this item before keeping its look." }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Save as look", exact: true }).count(), 0);
     assert.equal(localWrites, writesAtPause); assert.equal(addedAssetRequests, assetsAtPause); assert.equal(creates, createsAtPause);
   }
   await title.click(); await page.keyboard.press("End"); await page.keyboard.type(" n");

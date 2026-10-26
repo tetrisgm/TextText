@@ -71,25 +71,10 @@ const sections = [
     ],
   },
   {
-    title: "Looks, and who can change them",
+    title: "Choose a look",
     body: [
-      "A look controls how a document reads when opened and how its folder\u2019s index renders. Choosing one is a gallery of real previews, each drawn with the look it is offering rather than a thumbnail of it.",
-      "Every folder page is governed by the look on its folder, the published blog page included. There is no second layout control on a page that already has a look; the only stored layout choice besides looks is Home\u2019s own.",
-      "Folders have looks too, and the folder menu changes them: applying one restyles what is already in the folder, because a folder whose index changed while every item kept the old look reads as nothing having happened.",
-      "Looks are immutable versions and documents pin the exact one they use, so a newer version never restyles work behind its author. Retiring a look stops it being offered and changes nothing already wearing it.",
-      "A look you want again is saved from the document that already reads that way: Save as look in the editor takes the document\u2019s own presentation, names it, and adds it to the gallery. There is no form of fields to fill in, because a look worth keeping is one you can already see.",
-      "The Look library is searchable and separates Mine, Workspace, and TextText. Its preview shows item and folder impact before applying. Remix creates an independent copy; Export and validated Import move a look safely; version history restores an earlier design by copying it forward instead of rewriting history.",
-    ],
-  },
-  {
-    title: "Build your own item types",
-    body: [
-      "Build an item type opens one focused studio from Home, any folder menu, or the Assistant. Describe what you want or start with Editorial publication, Project board, or Quick notes without connecting a provider.",
-      "Every type defines both sides of the work together: the fields and reading layout of one item, plus the list, cards, board, calendar, timeline, or index that renders its folder. Item and Folder tabs preview the real result before anything is saved.",
-      "Each refinement becomes a complete design version. Undo, Redo, the history menu, and before/current comparison let you explore without losing a direction. The preview can use sample content, the selected folder's documents, an empty state, or long stress-test content in wide, tablet, and phone frames. A quality preflight blocks Done only when the type would be structurally incomplete.",
-      "Types can model people and document relations, recurrence, guarded status workflows, field validation, conditional fields, and read-only computed facts. A folder can expose several named views over the same items, each with its own layout, filters, grouping, columns, and sort.",
-      "Done saves one reusable, versioned type to the Look gallery and can make it the default for a destination folder. New items inherit it. Updating existing folder items stays an explicit choice.",
-      "The in-app assistant and hosted MCP agents use the same create item type operation as the app, so a request for a Medium-like publication or a Notion-like project board produces the same reusable result.",
+      "Choose from the looks already available in your workspace. The gallery previews a document with each look before you apply it.",
+      "A document keeps the look version it was given. You can also choose a look for a folder without changing the identity or content of its documents.",
     ],
   },
   {

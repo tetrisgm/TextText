@@ -1816,61 +1816,6 @@ html[data-nav-transition="pop"]::view-transition-old(workspace-content) {
   color: var(--ink);
 }
 
-/* "Saved as ..." after Save as look. A quiet confirmation beside the control
-   that did it, rather than a dialog: the action is small and reversible, and
-   the look it made is already in the gallery. */
-.tt-look-notice {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.5rem;
-  color: var(--ac-label-2);
-  font: 600 0.75rem/1.2 var(--ac-font-text);
-  white-space: nowrap;
-}
-
-/* Naming a look happens where the menu item was, in the same row of the same
-   menu: type over the suggested name and press Return. The field inherits the
-   menu's own type so it reads as part of the list rather than a form dropped
-   into it. */
-.tt-editor-more-form {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.375rem;
-}
-
-.tt-editor-more-form input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: 1px solid var(--ac-hairline);
-  border-radius: 6px;
-  padding: 0.3125rem 0.4375rem;
-  background: var(--ac-bg);
-  color: var(--ac-label);
-  font: 500 0.8125rem/1.2 var(--ac-font-text);
-}
-
-.tt-editor-more-form input:focus-visible {
-  outline: none;
-  box-shadow: var(--ac-focus);
-}
-
-.tt-editor-more-form button {
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 6px;
-  padding: 0.375rem 0.625rem;
-  background: var(--ac-accent);
-  color: var(--ac-accent-contrast);
-  font: 650 0.75rem/1 var(--ac-font-text);
-  cursor: pointer;
-}
-
-.tt-editor-more-form button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* Open documents, as tabs. The workspace's own chrome floats as pills in the
    top corners, so the strip keeps clear of both and scrolls sideways rather
    than shrinking each tab to nothing. Sticky, so it stays put while the
