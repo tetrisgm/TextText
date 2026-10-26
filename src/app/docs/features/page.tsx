@@ -11,7 +11,7 @@ import "@/styles/connect.css";
 export const metadata: Metadata = {
   title: "TextText features",
   description:
-    "Everything TextText does today: items, collections, the editor, publishing, collaboration, and the AI rail.",
+    "TextText notes, collections, editing, publishing, collaboration, and agent connections.",
 };
 
 const sections = [
@@ -33,8 +33,8 @@ const sections = [
   {
     title: "Writing",
     body: [
-      "The editor is a quiet page: your title in a display serif, your text under it, and nothing else asking for attention. Changes save as you type, and the save state is always visible in the corner beside the assistant.",
-      "Select any passage while editing and Rewrite, Summarize, and Excerpt appear above the selection, ready to hand that text to your AI.",
+      "The editor keeps the title and text together. Changes save as you type, with the save state visible beside the document.",
+      "You can edit the same document in TextText or through its local TextPack file. External file changes join an open document through the same collaboration model.",
     ],
   },
   {
@@ -45,29 +45,19 @@ const sections = [
     ],
   },
   {
-    title: "Working together, including with your AI",
+    title: "Working together",
     body: [
       "Documents are live. People in the same document see each other as presence avatars at the top of the page. Connected changes keep the authenticated account attribution; a supplied agent label is display metadata rather than a separate account.",
-      "The in-app assistant keeps its provider identity and current document context visible in the right rail. Rewrite and Summarize selection quick actions show the exact replacement before Apply and keep Undo close after the change. An ordinary freeform turn may update the document directly.",
       "In the standalone Mac edition, local Claude and Codex plugins write through the signed-in TextText CLI. Their changes follow the same document model, permissions, validation, audit, and conflict rules. Read the updated document, then correct the text directly or ask the agent for a smaller follow-up change.",
     ],
   },
   {
     title: "Agents do real document work",
     body: [
-      "The API-key in-app assistant uses the workspace-command surface for tools that need no confirmation. It can find and create items, rewrite text, organize documents, and change presentation.",
-      "The standalone native assistant and hosted MCP use the broader guarded surface for comments, publishing, and collaborator management. They ask before actions that affect an audience or access.",
-      "In the standalone Mac edition, Claude and Codex on this Mac use the installed TextText plugin and bundled CLI. They use your existing signed-in session, so local work needs no workspace token and no loopback server.",
+      "An agent on your computer can edit TextPack files with ordinary file tools, or use the installed TextText CLI. File edits are validated and merged as document changes; a file write by itself does not prove which agent made it.",
+      "In the standalone Mac edition, Claude and Codex can also use the installed TextText plugin and CLI. Local CLI work uses your signed-in session, without a workspace token or loopback server.",
       "Remote MCP clients use the hosted endpoint. ChatGPT connects through TextText sign-in and consent; other supported clients use a revocable bearer token created at /connect.",
       "Hosted commands record the authenticated account and action in the audit log, stay inside that workspace, and make repeated create or append requests safe through idempotency keys. The local CLI route is documented separately and is not described here as a live cursor or sidebar proposal.",
-    ],
-  },
-  {
-    title: "Your assistant can use other apps",
-    body: [
-      "TextText speaks MCP in both directions. Other tools reach your documents, and your own assistant can use tools from servers you connect to it, so \u201cput this spec in Figma\u201d stays one sentence instead of a copy and a paste.",
-      "A server you add is saved switched off. Turning on Allow is the consent, because connecting a URL and letting somebody else\u2019s tools into your assistant are different promises. When the assistant uses one, the conversation shows which server and which tool, and a server that did not answer is named rather than quietly missing.",
-      "Every external MCP call waits for review of its exact arguments, even when the server labels the tool read-only. Use the exact @mcp shortcut shown in Settings; a bare name or unrelated prose does not contact the connection. Server descriptions and safety labels are untrusted, and TextText refuses a tool or destination configuration that changed after review. Local MCP execution is disabled; agents on this Mac use the signed-in TextText CLI, with no localhost server.",
     ],
   },
   {
@@ -75,14 +65,6 @@ const sections = [
     body: [
       "Choose from the looks already available in your workspace. The gallery previews a document with each look before you apply it.",
       "A document keeps the look version it was given. You can also choose a look for a folder without changing the identity or content of its documents.",
-    ],
-  },
-  {
-    title: "The AI rail",
-    body: [
-      "The right rail keeps the in-app assistant beside the document. Its heading names the provider, the context chip states what it can read or change, and New chat starts over without leaving the page.",
-      "Before setup, the rail presents one recommended action: Set up the in-app assistant. In the standalone Mac edition, local Claude and Codex plugin instructions stay in a quiet secondary path. Remote MCP instructions remain secondary in every edition.",
-      "Progress stays short and specific. A failed request shows one useful reason with Try again and Settings rather than an indefinite working state or a transcript of internal retries.",
     ],
   },
 ] as const;
@@ -112,10 +94,10 @@ export default function FeaturesPage() {
           <p>
             <Link href="/docs/getting-started">Getting started</Link> walks the
             first capture, search, and guarded edit.{" "}
-            <Link href="/docs/ai">The AI and agent guide</Link> covers
-            providers, tools, and workflows.{" "}
-            <Link href="/docs/item-types">Build item types</Link> covers the
-            complete builder and prompt patterns.{" "}
+            <Link href="/docs/ai">The agent guide</Link> covers
+            files, CLI, and hosted MCP.{" "}
+            <Link href="/docs/item-types">Item looks</Link> explains the
+            presentations already available in TextText.{" "}
             <Link href="/docs/security">Security and privacy</Link> explains
             what stays local and what crosses the network.
           </p>
